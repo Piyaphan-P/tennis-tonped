@@ -1,0 +1,14 @@
+{
+  "name": "ton-phet-tennis-server",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Token-minting + static server for ต้นและเพชร Tennis Club",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "@google/genai": "^2.10.0",
+    "express": "^4.21.2"
+  }
+}

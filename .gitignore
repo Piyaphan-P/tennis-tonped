@@ -1,0 +1,19 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+.vite/
+
+# secrets & credentials (never commit)
+*.json.key
+ton-team-*.json
+*-service-account*.json
+# agent/tooling artifacts
+.claude/
+.playwright-mcp/
+*.png
+demo.html
+coach_demo.html

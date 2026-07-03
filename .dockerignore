@@ -1,0 +1,13 @@
+node_modules
+server/node_modules
+dist
+.git
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+.vite
+.playwright-mcp
+**/*.json.key
+ton-team-*.json
