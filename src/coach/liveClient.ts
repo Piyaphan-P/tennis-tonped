@@ -46,15 +46,12 @@ function errMsg(e: unknown, fallback = 'coach disconnected'): string {
 /** Backoff schedule (ms) for auto-reconnect; length = max reconnect attempts. */
 const RECONNECT_DELAYS_MS = [1000, 2000, 4000];
 
-/**
- * Local fast barge-in: if the smoothed mic level stays above this for
- * DUCK_MIN_STREAK consecutive level callbacks WHILE the coach is speaking, cut
- * the coach's audio immediately. The server-side `interrupted` signal is still
- * the primary mechanism (handleMessage); this just shaves the human-perceived
- * latency so we never talk over the student.
- */
-const MIC_DUCK_THRESHOLD = 0.1;
-const DUCK_MIN_STREAK = 2;
+// HALF-DUPLEX (on-court feedback): while the coach's audio is playing we DROP
+// outgoing mic chunks entirely, so neither court noise (ball machine, bounces,
+// wind) nor the phone speaker's own output can barge-in and cut the advice
+// mid-sentence. The coach ALWAYS finishes speaking, then the mic resumes
+// automatically on the next chunk. The old RMS "duck" that hard-stopped
+// playback on any loud sound was removed for the same reason.
 
 // ---------------------------------------------------------------------------
 // Coach persona (provided by the PO — see CLAUDE.md). Sent as systemInstruction.
@@ -192,9 +189,6 @@ export class CoachLiveClient {
 
   /** Single-slot queue: newest shot waiting for a free turn (busy rule). */
   private queuedShot: Shot | null = null;
-
-  /** Consecutive above-threshold mic-level callbacks (local barge-in duck). */
-  private duckStreak = 0;
 
   /** Auto-reconnect bookkeeping. */
   private reconnectAttempts = 0;
@@ -532,6 +526,9 @@ export class CoachLiveClient {
     try {
       await mic.start(
         (chunk) => {
+          // Half-duplex: never stream mic audio while the coach is speaking —
+          // the advice must finish; listening resumes on the next chunk.
+          if (audioPlayer.isSpeaking()) return;
           try {
             session.sendRealtimeInput({
               audio: { data: chunk, mimeType: 'audio/pcm;rate=16000' },
@@ -542,10 +539,8 @@ export class CoachLiveClient {
         },
         (level) => {
           this.store().setMicLevel(level);
-          this.handleMicLevel(level);
         },
       );
-      this.duckStreak = 0;
       this.store().setCoachListening(true);
       this.store().setCoachError(null);
     } catch (e) {
@@ -569,7 +564,6 @@ export class CoachLiveClient {
   private stopMicStream(): void {
     const wasStreaming = mic.isActive();
     mic.stop();
-    this.duckStreak = 0;
     this.store().setCoachListening(false);
     this.store().setMicLevel(0);
     const session = this.session;
@@ -580,25 +574,6 @@ export class CoachLiveClient {
       } catch {
         /* rely on VAD */
       }
-    }
-  }
-
-  /**
-   * Local fast barge-in duck driven by the mic level meter. Only acts while the
-   * mic is actually streaming; the server `interrupted` signal remains primary.
-   */
-  private handleMicLevel(level: number): void {
-    if (!mic.isActive()) {
-      this.duckStreak = 0;
-      return;
-    }
-    if (level > MIC_DUCK_THRESHOLD) {
-      this.duckStreak += 1;
-      if (this.duckStreak >= DUCK_MIN_STREAK && audioPlayer.isSpeaking()) {
-        audioPlayer.stop();
-      }
-    } else {
-      this.duckStreak = 0;
     }
   }
 
@@ -705,7 +680,6 @@ export class CoachLiveClient {
 
     audioPlayer.stop();
     mic.stop();
-    this.duckStreak = 0;
     // Reset the mic UI state (listening + level meter). We do NOT touch micOn:
     // it is the user's per-session toggle intent, restored on the next connect.
     this.store().setCoachListening(false);
