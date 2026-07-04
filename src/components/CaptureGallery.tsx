@@ -24,12 +24,23 @@ interface GalleryItem {
   shotIndex: number;
 }
 
-export default function CaptureGallery() {
+interface CaptureGalleryProps {
+  /**
+   * 'rail' = compact vertical thumbnail rail docked to the RIGHT edge of the
+   * Live screen (small thumbs, no chips/critique — tap opens the lightbox for
+   * detail) so captures never cover the player. Default 'strip' keeps the
+   * original large swipeable layout.
+   */
+  variant?: 'strip' | 'rail';
+}
+
+export default function CaptureGallery({ variant = 'strip' }: CaptureGalleryProps) {
   const shots = useAppStore((s) => s.shots);
   const dominantHand = useAppStore((s) => s.settings.dominantHand);
   const t = useT();
   const stripRef = useRef<HTMLDivElement | null>(null);
   const [openItem, setOpenItem] = useState<GalleryItem | null>(null);
+  const rail = variant === 'rail';
 
   // Newest capture first. Derived only when a shot is added (shots ref changes).
   const items = useMemo<GalleryItem[]>(() => {
@@ -47,21 +58,23 @@ export default function CaptureGallery() {
   const newestId = items[0]?.capture.id;
   useEffect(() => {
     if (!newestId) return;
-    stripRef.current?.scrollTo({ left: 0, behavior: 'smooth' });
+    stripRef.current?.scrollTo({ left: 0, top: 0, behavior: 'smooth' });
   }, [newestId]);
 
   // Empty state: show a subtle placeholder so the feature is visibly present
   // and "waiting" before the first capture lands — never a blank void.
   if (items.length === 0) {
     return (
-      <div className="capture-gallery capture-gallery-empty">
+      <div
+        className={`capture-gallery capture-gallery-empty${rail ? ' capture-gallery-rail' : ''}`}
+      >
         <div className="capture-empty dim">{t('gallery.empty')}</div>
       </div>
     );
   }
 
   return (
-    <div className="capture-gallery">
+    <div className={`capture-gallery${rail ? ' capture-gallery-rail' : ''}`}>
       <div className="capture-gallery-head">
         <span className="capture-gallery-title">{t('live.captures')}</span>
         <span className="num faint">{items.length}</span>
@@ -73,6 +86,7 @@ export default function CaptureGallery() {
             capture={it.capture}
             shotIndex={it.shotIndex}
             dominantHand={dominantHand}
+            compact={rail}
             onOpen={() => setOpenItem(it)}
           />
         ))}
@@ -94,6 +108,8 @@ interface CaptureCardProps {
   capture: SwingCapture;
   shotIndex: number;
   dominantHand: DominantHand;
+  /** Rail mode: thumbnail only (no chips/critique) — detail lives in the lightbox. */
+  compact?: boolean;
   onOpen: () => void;
 }
 
@@ -101,6 +117,7 @@ const CaptureCard = memo(function CaptureCard({
   capture,
   shotIndex,
   dominantHand,
+  compact = false,
   onOpen,
 }: CaptureCardProps) {
   const t = useT();
@@ -133,6 +150,25 @@ const CaptureCard = memo(function CaptureCard({
   const critique =
     capture.critique ?? (capture.phase === 'contact' ? t('capture.pending') : '');
   const critiquePending = !capture.critique;
+
+  // Rail mode: image-only thumb (phase + shot tags stay); everything else —
+  // chips, critique, tap-hint — lives in the lightbox the tap opens.
+  if (compact) {
+    return (
+      <figure className="capture-card capture-card-mini tap" onClick={onOpen} role="button" tabIndex={0}>
+        <div className="capture-img-wrap">
+          {url ? (
+            <img className="capture-img" src={url} alt={t(phaseKey)} />
+          ) : (
+            <div className="capture-img capture-img-loading" />
+          )}
+          <span className="capture-shot-tag num">
+            {t('capture.shot')} {shotIndex}
+          </span>
+        </div>
+      </figure>
+    );
+  }
 
   return (
     <figure className="capture-card tap" onClick={onOpen} role="button" tabIndex={0}>

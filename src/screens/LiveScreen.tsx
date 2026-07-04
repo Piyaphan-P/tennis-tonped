@@ -227,8 +227,11 @@ export default function LiveScreen() {
 
         <div className="spacer" />
 
+        {/* Captures dock to the RIGHT edge as a compact rail (user feedback:
+            the old full-width strip covered the player). Tap → lightbox. */}
+        <CaptureGallery variant="rail" />
+
         <div className="live-bottom">
-          <CaptureGallery />
           <CoachBubble />
           <div className="row live-controls">
             <MicControl />
