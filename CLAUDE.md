@@ -81,3 +81,9 @@ Refinements run as Fable-led multi-agent workflows: **Fable = Product Owner** (p
 
 Commit/push only when asked. Co-author trailer:
 `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
+
+## Session log (what was actually done — read HANDOFF.md for what's next)
+
+- **Phase 1 shipped (2026-07-04, commit `d931446`):** full app (pose overlay, per-shot scoring, Gemini Live coach, THB cost monitor, stats/history-3-days, TH/EN) + Cloud Run deploy + GitHub push. Fable verdict: ship. Caught & removed hardcoded tokens in demo files before push.
+- **v3 shipped (2026-07-04, commit `4551689`):** always-on mic replacing push-to-talk (MicControl toggle + level meter, barge-in, iOS suspended-AudioContext fail-loud) + swing-capture hardening (finalize() fallback synthesis, CaptureLightbox, skeleton overlay in Summary) + major turn-attribution fix (`turnInterrupted` in liveClient). 36/36 tests. Redeployed revision `00003`.
+- **On-court test feedback (2026-07-04):** (1) no swing captures on real swings → real local bug, SHOT_THRESHOLDS tuned on synthetic data never trigger; (2) no coach audio + (3) no realtime coaching → both blocked on missing `GEMINI_API_KEY` (`/api/token` 503, verified). Launched workflow `tonped-capture-fix` (run `wf_f7da6a33-0ea`) to loosen detection, guarantee ≥1 capture per shot, and add an on-court detection HUD. **Status + resume instructions live in `HANDOFF.md` — always read it at session start and keep it updated.**
