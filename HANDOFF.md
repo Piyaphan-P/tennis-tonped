@@ -1,10 +1,23 @@
 # HANDOFF.md — สถานะงาน + สิ่งที่ต้องทำต่อ
 
-> อัปเดตล่าสุด: 2026-07-04 · สำหรับ Claude session ถัดไป (หรือคนที่มารับช่วง) อ่านคู่กับ `CLAUDE.md`
+> อัปเดตล่าสุด: 2026-07-04 (release v0.3) · สำหรับ Claude session ถัดไป (หรือคนที่มารับช่วง) อ่านคู่กับ `CLAUDE.md`
 
 ## TL;DR
 
-แอป deploy อยู่ที่ https://ton-phet-tennis-862607193158.asia-southeast1.run.app (revision `00003`, image `asia-southeast1-docker.pkg.dev/ton-team/ton-phet/app:v1`). ผลเทสสนามจริง (2026-07-04) เจอ 3 ปัญหา — 2 ใน 3 ติดที่ **ยังไม่มี `GEMINI_API_KEY`**, อีก 1 เป็นบั๊กจริงที่**กำลังแก้อยู่ใน workflow ที่ยังรันไม่จบ**
+แอป deploy อยู่ที่ https://ton-phet-tennis-862607193158.asia-southeast1.run.app (**revision `00004`**, image `…/ton-phet/app:v3`, git tag **v0.3**). บั๊ก "จับภาพวงสวิงไม่ขึ้น" **แก้แล้ว** (Fable verdict: ship, 39/39 tests) — ต้นตอคือ threshold จับ contact ตั้งไว้ ~2 เท่าของความเร็วสวิงจริงบนกล้องมือถือ 15fps. เพิ่ม Detection HUD บนจอ Live ไว้จูนในสนาม. เหลือ blocker เดียว: **ยังไม่มี `GEMINI_API_KEY` (AIza…)** — เสียง/โค้ชสดยังใช้ได้เฉพาะผ่าน AQ. token ชั่วคราวที่ paste ใน Settings (user ยืนยัน token ล่าสุดใช้ได้จริง เทสผ่าน Live API แล้ว)
+
+## v0.3 (2026-07-04) — สิ่งที่แก้
+
+- **Shot detection จูนสำหรับสวิงจริง**: backswing 0.8→0.5, forward 1.2→0.7, contact peak 2.0→1.1, rising frames 2→1 + `forwardBypass` (speed>1.0 ×2 เฟรม) สำหรับวงสวิงแนวดิ่ง/แกนกล้องที่ velX ไม่พลิกเครื่องหมาย. Idle/เดิน/เก็บลูกไม่ false-trigger (มีเทสยืนยัน)
+- **การันตี capture**: retry getJpeg ทุกเฟรมช่วง contact/follow-through + finalize fallback; getJpeg ล้มเรื่องวิดีโอ → วาด skeleton บนพื้นเข้มแทนการคืน undefined
+- **Detection HUD** (`src/components/DetectionHud.tsx`): phase trail (เตรียม/ง้าง/สวิง/กระทบ/ส่ง), มาตรวัดสปีดข้อมือเทียบ gate 1.1, ตัวนับช็อต/ทิ้ง, เหตุผลที่ทิ้งสวิง (พร้อมค่า peak ที่วัดได้จริง — **ใช้ค่านี้จูน threshold ในสนาม**), แฟลชภาพเมื่อ capture ลง
+- CaptureGallery มี empty-state (ไม่หายเงียบ)
+- minor ที่แก้แล้ว: `detector.reset()` เรียก `resetDetection()` (HUD ไม่ค้างค่าเก่า)
+- minor ที่ยังไม่แก้ (จาก review): HUD อ่าน gate จาก `SHOT_THRESHOLDS` static — จะ desync ถ้าวันหน้าใช้ per-instance overrides; shot 0-capture (แทบเป็นไปไม่ได้) เห็นได้จากการไม่มีแฟลชเท่านั้น
+
+## วิธีจูนในสนาม (สำคัญ!)
+
+ดู HUD ตอนตีจริง: ถ้าสวิงแล้ว**ตัวนับไม่ขึ้นแต่มีบรรทัด "ทิ้ง — พีค X.X"** แปลว่า peak จริงต่ำกว่า gate 1.1 → ลด `contactMinPeakSpeed` ใน `src/analysis/shotDetector.ts` ให้ต่ำกว่าค่า X.X ที่เห็น แล้ว build+deploy ใหม่
 
 ## ผลเทสสนามจริง → การวินิจฉัย
 
@@ -16,21 +29,17 @@
 
 **ข้อเท็จจริงที่ตรวจแล้ว:** pose loop / ShotDetector / capture ทำงานแยกจาก Gemini connection โดยสิ้นเชิง (`coachLive.connect()` เป็น fire-and-forget ที่ `src/screens/LiveScreen.tsx:123`) — ฉะนั้นข้อ 1 ไม่ใช่เพราะไม่มีคีย์
 
-## 🔄 งานที่กำลังรัน (ต้องตามต่อ!)
+## ✅ Workflow `tonped-capture-fix` เสร็จแล้ว (verdict: ship)
 
-**Workflow `tonped-capture-fix`** — Task ID `wdaggp2et`, run `wf_f7da6a33-0ea`
-- Script: `~/.claude/projects/-Users-h522140-Documents-Claude-Projects-tennis-project01/01445457-e1d6-4fb6-bf39-055b0c61f49d/workflows/scripts/tonped-capture-fix-wf_f7da6a33-0ea.js`
-- Journal: `.../subagents/workflows/wf_f7da6a33-0ea/journal.jsonl` (อ่านนี่เพื่อดู progress/ผลลัพธ์แต่ละ agent)
-- แผน: Fable Plan (วินิจฉัย) → Contracts (store/types) → Build ขนาน (detect=Sonnet: จูน SHOT_THRESHOLDS + การันตี capture ไม่ว่างทุก shot; hud=Opus: HUD บนจอโชว์ phase/จำนวนวงที่จับได้/แฟลชตอน capture ลง + empty-state ใน CaptureGallery) → Integrate (typecheck+test+build+Playwright) → Fable Review (schema: captureGuaranteed / hudShows / detectionLoosened)
-- ถ้า workflow ตาย/หลุด: resume ด้วย `Workflow({scriptPath: <ข้างบน>, resumeFromRunId: "wf_f7da6a33-0ea"})`
+Run `wf_f7da6a33-0ea` — journal อยู่ที่ `.../subagents/workflows/wf_f7da6a33-0ea/journal.jsonl` (มี diagnosis เต็ม + humanTestNeeded checklist). Deploy รอบใหม่ทำครบแล้ว (revision `00004`, tag v0.3)
 
-**เมื่อ workflow เสร็จ (verdict ship/ship-with-fixes):**
-1. แก้ findings ระดับ major (ถ้ามี) → `npm run typecheck && npm run test && npm run build` ต้องเขียวหมด
-2. Rebuild + push image: `docker buildx build --platform linux/amd64 -t asia-southeast1-docker.pkg.dev/ton-team/ton-phet/app:v1 --push .` (colima ต้องรันอยู่: `colima start`)
-3. Deploy: `gcloud run deploy ton-phet-tennis --image asia-southeast1-docker.pkg.dev/ton-team/ton-phet/app:v1 --region asia-southeast1 --allow-unauthenticated --project ton-team`
+**ขั้นตอน deploy มาตรฐาน (ใช้ซ้ำทุกรอบ):**
+1. `npm run typecheck && npm run test && npm run build` ต้องเขียวหมด
+2. Rebuild + push image: `docker buildx build --platform linux/amd64 -t asia-southeast1-docker.pkg.dev/ton-team/ton-phet/app:vN --push .` (colima ต้องรันอยู่: `colima start`)
+3. Deploy: `gcloud run deploy ton-phet-tennis --image asia-southeast1-docker.pkg.dev/ton-team/ton-phet/app:vN --region asia-southeast1 --allow-unauthenticated --project ton-team`
 4. Smoke: `curl -s -o /dev/null -w "%{http_code}" <URL>/` ต้อง 200
 5. **Audit secret ก่อน commit ทุกครั้ง**: `git diff --cached | grep -nE 'AQ\.[A-Za-z0-9_-]{20,}|AIza[A-Za-z0-9_-]{20,}'` ต้อง CLEAN
-6. Commit + push → https://github.com/Piyaphan-P/tennis-tonped
+6. Commit + push (+tag ถ้าเป็น release) → https://github.com/Piyaphan-P/tennis-tonped
 
 ## ⛔ Blocker ที่รอ user (ถามไปแล้ว ยังไม่ตอบ)
 

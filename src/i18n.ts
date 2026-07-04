@@ -158,6 +158,37 @@ const DICT = {
   'capture.shot': { th: 'ช็อต', en: 'Shot' },
   'capture.tapHint': { th: 'แตะเพื่อขยาย', en: 'Tap to enlarge' },
 
+  // --- capture gallery empty state (feature visible before first capture) ---
+  'gallery.empty': {
+    th: 'สวิงให้สุดวง — ภาพช็อตจะแสดงที่นี่',
+    en: 'Complete a swing — shot captures appear here',
+  },
+
+  // --- on-court detection HUD (phase trail short forms, TH primary) ---
+  'hud.phase.idle': { th: 'พร้อม', en: 'Idle' },
+  'hud.phase.prep': { th: 'เตรียม', en: 'Prep' },
+  'hud.phase.back': { th: 'ง้าง', en: 'Back' },
+  'hud.phase.fwd': { th: 'สวิง', en: 'Fwd' },
+  'hud.phase.contact': { th: 'กระทบ', en: 'Hit' },
+  'hud.phase.follow': { th: 'ส่ง', en: 'Follow' },
+  'hud.speed': { th: 'สปีด', en: 'spd' },
+  'hud.shots': { th: 'ช็อต', en: 'Shots' },
+  'hud.skip': { th: 'ทิ้ง', en: 'skip' },
+  'hud.captured': { th: 'บันทึกภาพแล้ว', en: 'Captured' },
+  'hud.completed': { th: 'ช็อต #{n} ✓ พีค {peak}', en: 'Shot #{n} ✓ peak {peak}' },
+  'hud.discard.noContact': {
+    th: 'สวิงไม่ถึงจุดกระทบ (พีค {peak})',
+    en: 'swing missed contact (peak {peak})',
+  },
+  'hud.discard.tooShort': {
+    th: 'สวิงสั้นเกินไป ({ms}ms)',
+    en: 'swing too short ({ms}ms)',
+  },
+  'hud.discard.tooLong': {
+    th: 'สวิงยาวเกินไป ({ms}ms)',
+    en: 'swing too long ({ms}ms)',
+  },
+
   // --- cost (demoted: corner ฿ button + testing panel) ---
   'cost.button': { th: 'ดูค่าใช้จ่าย', en: 'View cost' },
   'cost.title': { th: 'ค่าใช้จ่าย (สำหรับทดสอบ)', en: 'Cost (testing)' },

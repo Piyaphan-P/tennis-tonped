@@ -50,7 +50,15 @@ export default function CaptureGallery() {
     stripRef.current?.scrollTo({ left: 0, behavior: 'smooth' });
   }, [newestId]);
 
-  if (items.length === 0) return null;
+  // Empty state: show a subtle placeholder so the feature is visibly present
+  // and "waiting" before the first capture lands — never a blank void.
+  if (items.length === 0) {
+    return (
+      <div className="capture-gallery capture-gallery-empty">
+        <div className="capture-empty dim">{t('gallery.empty')}</div>
+      </div>
+    );
+  }
 
   return (
     <div className="capture-gallery">

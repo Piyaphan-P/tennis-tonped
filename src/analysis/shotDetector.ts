@@ -38,6 +38,7 @@ import type {
   ShotPhase,
   ShotType,
   SwingCapture,
+  SwingDiscardReason,
 } from '../types';
 import { appStore, evaluateAngleStatuses } from '../store';
 import { scoreShot } from './scoring';
@@ -146,19 +147,26 @@ function buildLocalCritique(
 // Tunable thresholds (unitless normalized-units/s unless noted)
 // ---------------------------------------------------------------------------
 
+// NOTE: tuned for real 15fps EMA-smoothed phone-camera wrist speed against a
+// ball machine (see shotDetector.capture.test.ts for the realistic-swing +
+// idle-jitter regression traces). Idle standing/walking smooths to ~0.1-0.6;
+// a moderate real swing's EMA-smoothed peak lands ~0.8-1.6. The escalating
+// 0.5 -> 0.7 -> 1.1 chain plus the rise-then-drop peak shape, >=300ms
+// duration, 10-frame return-to-idle streak, and 800ms cooldown together keep
+// casual movement from ever completing a shot.
 export const SHOT_THRESHOLDS = {
   /** Speed above which idle starts counting toward entering 'preparation'. */
   prepEnterSpeed: 0.3,
   /** Consecutive frames above prepEnterSpeed required to leave idle. */
   prepEnterFrames: 3,
   /** Above this speed while in 'preparation', move to 'backswing'. */
-  backswingMinSpeed: 0.8,
+  backswingMinSpeed: 0.5,
   /** Above this speed once velX flips sign, move to 'forward-swing'. */
-  forwardSwingMinSpeed: 1.2,
+  forwardSwingMinSpeed: 0.7,
   /** A local speed peak must reach at least this to count as 'contact'. */
-  contactMinPeakSpeed: 2.0,
+  contactMinPeakSpeed: 1.1,
   /** Consecutive rising frames required before a drop is treated as a peak. */
-  contactMinRisingFrames: 2,
+  contactMinRisingFrames: 1,
   /** Below this speed, frames count toward the return-to-idle streak. */
   idleReturnSpeed: 0.3,
   /** Consecutive low-speed frames required to fall back to 'idle'. */
@@ -171,7 +179,16 @@ export const SHOT_THRESHOLDS = {
   cooldownMs: 800,
   /** Dominant-wrist visibility below this at contact -> type 'unknown'. */
   minVisibilityForType: 0.5,
-} as const;
+  /**
+   * While in 'backswing', if speed stays above this for forwardBypassFrames
+   * consecutive frames WITHOUT velX ever flipping sign, enter 'forward-swing'
+   * anyway. Handles vertical/camera-axis swings where velX (horizontal
+   * velocity) never flips even though a real swing is happening.
+   */
+  forwardBypassSpeed: 1.0,
+  /** Consecutive above-forwardBypassSpeed frames (no sign flip) required to bypass. */
+  forwardBypassFrames: 2,
+};
 
 // ---------------------------------------------------------------------------
 // Shot classification
@@ -226,6 +243,12 @@ interface FrameSnapshot {
 
 export interface ShotDetectorOptions {
   onShotCompleted: (shot: Shot) => void;
+  /**
+   * Per-instance threshold overrides, merged over SHOT_THRESHOLDS. Existing
+   * callers pass nothing and get the SHOT_THRESHOLDS defaults; tests can
+   * override individual keys without mutating the shared exported object.
+   */
+  thresholds?: Partial<typeof SHOT_THRESHOLDS>;
 }
 
 /**
@@ -235,6 +258,9 @@ export interface ShotDetectorOptions {
 export class ShotDetector {
   private opts: ShotDetectorOptions;
 
+  /** Merged thresholds (SHOT_THRESHOLDS + opts.thresholds); the state machine reads only this. */
+  private th: typeof SHOT_THRESHOLDS;
+
   private phase: ShotPhase = 'idle';
 
   // idle -> preparation gate
@@ -243,6 +269,8 @@ export class ShotDetector {
 
   // backswing / forward-swing tracking
   private backswingSign = 0;
+  // consecutive above-forwardBypassSpeed frames in 'backswing' with no sign flip
+  private bypassStreak = 0;
 
   // contact (local peak) detection
   private risingStreak = 0;
@@ -268,6 +296,7 @@ export class ShotDetector {
 
   constructor(opts: ShotDetectorOptions) {
     this.opts = opts;
+    this.th = { ...SHOT_THRESHOLDS, ...opts.thresholds };
   }
 
   /** Reset the state machine (e.g. on session start). Also resets phase in the store. */
@@ -276,6 +305,7 @@ export class ShotDetector {
     this.prepStreak = 0;
     this.prepStreakStartMs = 0;
     this.backswingSign = 0;
+    this.bypassStreak = 0;
     this.risingStreak = 0;
     this.prevSnapshot = null;
     this.lowSpeedStreak = 0;
@@ -283,6 +313,9 @@ export class ShotDetector {
     this.cooldownUntilMs = 0;
     this.clearAccumulated();
     appStore.getState().setPhase('idle');
+    // Keep HUD counters in lockstep with the detector's lifecycle — re-entering
+    // Live without passing Home must not carry stale counts.
+    appStore.getState().resetDetection();
   }
 
   private clearAccumulated(): void {
@@ -340,16 +373,18 @@ export class ShotDetector {
     if (this.phase === 'idle') {
       if (ts < this.cooldownUntilMs) return; // cooling down after last shot
 
-      if (speed > SHOT_THRESHOLDS.prepEnterSpeed) {
+      if (speed > this.th.prepEnterSpeed) {
         if (this.prepStreak === 0) this.prepStreakStartMs = ts;
         this.prepStreak += 1;
-        if (this.prepStreak >= SHOT_THRESHOLDS.prepEnterFrames) {
+        if (this.prepStreak >= this.th.prepEnterFrames) {
           this.startMs = this.prepStreakStartMs;
           this.prepStreak = 0;
           this.risingStreak = 0;
           this.backswingSign = 0;
+          this.bypassStreak = 0;
           this.lowSpeedStreak = 0;
           this.prevSnapshot = { ts, angles, landmarks: frame.landmarks, speed };
+          appStore.getState().markSwingStarted();
           this.setPhase('preparation');
         }
       } else {
@@ -359,14 +394,14 @@ export class ShotDetector {
     }
 
     // --- non-idle: track return-to-idle streak first ----------------------
-    if (speed < SHOT_THRESHOLDS.idleReturnSpeed) {
+    if (speed < this.th.idleReturnSpeed) {
       if (this.lowSpeedStreak === 0) this.lowSpeedStreakStartMs = ts;
       this.lowSpeedStreak += 1;
     } else {
       this.lowSpeedStreak = 0;
     }
 
-    if (this.lowSpeedStreak >= SHOT_THRESHOLDS.idleReturnFrames) {
+    if (this.lowSpeedStreak >= this.th.idleReturnFrames) {
       this.finalize(this.lowSpeedStreakStartMs, getJpeg);
       this.prevSnapshot = { ts, angles, landmarks: frame.landmarks, speed };
       return;
@@ -375,8 +410,9 @@ export class ShotDetector {
     // --- phase-specific transitions ---------------------------------------
     switch (this.phase) {
       case 'preparation': {
-        if (speed > SHOT_THRESHOLDS.backswingMinSpeed) {
+        if (speed > this.th.backswingMinSpeed) {
           this.backswingSign = Math.sign(velX) || 1;
+          this.bypassStreak = 0;
           this.setPhase('backswing');
         }
         break;
@@ -387,12 +423,27 @@ export class ShotDetector {
         if (
           curSign !== 0 &&
           curSign === -this.backswingSign &&
-          speed > SHOT_THRESHOLDS.forwardSwingMinSpeed
+          speed > this.th.forwardSwingMinSpeed
         ) {
           this.risingStreak = 0;
+          this.bypassStreak = 0;
           // Keyframe #1: top of the backswing (throttled — skipped if no frame).
           this.captureKeyframe('backswing', getJpeg);
           this.setPhase('forward-swing');
+          break;
+        }
+        // Bypass: vertical/camera-axis swings where velX never flips sign
+        // but speed is sustained well above idle — treat as a real swing.
+        if (speed > this.th.forwardBypassSpeed) {
+          this.bypassStreak += 1;
+          if (this.bypassStreak >= this.th.forwardBypassFrames) {
+            this.risingStreak = 0;
+            this.bypassStreak = 0;
+            this.captureKeyframe('backswing', getJpeg);
+            this.setPhase('forward-swing');
+          }
+        } else {
+          this.bypassStreak = 0;
         }
         break;
       }
@@ -405,8 +456,8 @@ export class ShotDetector {
           // speed dropped this frame — check whether the previous frame was
           // a qualifying local peak (contact).
           if (
-            this.risingStreak >= SHOT_THRESHOLDS.contactMinRisingFrames &&
-            prevSpeed >= SHOT_THRESHOLDS.contactMinPeakSpeed &&
+            this.risingStreak >= this.th.contactMinRisingFrames &&
+            prevSpeed >= this.th.contactMinPeakSpeed &&
             this.prevSnapshot
           ) {
             this.contactMs = this.prevSnapshot.ts;
@@ -432,12 +483,19 @@ export class ShotDetector {
         // Contact is a single-frame marker; immediately settle into decay.
         // Keyframe #3: follow-through entry (throttled — skipped if no frame).
         this.captureKeyframe('follow-through', getJpeg);
+        // GUARANTEED CAPTURE retry: the instant grab above (in 'forward-swing')
+        // may have missed (one-tick video/pose dropout at the exact peak). Keep
+        // trying every tick from here on, synthesized from the detector's OWN
+        // stored peak data — never the late ctx's pose — until one lands.
+        this.retryContactCapture(getJpeg);
         this.setPhase('follow-through');
         break;
       }
 
       case 'follow-through':
-        // Stay here until the idle-return streak above fires.
+        // Stay here until the idle-return streak above fires; keep retrying
+        // the contact capture every tick until it lands (see 'contact' case).
+        this.retryContactCapture(getJpeg);
         break;
 
       default:
@@ -447,16 +505,46 @@ export class ShotDetector {
     this.prevSnapshot = { ts, angles, landmarks: frame.landmarks, speed };
   }
 
+  /**
+   * GUARANTEED CAPTURE retry (item 2 of the capture-robustness fix): if the
+   * swing is past its peak and no 'contact' capture has landed yet, try
+   * getJpeg() again. On success, the capture is ALWAYS synthesized from this
+   * detector's own stored peak data (this.contactMs/contactAngles/
+   * contactLandmarks) — never from getJpeg's (now-late) pose — so the
+   * skeleton drawn on the recovered frame still matches the true contact
+   * instant even though the JPEG itself is a few frames late. No-op once a
+   * 'contact' capture already exists, and safe to call every tick.
+   */
+  private retryContactCapture(getJpeg?: GetJpeg): void {
+    if (!getJpeg) return;
+    if (!this.contactAngles || !this.contactLandmarks) return;
+    if (this.captures.some((c) => c.phase === 'contact')) return;
+    const ctx = getJpeg();
+    if (!ctx) return;
+    const settings = appStore.getState().settings;
+    const capture: PendingCapture = {
+      id: crypto.randomUUID(),
+      phase: 'contact',
+      jpegBase64: ctx.jpegBase64,
+      atMs: this.contactMs,
+      angles: this.contactAngles,
+      landmarks: this.contactLandmarks,
+      statuses: evaluateAngleStatuses(this.contactAngles, settings.dominantHand, 'contact'),
+    };
+    this.captures.push(capture);
+    if (settings.sendContactFrame && !this.contactFrameJpegBase64) {
+      this.contactFrameJpegBase64 = ctx.jpegBase64;
+    }
+  }
+
   /** Build + emit the Shot (if valid) and return to idle with a cooldown. */
   private finalize(endMs: number, getJpeg?: GetJpeg): void {
     const duration = endMs - this.startMs;
     const hasContact = this.contactAngles !== null && this.contactLandmarks !== null;
+    const validDuration =
+      duration >= this.th.minShotDurationMs && duration <= this.th.maxShotDurationMs;
 
-    if (
-      hasContact &&
-      duration >= SHOT_THRESHOLDS.minShotDurationMs &&
-      duration <= SHOT_THRESHOLDS.maxShotDurationMs
-    ) {
+    if (hasContact && validDuration) {
       const { settings, shots } = appStore.getState();
       const type = classifyShotType(this.contactLandmarks as Landmark[], settings.dominantHand);
       const { score, issues } = scoreShot({
@@ -539,6 +627,37 @@ export class ShotDetector {
 
       appStore.getState().addShot(shot);
       this.opts.onShotCompleted(shot);
+
+      // Detection HUD contract: surface every completed shot (with its
+      // capture count) so a capture-less shot — which the guarantees above
+      // should make impossible — is visible on the HUD instead of silent.
+      appStore.getState().pushDetectionEvent({
+        atMs: endMs,
+        kind: 'shot-completed',
+        reason: '',
+        peakWristSpeed: this.peakWristSpeed,
+        durationMs: duration,
+        captureCount: captures.length,
+        shotIndex: shot.index,
+      });
+    } else {
+      // Discarded swing: still surface it on the detection HUD so a real
+      // on-court swing that never reached 'contact' (or was too short/long)
+      // is visible instead of silently vanishing.
+      const reason: SwingDiscardReason = !hasContact
+        ? 'no-contact'
+        : duration < this.th.minShotDurationMs
+          ? 'too-short'
+          : 'too-long';
+      appStore.getState().pushDetectionEvent({
+        atMs: endMs,
+        kind: 'swing-discarded',
+        reason,
+        peakWristSpeed: this.peakWristSpeed,
+        durationMs: duration,
+        captureCount: 0,
+        shotIndex: 0,
+      });
     }
 
     // Reset swing accumulators and enter cooldown, whether the swing was
@@ -548,8 +667,9 @@ export class ShotDetector {
     this.prepStreak = 0;
     this.risingStreak = 0;
     this.backswingSign = 0;
+    this.bypassStreak = 0;
     this.lowSpeedStreak = 0;
-    this.cooldownUntilMs = endMs + SHOT_THRESHOLDS.cooldownMs;
+    this.cooldownUntilMs = endMs + this.th.cooldownMs;
     this.setPhase('idle');
   }
 }

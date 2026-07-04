@@ -480,3 +480,34 @@ export interface CostState {
   /** Count of usageMetadata messages parsed (debug/telemetry). */
   usageEvents: number;
 }
+
+// ---------------------------------------------------------------------------
+// Detection HUD (on-court swing detection telemetry)
+// ---------------------------------------------------------------------------
+
+/** Why the detector discarded a swing ('' when the swing completed as a shot). */
+export type SwingDiscardReason = '' | 'no-contact' | 'too-short' | 'too-long';
+
+/** One detector outcome, pushed by ShotDetector.finalize() for the on-court detection HUD. */
+export interface DetectionEvent {
+  /** performance.now()-domain ms of finalize. */
+  atMs: number;
+  kind: 'shot-completed' | 'swing-discarded';
+  reason: SwingDiscardReason;
+  /** Peak smoothed wrist speed seen during the swing (normalized units/s; 0 if none). */
+  peakWristSpeed: number;
+  durationMs: number;
+  /** Number of captures attached to the emitted shot (0 for discarded swings). */
+  captureCount: number;
+  /** Shot index when kind === 'shot-completed', else 0. */
+  shotIndex: number;
+}
+
+/** Running detection counters + last event for the Live detection HUD. */
+export interface DetectionHudState {
+  /** idle -> preparation entries this session. */
+  swingsStarted: number;
+  shotsCompleted: number;
+  swingsDiscarded: number;
+  lastEvent: DetectionEvent | null;
+}

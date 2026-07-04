@@ -31,6 +31,8 @@ import type {
   ConnectionState,
   CostBreakdown,
   CostState,
+  DetectionEvent,
+  DetectionHudState,
   DominantHand,
   History,
   JointAngles,
@@ -320,6 +322,13 @@ const INITIAL_COST: CostState = {
   usageEvents: 0,
 };
 
+const INITIAL_DETECTION: DetectionHudState = {
+  swingsStarted: 0,
+  shotsCompleted: 0,
+  swingsDiscarded: 0,
+  lastEvent: null,
+};
+
 // ---------------------------------------------------------------------------
 // Cost math (pure; mirrored by src/cost/pricing.ts for standalone use)
 // ---------------------------------------------------------------------------
@@ -441,6 +450,9 @@ export interface AppState {
   coach: CoachState;
   cost: CostState;
 
+  // --- detection HUD (written ONLY by ShotDetector; read by DetectionHud) ---
+  detection: DetectionHudState;
+
   // --- persisted history (loaded + 3-day-pruned at store init) ---
   history: History;
 
@@ -513,6 +525,14 @@ export interface AppState {
   beginShotCost: (shotId: string) => void;
   /** Stop attribution (idempotent; no-op if a different shot is active). */
   endShotCost: (shotId: string) => void;
+
+  // --- actions: detection HUD ---
+  /** Detector entered 'preparation' (a swing attempt began). */
+  markSwingStarted: () => void;
+  /** Detector finalized a swing (completed or discarded); updates counters + lastEvent. */
+  pushDetectionEvent: (ev: DetectionEvent) => void;
+  /** Reset counters (ShotDetector.reset() calls this on session start). */
+  resetDetection: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -533,6 +553,8 @@ export const useAppStore = create<AppState>()((set) => ({
   shots: [],
   coach: INITIAL_COACH,
   cost: INITIAL_COST,
+
+  detection: INITIAL_DETECTION,
 
   history: loadHistory(),
 
@@ -574,6 +596,7 @@ export const useAppStore = create<AppState>()((set) => ({
       pose: INITIAL_POSE,
       coach: INITIAL_COACH,
       cost: INITIAL_COST,
+      detection: INITIAL_DETECTION,
     }),
   markSessionLive: () =>
     set((s) => ({ session: { ...s.session, status: 'live', error: null } })),
@@ -699,6 +722,24 @@ export const useAppStore = create<AppState>()((set) => ({
         ? { cost: { ...s.cost, attributingShotId: null } }
         : s,
     ),
+
+  // --- detection HUD ---
+  markSwingStarted: () =>
+    set((s) => ({
+      detection: { ...s.detection, swingsStarted: s.detection.swingsStarted + 1 },
+    })),
+  pushDetectionEvent: (ev) =>
+    set((s) => ({
+      detection: {
+        ...s.detection,
+        lastEvent: ev,
+        shotsCompleted:
+          s.detection.shotsCompleted + (ev.kind === 'shot-completed' ? 1 : 0),
+        swingsDiscarded:
+          s.detection.swingsDiscarded + (ev.kind === 'swing-discarded' ? 1 : 0),
+      },
+    })),
+  resetDetection: () => set({ detection: INITIAL_DETECTION }),
 }));
 
 // ---------------------------------------------------------------------------

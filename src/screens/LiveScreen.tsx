@@ -26,6 +26,7 @@ import PoseCanvas from '../components/PoseCanvas';
 import CoachBubble from '../components/CoachBubble';
 import CaptureGallery from '../components/CaptureGallery';
 import TelemetryStrip from '../components/TelemetryStrip';
+import DetectionHud from '../components/DetectionHud';
 import ScoreBadge from '../components/ScoreBadge';
 import CostFab from '../components/CostFab';
 import MicControl from '../components/MicControl';
@@ -217,6 +218,7 @@ export default function LiveScreen() {
             <ScoreBadge compact />
           </div>
           <TelemetryStrip />
+          <DetectionHud />
 
           {coachError && (
             <span className="chip live-coach-err">{translateError(coachError, lang)}</span>

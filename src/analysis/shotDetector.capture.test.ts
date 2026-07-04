@@ -243,4 +243,114 @@ describe('shotDetector capture generation (regression: captures must be real)', 
     const shot = completed.get();
     expect(shot.captures).toEqual([]);
   });
+
+  it('(e) getJpeg misses the exact peak tick but succeeds 2 ticks later -> shot.captures still contains a synthesized "contact" entry identical to the detector\'s own peak data', () => {
+    const completed = captureCompletedShot();
+    const detector = new ShotDetector({ onShotCompleted: completed.onShotCompleted });
+    detector.reset();
+
+    // Fails on the first 2 attempts (backswing keyframe, contact-at-peak
+    // attempt), succeeds from the 3rd attempt onward (the 'contact'-phase
+    // retry-across-frames tick right after the peak).
+    let calls = 0;
+    const getJpeg: GetJpeg = () => {
+      calls += 1;
+      if (calls <= 2) return undefined;
+      return mkCtx('recovered-2-ticks-late');
+    };
+
+    const peakAngles = runSyntheticSwing(detector, getJpeg);
+
+    const shot = completed.get();
+    expect(calls).toBeGreaterThanOrEqual(3);
+
+    const contact = shot.captures.find((c) => c.phase === 'contact');
+    expect(contact).toBeDefined();
+    expect(contact?.jpegBase64).toBe('jpeg-recovered-2-ticks-late');
+    // Synthesized from the detector's OWN stored peak data — not the late
+    // getJpeg() ctx's (irrelevant) pose/timestamp.
+    expect(contact?.angles).toBe(peakAngles);
+    expect(contact?.atMs).toBe(shot.contactMs);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Realistic 15fps EMA-smoothed phone-camera swing trace (SHOT_THRESHOLDS
+// robustness regression) — proves the loosened defaults catch a moderate
+// real swing whose smoothed peak is only ~1.3, with just 1 rising frame and
+// NO velX sign flip (a vertical/camera-axis swing bypassed via
+// forwardBypassSpeed/forwardBypassFrames) — while idle jitter never trips it.
+// ---------------------------------------------------------------------------
+
+describe('shotDetector threshold robustness (realistic real-device swing vs. idle jitter)', () => {
+  beforeEach(() => {
+    appStore.getState().startSession();
+  });
+
+  it('a realistic EMA-smoothed swing (peak ~1.3, 1 rising frame, no velX flip) completes a shot', () => {
+    const completed = captureCompletedShot();
+    const detector = new ShotDetector({ onShotCompleted: completed.onShotCompleted });
+    detector.reset();
+
+    // 15fps cadence (~66.7ms/frame). velX stays positive throughout (no sign
+    // flip) — mirrors a vertical/camera-axis real swing. Speeds are the kind
+    // of EMA-smoothed values a real ball-machine-facing swing actually
+    // produces: well below the OLD thresholds (0.8 / 1.2 / 2.0) but above the
+    // NEW ones (0.5 / 0.7 / 1.1), with the forwardBypassSpeed/Frames chain
+    // (1.0 for 2 frames) carrying it from 'backswing' into 'forward-swing'
+    // since velX never flips.
+    const trace: Array<[number, number]> = [
+      [0.35, 0.1], // idle prep streak 1 (>prepEnterSpeed 0.3)
+      [0.35, 0.1], // idle prep streak 2
+      [0.35, 0.1], // idle prep streak 3 -> preparation
+      [0.55, 0.1], // preparation -> backswing (>backswingMinSpeed 0.5)
+      [1.05, 0.1], // backswing, bypass streak 1 (>forwardBypassSpeed 1.0), no sign flip
+      [1.2, 0.1], // backswing, bypass streak 2 -> bypass into forward-swing
+      [1.3, 0.1], // forward-swing rising 1 (peak, >contactMinPeakSpeed 1.1)
+      [0.6, 0.1], // drop -> contact locked at 1.3 (contactMinRisingFrames=1 satisfied)
+      [0.4, 0.1], // contact -> follow-through
+      [0.2, 0], // follow-through low-speed streak 1
+      [0.2, 0], // 2
+      [0.2, 0], // 3
+      [0.2, 0], // 4
+      [0.2, 0], // 5
+      [0.2, 0], // 6
+      [0.2, 0], // 7
+      [0.2, 0], // 8
+      [0.2, 0], // 9
+      [0.2, 0], // 10 -> idleReturnFrames reached -> finalize()
+    ];
+
+    const DT = 1000 / 15;
+    trace.forEach(([speed, velX], i) => {
+      const ts = i * DT;
+      detector.onFrame(mkFrame(ts), mkAngles(ts, speed, velX), undefined);
+    });
+
+    const shot = completed.get();
+    expect(shot.peakWristSpeed).toBeCloseTo(1.3, 5);
+
+    const detection = appStore.getState().detection;
+    expect(detection.shotsCompleted).toBeGreaterThanOrEqual(1);
+    expect(detection.lastEvent?.kind).toBe('shot-completed');
+  });
+
+  it('idle-jitter wander (speed <= 0.6, sign flipping) never completes a shot', () => {
+    let called = false;
+    const detector = new ShotDetector({ onShotCompleted: () => { called = true; } });
+    detector.reset();
+
+    const DT = 1000 / 15;
+    // 200 frames (~13s) of small pseudo-random wander in [0, 0.6], sign
+    // flipping every few frames — plausible casual standing/walking motion.
+    for (let i = 0; i < 200; i++) {
+      const ts = i * DT;
+      const speed = 0.6 * Math.abs(Math.sin(i * 0.7));
+      const velX = Math.sin(i * 0.9);
+      detector.onFrame(mkFrame(ts), mkAngles(ts, speed, velX), undefined);
+    }
+
+    expect(called).toBe(false);
+    expect(appStore.getState().detection.shotsCompleted).toBe(0);
+  });
 });
