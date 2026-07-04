@@ -430,8 +430,12 @@ export interface CoachState {
   bubbleLang: Lang;
   /** Coach audio currently playing. */
   speaking: boolean;
-  /** Mic push-to-talk currently streaming to Gemini. */
+  /** Continuous mic currently streaming PCM16k to Gemini. */
   listening: boolean;
+  /** Continuous open-mic toggle (default ON; user-controlled, per-session). */
+  micOn: boolean;
+  /** Smoothed mic input level 0..1 (~10Hz) for the listening indicator. */
+  micLevel: number;
   /**
    * Non-fatal coach error, null if none. MUST be an i18n key (e.g.
    * 'coach.reconnecting', 'coach.connectionLost', 'error.micDenied') —

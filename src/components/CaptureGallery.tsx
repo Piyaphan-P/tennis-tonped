@@ -3,19 +3,21 @@
 //
 // A horizontally-swipeable strip of LARGE captured swing keyframes, newest
 // first, each with the colored skeleton drawn over the image (via
-// captureRenderer) plus the coach's / local per-frame critique.
+// captureRenderer) plus the coach's / local per-frame critique. Tapping a
+// card opens it full-screen in CaptureLightbox.
 //
 // PERF: never re-render per pose frame. We select the STABLE `shots` ref (which
 // pushPoseFrame never touches), derive captures with useMemo, and each card
 // renders its data-URL once via an effect keyed on the immutable capture.id.
 // ============================================================================
 
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../store';
 import { useT } from '../i18n';
 import type { I18nKey } from '../i18n';
 import type { DominantHand, SwingCapture } from '../types';
 import { renderCaptureToDataUrl, colorForStatus } from '../analysis/captureRenderer';
+import CaptureLightbox from './CaptureLightbox';
 
 interface GalleryItem {
   capture: SwingCapture;
@@ -26,6 +28,8 @@ export default function CaptureGallery() {
   const shots = useAppStore((s) => s.shots);
   const dominantHand = useAppStore((s) => s.settings.dominantHand);
   const t = useT();
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  const [openItem, setOpenItem] = useState<GalleryItem | null>(null);
 
   // Newest capture first. Derived only when a shot is added (shots ref changes).
   const items = useMemo<GalleryItem[]>(() => {
@@ -38,6 +42,14 @@ export default function CaptureGallery() {
     return out.reverse();
   }, [shots]);
 
+  // Auto-show the newest capture: whenever a new one lands (items is
+  // newest-first, so items[0] changes), scroll the strip back to the start.
+  const newestId = items[0]?.capture.id;
+  useEffect(() => {
+    if (!newestId) return;
+    stripRef.current?.scrollTo({ left: 0, behavior: 'smooth' });
+  }, [newestId]);
+
   if (items.length === 0) return null;
 
   return (
@@ -46,16 +58,26 @@ export default function CaptureGallery() {
         <span className="capture-gallery-title">{t('live.captures')}</span>
         <span className="num faint">{items.length}</span>
       </div>
-      <div className="capture-strip">
+      <div className="capture-strip" ref={stripRef}>
         {items.map((it) => (
           <CaptureCard
             key={it.capture.id}
             capture={it.capture}
             shotIndex={it.shotIndex}
             dominantHand={dominantHand}
+            onOpen={() => setOpenItem(it)}
           />
         ))}
       </div>
+
+      {openItem && (
+        <CaptureLightbox
+          capture={openItem.capture}
+          shotIndex={openItem.shotIndex}
+          dominantHand={dominantHand}
+          onClose={() => setOpenItem(null)}
+        />
+      )}
     </div>
   );
 }
@@ -64,15 +86,16 @@ interface CaptureCardProps {
   capture: SwingCapture;
   shotIndex: number;
   dominantHand: DominantHand;
+  onOpen: () => void;
 }
 
 const CaptureCard = memo(function CaptureCard({
   capture,
   shotIndex,
   dominantHand,
+  onOpen,
 }: CaptureCardProps) {
   const t = useT();
-  const lang = useAppStore((s) => s.lang);
   const [url, setUrl] = useState<string | null>(null);
 
   // Render the image + skeleton overlay once (capture is immutable by id).
@@ -104,7 +127,7 @@ const CaptureCard = memo(function CaptureCard({
   const critiquePending = !capture.critique;
 
   return (
-    <figure className="capture-card">
+    <figure className="capture-card tap" onClick={onOpen} role="button" tabIndex={0}>
       <div className="capture-img-wrap">
         {url ? (
           <img className="capture-img" src={url} alt={t(phaseKey)} />
@@ -115,6 +138,7 @@ const CaptureCard = memo(function CaptureCard({
         <span className="capture-shot-tag num">
           {t('capture.shot')} {shotIndex}
         </span>
+        <span className="capture-tap-hint">{t('capture.tapHint')}</span>
       </div>
       <div className="capture-chips">
         <span className="capture-chip num" style={{ color: colorForStatus(s.domElbow) }}>

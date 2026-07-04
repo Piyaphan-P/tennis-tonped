@@ -12,6 +12,14 @@
 // the store, and fires onShotCompleted so the caller (Live.tsx) can kick off
 // the per-shot Gemini coaching request.
 //
+// CAPTURE GUARANTEE: finalize() always ensures shot.captures has a 'contact'
+// entry when a frame is grabbable at all — even if the exact-instant grab in
+// onFrame missed (a one-tick pose/video dropout), it retries getJpeg() once
+// at finalize time and synthesizes the capture from the detector's own
+// peak-frame angles/landmarks (never the late ctx's pose). That capture is
+// also the single image liveClient sends to Gemini, so the gallery frame and
+// the coach's critique frame are always the same capture.
+//
 // All thresholds are unitless normalized-units/s (wrist speed is normalized
 // image-space distance per second) and are exported as SHOT_THRESHOLDS so
 // integration can tune them without touching the state machine.
@@ -458,13 +466,45 @@ export class ShotDetector {
         dominantHand: settings.dominantHand,
       });
 
-      // getJpeg may also be supplied lazily here if the caller deferred the
-      // capture (defensive; normal path captures it at contact time above).
-      const lateCtx =
-        this.contactFrameJpegBase64 === undefined && settings.sendContactFrame && getJpeg
-          ? getJpeg()
-          : undefined;
-      const contactFrameJpegBase64 = this.contactFrameJpegBase64 ?? lateCtx?.jpegBase64;
+      // FALLBACK: the normal path snapshots the 'contact' keyframe the instant
+      // the peak is detected (in onFrame, above). If that attempt missed —
+      // e.g. a one-tick MediaPipe/video dropout right at the swing's peak —
+      // this.captures has NO 'contact' entry even though we know a shot
+      // happened. Retry getJpeg() once, here, and synthesize the contact
+      // keyframe from the detector's OWN peak-frame data (this.contactAngles /
+      // this.contactLandmarks) — NEVER from whatever pose getJpeg's ctx
+      // happens to return "late" — so the skeleton drawn on the recovered
+      // frame still matches the actual contact instant. This guarantees
+      // captures.length >= 1 whenever a shot completes and any frame is
+      // grabbable, and keeps the Gemini image + the gallery frame as the
+      // exact same capture (liveClient prefers shot.captures over the legacy
+      // field below).
+      let contactCapture = this.captures.find((c) => c.phase === 'contact');
+      if (!contactCapture && getJpeg) {
+        const ctx = getJpeg();
+        if (ctx) {
+          contactCapture = {
+            id: crypto.randomUUID(),
+            phase: 'contact',
+            jpegBase64: ctx.jpegBase64,
+            atMs: this.contactMs,
+            angles: this.contactAngles as JointAngles,
+            landmarks: this.contactLandmarks as Landmark[],
+            statuses: evaluateAngleStatuses(
+              this.contactAngles as JointAngles,
+              settings.dominantHand,
+              'contact',
+            ),
+          };
+          this.captures.push(contactCapture);
+        }
+      }
+
+      // Legacy single-image field: kept in sync with the SAME contact capture
+      // (never a separately-fetched frame), gated by sendContactFrame as before.
+      const contactFrameJpegBase64 =
+        this.contactFrameJpegBase64 ??
+        (settings.sendContactFrame ? contactCapture?.jpegBase64 : undefined);
 
       const id = crypto.randomUUID();
       const lang = appStore.getState().lang;

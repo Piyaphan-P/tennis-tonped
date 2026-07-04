@@ -866,6 +866,18 @@ input[type='password'] {
   position: relative;
   width: 100%;
 }
+.capture-tap-hint {
+  position: absolute;
+  bottom: var(--sp-2);
+  right: var(--sp-2);
+  padding: 2px var(--sp-2);
+  border-radius: var(--radius-pill);
+  background: rgba(10, 17, 19, 0.78);
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  pointer-events: none;
+}
 .capture-img {
   display: block;
   width: 100%;
@@ -955,4 +967,67 @@ input[type='password'] {
   font-size: 1.3rem;
   font-weight: 800;
   color: var(--accent);
+}
+
+/* --- capture lightbox: full-screen scrim ABOVE the live overlay/Summary --- */
+.capture-lightbox-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--safe-top) + var(--sp-4)) calc(var(--safe-right) + var(--sp-4))
+    calc(var(--safe-bottom) + var(--sp-4)) calc(var(--safe-left) + var(--sp-4));
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(4px);
+  /* Rendered as a DOM descendant of .live-overlay when opened from Live,
+     which sets pointer-events: none (only re-enabling it for a short allow-
+     list of selectors that doesn't include us) — pointer-events inherits
+     down the tree regardless of position/z-index, so without this the scrim
+     would be untappable AND let taps fall through to whatever is beneath it. */
+  pointer-events: auto;
+}
+.capture-lightbox {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 480px;
+  max-height: 100%;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-2);
+}
+.capture-lightbox-img-wrap {
+  position: relative;
+  width: 100%;
+  flex: none;
+}
+.capture-lightbox-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: #000;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+.capture-lightbox-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4) 0;
+}
+.capture-lightbox-body .capture-chips {
+  padding: 0;
+}
+.capture-lightbox-body p.capture-critique {
+  padding: 0;
+  margin: 0;
+}
+.capture-lightbox-close {
+  margin: var(--sp-4);
+  margin-top: var(--sp-3);
 }

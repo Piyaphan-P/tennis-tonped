@@ -308,6 +308,8 @@ const INITIAL_COACH: CoachState = {
   bubbleLang: 'th',
   speaking: false,
   listening: false,
+  micOn: true,
+  micLevel: 0,
   error: null,
 };
 
@@ -495,6 +497,8 @@ export interface AppState {
   clearCoachBubble: () => void;
   setCoachSpeaking: (speaking: boolean) => void;
   setCoachListening: (listening: boolean) => void;
+  setMicOn: (on: boolean) => void;
+  setMicLevel: (level: number) => void;
   /** error MUST be an i18n key (e.g. 'coach.reconnecting'), or null. */
   setCoachError: (error: string | null) => void;
 
@@ -584,7 +588,7 @@ export const useAppStore = create<AppState>()((set) => ({
       return {
         history,
         session: { ...s.session, status: 'ended' as const, endedAtMs: Date.now() },
-        coach: { ...s.coach, speaking: false, listening: false },
+        coach: { ...s.coach, speaking: false, listening: false, micLevel: 0 },
         pose: { ...s.pose, phase: 'idle' as const },
         cost: { ...s.cost, attributingShotId: null },
       };
@@ -652,6 +656,13 @@ export const useAppStore = create<AppState>()((set) => ({
     set((s) => ({ coach: { ...s.coach, speaking } })),
   setCoachListening: (listening) =>
     set((s) => ({ coach: { ...s.coach, listening } })),
+  setMicOn: (micOn) => set((s) => ({ coach: { ...s.coach, micOn } })),
+  setMicLevel: (micLevel) =>
+    set((s) =>
+      Math.abs(s.coach.micLevel - micLevel) < 0.02 && micLevel !== 0
+        ? s
+        : { coach: { ...s.coach, micLevel } },
+    ),
   setCoachError: (error) => set((s) => ({ coach: { ...s.coach, error } })),
 
   // --- cost ---

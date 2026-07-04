@@ -7,7 +7,8 @@
 //     issues + reply language) plus an optional contact JPEG frame
 //   • stream the coach's spoken reply (PCM 24k) to audioPlayer, and push the
 //     transcript to the store as a bubble
-//   • push-to-talk mic Q&A via sendRealtimeInput (PCM 16k)
+//   • ALWAYS-ON continuous mic: stream PCM 16k via sendRealtimeInput for the
+//     whole session (no push-to-talk); Gemini's server-side VAD handles turns
 //   • forward EVERY usageMetadata to the cost monitor (source of truth)
 //   • graceful close / token-expiry handling with auto-reconnect + backoff
 //
@@ -44,6 +45,16 @@ function errMsg(e: unknown, fallback = 'coach disconnected'): string {
 
 /** Backoff schedule (ms) for auto-reconnect; length = max reconnect attempts. */
 const RECONNECT_DELAYS_MS = [1000, 2000, 4000];
+
+/**
+ * Local fast barge-in: if the smoothed mic level stays above this for
+ * DUCK_MIN_STREAK consecutive level callbacks WHILE the coach is speaking, cut
+ * the coach's audio immediately. The server-side `interrupted` signal is still
+ * the primary mechanism (handleMessage); this just shaves the human-perceived
+ * latency so we never talk over the student.
+ */
+const MIC_DUCK_THRESHOLD = 0.1;
+const DUCK_MIN_STREAK = 2;
 
 // ---------------------------------------------------------------------------
 // Coach persona (provided by the PO — see CLAUDE.md). Sent as systemInstruction.
@@ -170,11 +181,20 @@ export class CoachLiveClient {
   private pendingContactCaptureId: string | null = null;
   /** Accumulated transcript for the in-flight turn. */
   private turnText = '';
+  /**
+   * True once the current turn was interrupted (barge-in / server cut). A
+   * partial/mixed turn must NOT attach its stale half-transcript as a captured
+   * frame's critique — cleared when the next turn's text starts accumulating.
+   */
+  private turnInterrupted = false;
   /** Language requested for the in-flight turn's reply. */
   private requestedLang: Lang = 'th';
 
   /** Single-slot queue: newest shot waiting for a free turn (busy rule). */
   private queuedShot: Shot | null = null;
+
+  /** Consecutive above-threshold mic-level callbacks (local barge-in duck). */
+  private duckStreak = 0;
 
   /** Auto-reconnect bookkeeping. */
   private reconnectAttempts = 0;
@@ -291,6 +311,15 @@ export class CoachLiveClient {
 
       // Flush a shot queued while we were connecting.
       this.flushQueue();
+
+      // AUTO-START the always-on mic once the socket is live — on the FIRST
+      // connect AND on every reconnect (a dropped socket stops the stream in
+      // handleClose; a successful reconnect must bring it back). Default ON, so
+      // the player can just talk with zero interaction. Fire-and-forget: mic
+      // permission is resolved inside startMicStream.
+      if (this.store().coach.micOn) {
+        void this.startMicStream();
+      }
     } catch (e) {
       this.connecting = false;
       this.connected = false;
@@ -320,6 +349,11 @@ export class CoachLiveClient {
     // so we never talk over the student or trail stale audio.
     if (msg.serverContent?.interrupted) {
       audioPlayer.stop();
+      // Drop the cut turn's partial transcript so it can't concatenate with the
+      // next reply in the bubble, and mark the turn so finalizeTurn won't pin a
+      // half-critique onto a captured frame.
+      this.turnText = '';
+      this.turnInterrupted = true;
     }
 
     // (a) Coach audio: PCM 24k chunks in modelTurn parts. Only play if voice on.
@@ -364,8 +398,10 @@ export class CoachLiveClient {
         audioPlayed: false,
       });
       // If a contact frame went with this turn, the spoken reply also critiques
-      // that captured image — surface it under the frame in the gallery.
-      if (this.pendingContactCaptureId) {
+      // that captured image — surface it under the frame in the gallery. Skip
+      // when the turn was interrupted/mixed: a barge-in or an interleaved voice
+      // turn would otherwise pin the wrong (or partial) text onto the frame.
+      if (this.pendingContactCaptureId && !this.turnInterrupted) {
         this.store().attachCaptureCritique(shotId, this.pendingContactCaptureId, text, lang);
       }
       this.store().endShotCost(shotId);
@@ -373,6 +409,7 @@ export class CoachLiveClient {
     }
     this.pendingContactCaptureId = null;
     this.turnText = '';
+    this.turnInterrupted = false;
     // A turn just freed up — dispatch a queued shot if one is waiting.
     this.flushQueue();
   }
@@ -401,6 +438,7 @@ export class CoachLiveClient {
     const state = this.store();
     this.requestedLang = state.lang;
     this.turnText = '';
+    this.turnInterrupted = false;
     this.pendingShotId = shot.id;
     this.pendingContactCaptureId = null;
 
@@ -459,49 +497,108 @@ export class CoachLiveClient {
   }
 
   // -------------------------------------------------------------------------
-  // Push-to-talk mic Q&A
+  // Always-on continuous mic (server-side VAD; no push-to-talk)
+  //
+  // COEXISTENCE WITH PER-SHOT COACHING: the per-shot path (sendShotForCoaching/
+  // dispatchShot/flushQueue/finalizeTurn, single-slot pendingShotId queue,
+  // sendClientContent text turns + one contact JPEG via sendRealtimeInput
+  // video) is byte-for-byte unchanged. Voice and shot turns share the one
+  // session cleanly; note that a VAD voice-turn's turnComplete may finalize a
+  // pending shot's attribution window early — acceptable, since per-shot cost
+  // is labelled approximate. Every usageMetadata (including continuous audio-in)
+  // is still forwarded to costMonitor unchanged, so cost stays accurate.
   // -------------------------------------------------------------------------
 
-  async startListening(): Promise<void> {
+  /** User toggle: turn the always-on mic on/off. Persists intent in the store. */
+  async setMicEnabled(on: boolean): Promise<void> {
+    this.store().setMicOn(on);
+    if (on) {
+      await this.startMicStream();
+    } else {
+      this.stopMicStream();
+    }
+  }
+
+  /**
+   * Open the continuous mic and stream PCM16k to the live session. No-op if the
+   * mic is already active or there is no live session (connect() re-invokes this
+   * once the socket is up). On failure, flips the mic off with a bilingual error.
+   */
+  private async startMicStream(): Promise<void> {
+    if (mic.isActive()) return;
     const session = this.session;
     if (!session || !this.isConnected()) return;
 
-    // Don't talk over the coach.
-    audioPlayer.stop();
-
     try {
-      await mic.start((chunk) => {
-        try {
-          session.sendRealtimeInput({
-            audio: { data: chunk, mimeType: 'audio/pcm;rate=16000' },
-          });
-        } catch {
-          /* socket may have closed mid-utterance; drop this chunk */
-        }
-      });
+      await mic.start(
+        (chunk) => {
+          try {
+            session.sendRealtimeInput({
+              audio: { data: chunk, mimeType: 'audio/pcm;rate=16000' },
+            });
+          } catch {
+            /* socket may have closed mid-utterance; drop this chunk */
+          }
+        },
+        (level) => {
+          this.store().setMicLevel(level);
+          this.handleMicLevel(level);
+        },
+      );
+      this.duckStreak = 0;
       this.store().setCoachListening(true);
       this.store().setCoachError(null);
     } catch (e) {
       // Diagnostics only; the store gets a bilingual i18n key. Any mic-start
       // failure (denied or otherwise) maps to the mic-permission explainer —
-      // the only mic-related bilingual copy we have.
+      // the only mic-related bilingual copy we have. Flip the toggle back off
+      // so the UI reflects reality and we don't retry on every reconnect.
       console.warn('[coach] mic start failed:', e instanceof MicPermissionError ? e.code : errMsg(e, 'mic error'));
       this.store().setCoachListening(false);
+      this.store().setMicOn(false);
       this.store().setCoachError('error.micDenied');
     }
   }
 
-  stopListening(): void {
+  /**
+   * Close the mic. Sends audioStreamEnd ONLY on an explicit toggle-off / teardown
+   * while still connected — NEVER between VAD turns (server VAD owns turn ends).
+   * When called from handleClose the socket is already dead, so the send is
+   * naturally skipped.
+   */
+  private stopMicStream(): void {
+    const wasStreaming = mic.isActive();
     mic.stop();
+    this.duckStreak = 0;
     this.store().setCoachListening(false);
+    this.store().setMicLevel(0);
     const session = this.session;
-    if (session && this.isConnected()) {
+    if (wasStreaming && session && this.isConnected()) {
       try {
-        // Signal end-of-utterance; VAD also handles this, so ignore failures.
+        // Signal end-of-input for this open-mic session; VAD also handles this.
         session.sendRealtimeInput({ audioStreamEnd: true });
       } catch {
         /* rely on VAD */
       }
+    }
+  }
+
+  /**
+   * Local fast barge-in duck driven by the mic level meter. Only acts while the
+   * mic is actually streaming; the server `interrupted` signal remains primary.
+   */
+  private handleMicLevel(level: number): void {
+    if (!mic.isActive()) {
+      this.duckStreak = 0;
+      return;
+    }
+    if (level > MIC_DUCK_THRESHOLD) {
+      this.duckStreak += 1;
+      if (this.duckStreak >= DUCK_MIN_STREAK && audioPlayer.isSpeaking()) {
+        audioPlayer.stop();
+      }
+    } else {
+      this.duckStreak = 0;
     }
   }
 
@@ -530,6 +627,13 @@ export class CoachLiveClient {
     }
     this.pendingContactCaptureId = null;
     this.turnText = '';
+    this.turnInterrupted = false;
+
+    // A dead socket must not keep the mic hot. stopMicStream() sees session=null
+    // here so it won't try to send audioStreamEnd; a successful reconnect
+    // re-opens the mic in connect() (if coach.micOn). The micOn INTENT is left
+    // untouched so the reconnect restores exactly what the user chose.
+    this.stopMicStream();
 
     if (this.manualClose) return;
 
@@ -588,6 +692,7 @@ export class CoachLiveClient {
     this.pendingShotId = null;
     this.pendingContactCaptureId = null;
     this.turnText = '';
+    this.turnInterrupted = false;
 
     try {
       this.session?.close();
@@ -600,6 +705,11 @@ export class CoachLiveClient {
 
     audioPlayer.stop();
     mic.stop();
+    this.duckStreak = 0;
+    // Reset the mic UI state (listening + level meter). We do NOT touch micOn:
+    // it is the user's per-session toggle intent, restored on the next connect.
+    this.store().setCoachListening(false);
+    this.store().setMicLevel(0);
     this.store().setConnection('disconnected');
   }
 }

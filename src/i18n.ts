@@ -100,8 +100,9 @@ const DICT = {
   'nav.devplan': { th: 'พัฒนา', en: 'Plan' },
   'nav.settings': { th: 'ตั้งค่า', en: 'Settings' },
 
-  // --- push to talk ---
-  'live.holdToTalk': { th: 'กดค้างเพื่อถามโค้ช', en: 'Hold to ask coach' },
+  // --- continuous open mic ---
+  'live.micOn': { th: 'ไมค์เปิด — พูดกับโค้ชได้เลย', en: 'Mic on — just talk to the coach' },
+  'live.micOff': { th: 'ไมค์ปิด', en: 'Mic off' },
 
   // --- live screen ---
   'live.title': { th: 'กำลังฝึกซ้อม', en: 'Live Session' },
@@ -109,7 +110,6 @@ const DICT = {
   'live.connected': { th: 'เชื่อมต่อแล้ว', en: 'Connected' },
   'live.disconnected': { th: 'ยังไม่เชื่อมต่อ', en: 'Disconnected' },
   'live.end': { th: 'จบการฝึก', en: 'End Session' },
-  'live.askCoach': { th: 'ถามโค้ช', en: 'Ask Coach' },
   'live.listening': { th: 'กำลังฟัง…', en: 'Listening…' },
   'live.shots': { th: 'จำนวนช็อต', en: 'Shots' },
   'live.fps': { th: 'เฟรมต่อวินาที', en: 'FPS' },
@@ -156,6 +156,7 @@ const DICT = {
   'capture.critique': { th: 'โค้ชวิเคราะห์ภาพนี้', en: "Coach's take on this frame" },
   'capture.pending': { th: 'รอโค้ชวิเคราะห์…', en: 'Waiting for the coach…' },
   'capture.shot': { th: 'ช็อต', en: 'Shot' },
+  'capture.tapHint': { th: 'แตะเพื่อขยาย', en: 'Tap to enlarge' },
 
   // --- cost (demoted: corner ฿ button + testing panel) ---
   'cost.button': { th: 'ดูค่าใช้จ่าย', en: 'View cost' },

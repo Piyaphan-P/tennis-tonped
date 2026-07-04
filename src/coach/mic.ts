@@ -1,11 +1,18 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club (Ton & Phet Tennis Club) — microphone capture for "Ask Coach" push-to-talk
+// ต้นและเพชร Tennis Club (Ton & Phet Tennis Club) — always-on microphone capture
 //
-// Captures the student's voice and emits PCM 16000 Hz, 16-bit LE, mono chunks
-// as base64 strings, ready for session.sendRealtimeInput({ audio: {...} }).
+// Captures the student's voice CONTINUOUSLY and emits PCM 16000 Hz, 16-bit LE,
+// mono chunks as base64 strings, ready for session.sendRealtimeInput({ audio }).
+// There is no push-to-talk: the stream stays open for the whole session and
+// Gemini's native-audio Live model does server-side voice-activity detection
+// (VAD) to decide when the student starts/stops talking.
 //
 // The browser mic runs at the hardware rate (often 48000 Hz); we downsample to
 // 16000 Hz by linear interpolation, quantize to Int16, and base64-encode.
+//
+// In parallel we compute a smoothed input LEVEL (RMS → EMA, throttled to ~10Hz)
+// and hand it to the optional onLevel callback so the UI can show a live
+// "listening" meter and liveClient can duck the coach on barge-in.
 //
 // Uses an AudioWorklet when trivially available, otherwise falls back to a
 // ScriptProcessorNode (deprecated but universally supported — acceptable for
@@ -16,6 +23,18 @@
 /** Target input sample rate required by the Live API. */
 const TARGET_SAMPLE_RATE = 16000;
 const SCRIPT_PROCESSOR_BUFFER = 4096;
+
+/** EMA smoothing factor for the level meter (weight of the newest RMS sample). */
+const LEVEL_EMA_ALPHA = 0.3;
+/** Minimum spacing between onLevel emits (~10Hz), independent of buffer size. */
+const LEVEL_EMIT_INTERVAL_MS = 100;
+
+/** Monotonic clock, robust in non-browser test envs. */
+function nowMs(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+}
 
 /** Typed error thrown when the user denies microphone permission. */
 export class MicPermissionError extends Error {
@@ -80,13 +99,24 @@ export class Mic {
   private source: MediaStreamAudioSourceNode | null = null;
   private processor: ScriptProcessorNode | null = null;
   private active = false;
+  /** EMA-smoothed RMS level (0..1) carried across buffers. */
+  private levelEma = 0;
+  /** Clock of the last onLevel emit (for ~10Hz throttling). */
+  private lastLevelEmitMs = 0;
 
   /**
    * Start capturing. onChunk receives base64 PCM16k mono chunks (~85ms each).
+   * onLevel (optional) receives a smoothed input level in [0..1], throttled to
+   * ~10Hz, for the always-on "listening" meter and barge-in ducking.
    * Throws MicPermissionError on permission denial.
    */
-  async start(onChunk: (base64: string) => void): Promise<void> {
+  async start(
+    onChunk: (base64: string) => void,
+    onLevel?: (level: number) => void,
+  ): Promise<void> {
     if (this.active) return;
+    this.levelEma = 0;
+    this.lastLevelEmitMs = 0;
 
     const Ctor = resolveAudioContextCtor();
     if (!Ctor || !navigator.mediaDevices?.getUserMedia) {
@@ -114,8 +144,24 @@ export class Mic {
       try {
         await this.ctx.resume();
       } catch {
+        /* ignore — checked below */
+      }
+    }
+    // On iOS Safari a context created outside a user gesture (we auto-start the
+    // mic after the WS connects) can stay 'suspended' even after resume() —
+    // onaudioprocess would never fire, leaving a dead "Listening…" meter that
+    // streams nothing. Fail loudly instead: liveClient flips the toggle off and
+    // surfaces error.micDenied, and the next mic tap (a real gesture) succeeds.
+    if (this.ctx.state !== 'running') {
+      try {
+        stream.getTracks().forEach((t) => t.stop());
+        await this.ctx.close();
+      } catch {
         /* ignore */
       }
+      this.ctx = null;
+      this.stream = null;
+      throw new MicPermissionError('mic-suspended');
     }
 
     const srcRate = this.ctx.sampleRate;
@@ -136,6 +182,20 @@ export class Mic {
       const down = downsample(frame, srcRate);
       const bytes = floatToInt16Bytes(down);
       onChunk(bytesToBase64(bytes));
+
+      // Level metering (RMS → EMA → throttled ~10Hz). Computed on the raw frame
+      // so it reflects true input energy regardless of the downsample ratio.
+      if (onLevel) {
+        let sumSq = 0;
+        for (let i = 0; i < frame.length; i++) sumSq += frame[i] * frame[i];
+        const rms = frame.length > 0 ? Math.sqrt(sumSq / frame.length) : 0;
+        this.levelEma = LEVEL_EMA_ALPHA * rms + (1 - LEVEL_EMA_ALPHA) * this.levelEma;
+        const t = nowMs();
+        if (t - this.lastLevelEmitMs >= LEVEL_EMIT_INTERVAL_MS) {
+          this.lastLevelEmitMs = t;
+          onLevel(Math.max(0, Math.min(1, this.levelEma)));
+        }
+      }
     };
 
     this.source.connect(processor);
@@ -149,6 +209,8 @@ export class Mic {
   /** Stop capture and release the microphone. */
   stop(): void {
     this.active = false;
+    this.levelEma = 0;
+    this.lastLevelEmitMs = 0;
     if (this.processor) {
       try {
         this.processor.onaudioprocess = null;

@@ -8,7 +8,7 @@
 //   • compact HUD (phase chip, score pill, telemetry) + corner ฿ cost button
 //   • swipeable swing-capture gallery strip
 //   • the BIG coach message (lower third) — the dominant element
-//   • push-to-talk + End Session
+//   • continuous open mic (MicControl) + End Session
 // Bilingual overlays cover camera-denied, pose-init-failed and coach errors —
 // never a raw API/English string, never a silent black screen.
 // ============================================================================
@@ -20,7 +20,7 @@ import { startPoseLoop } from '../pose/poseLandmarker';
 import { ShotDetector } from '../analysis/shotDetector';
 import type { CaptureContext } from '../analysis/shotDetector';
 import { coachLive } from '../coach/liveClient';
-import type { Shot } from '../types';
+import type { JointAngles, PoseFrame, Shot } from '../types';
 import PhaseChip from '../components/PhaseChip';
 import PoseCanvas from '../components/PoseCanvas';
 import CoachBubble from '../components/CoachBubble';
@@ -28,6 +28,7 @@ import CaptureGallery from '../components/CaptureGallery';
 import TelemetryStrip from '../components/TelemetryStrip';
 import ScoreBadge from '../components/ScoreBadge';
 import CostFab from '../components/CostFab';
+import MicControl from '../components/MicControl';
 
 /** Max width (px) of the JPEG we snapshot for captures + the coach frame. */
 const CAPTURE_MAX_W = 640;
@@ -39,12 +40,16 @@ export default function LiveScreen() {
   const setScreen = useAppStore((s) => s.setScreen);
   const endSession = useAppStore((s) => s.endSession);
   const connection = useAppStore((s) => s.connection);
-  const listening = useAppStore((s) => s.coach.listening);
   const coachError = useAppStore((s) => s.coach.error);
   const poseInitError = useAppStore((s) => s.pose.initError);
   const cameraFacing = useAppStore((s) => s.settings.cameraFacing);
   const videoRef = useRef<HTMLVideoElement>(null);
   const captureCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Last pose tick with a full 33-landmark frame, kept fresh from the pose
+  // loop callback. getJpeg() falls back to this when the store's pose is
+  // momentarily empty/short (a one-tick MediaPipe dropout), so a capture at
+  // contact isn't lost to a single missed frame.
+  const lastGoodPoseRef = useRef<{ frame: PoseFrame; angles: JointAngles } | null>(null);
   const mirrored = cameraFacing === 'user';
 
   // Camera error is LOCAL UI state (never a raw store error string). retryKey
@@ -60,36 +65,52 @@ export default function LiveScreen() {
     // Snapshot the current video frame as base64 JPEG (no data: prefix) plus
     // the matching pose, so a capture's skeleton lines up with its image.
     const getJpeg = (): CaptureContext | undefined => {
-      const video = videoRef.current;
-      if (!video || video.readyState < 2 || !video.videoWidth) return undefined;
-      const pose = useAppStore.getState().pose;
-      if (!pose.frame || !pose.angles || pose.frame.landmarks.length < 33) return undefined;
-
-      let canvas = captureCanvasRef.current;
-      if (!canvas) {
-        canvas = document.createElement('canvas');
-        captureCanvasRef.current = canvas;
-      }
-      const scale = Math.min(1, CAPTURE_MAX_W / video.videoWidth);
-      canvas.width = Math.round(video.videoWidth * scale);
-      canvas.height = Math.round(video.videoHeight * scale);
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return undefined;
       try {
+        const video = videoRef.current;
+        if (!video || video.readyState < 2 || !video.videoWidth) return undefined;
+
+        // Prefer the live store pose; fall back to the last known-good pose
+        // (from the pose loop callback) so one dropped MediaPipe tick doesn't
+        // sink an otherwise-grabbable capture.
+        const pose = useAppStore.getState().pose;
+        const frame =
+          pose.frame && pose.frame.landmarks.length >= 33
+            ? pose.frame
+            : lastGoodPoseRef.current?.frame;
+        const angles =
+          pose.frame && pose.frame.landmarks.length >= 33
+            ? pose.angles
+            : lastGoodPoseRef.current?.angles;
+        if (!frame || !angles || frame.landmarks.length < 33) return undefined;
+
+        let canvas = captureCanvasRef.current;
+        if (!canvas) {
+          canvas = document.createElement('canvas');
+          captureCanvasRef.current = canvas;
+        }
+        const scale = Math.min(1, CAPTURE_MAX_W / video.videoWidth);
+        canvas.width = Math.round(video.videoWidth * scale);
+        canvas.height = Math.round(video.videoHeight * scale);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return undefined;
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const url = canvas.toDataURL('image/jpeg', CAPTURE_QUALITY);
         const comma = url.indexOf(',');
         if (comma < 0) return undefined;
         return {
           jpegBase64: url.slice(comma + 1),
-          landmarks: pose.frame.landmarks,
-          angles: pose.angles,
-          tsMs: pose.frame.timestampMs,
+          landmarks: frame.landmarks,
+          angles,
+          tsMs: frame.timestampMs,
         };
       } catch {
+        // Never throw into the pose loop / shot detector — a failed capture
+        // just means this keyframe is skipped.
         return undefined;
       }
     };
+
+    lastGoodPoseRef.current = null;
 
     // A completed swing → ask the coach (queued/dropped per liveClient rules).
     const detector = new ShotDetector({
@@ -119,6 +140,9 @@ export default function LiveScreen() {
         video.srcObject = stream;
         await video.play().catch(() => undefined);
         stopLoop = startPoseLoop(video, (frame, angles) => {
+          if (frame.landmarks.length === 33) {
+            lastGoodPoseRef.current = { frame, angles };
+          }
           detector.onFrame(frame, angles, getJpeg);
         });
       } catch {
@@ -142,14 +166,6 @@ export default function LiveScreen() {
     coachLive.disconnect();
     endSession();
     setScreen('summary');
-  };
-
-  // Push-to-talk: hold the button to stream mic audio to the coach.
-  const startTalk = () => {
-    void coachLive.startListening();
-  };
-  const stopTalk = () => {
-    coachLive.stopListening();
   };
 
   const retryCamera = () => {
@@ -213,21 +229,7 @@ export default function LiveScreen() {
           <CaptureGallery />
           <CoachBubble />
           <div className="row live-controls">
-            <button
-              className="btn btn-block tap"
-              style={{
-                borderColor: listening ? 'var(--court-blue)' : undefined,
-                color: listening ? 'var(--court-blue)' : undefined,
-                touchAction: 'none',
-                userSelect: 'none',
-              }}
-              onPointerDown={startTalk}
-              onPointerUp={stopTalk}
-              onPointerLeave={stopTalk}
-              onPointerCancel={stopTalk}
-            >
-              {listening ? t('live.listening') : t('live.holdToTalk')}
-            </button>
+            <MicControl />
             <button className="btn btn-danger" onClick={end}>
               {t('live.end')}
             </button>

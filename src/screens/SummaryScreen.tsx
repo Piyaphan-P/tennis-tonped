@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   useAppStore,
   selectSessionCostTHB,
@@ -12,11 +13,15 @@ import {
 import { useT } from '../i18n';
 import type { I18nKey } from '../i18n';
 import { formatTHB } from '../cost/pricing';
+import { renderCaptureToDataUrl } from '../analysis/captureRenderer';
+import CaptureLightbox from '../components/CaptureLightbox';
 import type {
+  DominantHand,
   Shot,
   ShotIssue,
   SessionImprovement,
   StoredSession,
+  SwingCapture,
   IssueSeverity,
   Lang,
 } from '../types';
@@ -157,6 +162,65 @@ function ImprovementRow({
   );
 }
 
+/**
+ * Per-shot thumbnail: renders the capture's skeleton-overlaid image (same
+ * captureRenderer used by the Live gallery / lightbox, so it never shows the
+ * raw un-annotated jpeg) and opens the full-size CaptureLightbox on tap.
+ */
+function ShotThumb({
+  capture,
+  dominantHand,
+  onOpen,
+}: {
+  capture: SwingCapture;
+  dominantHand: DominantHand;
+  onOpen: () => void;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    renderCaptureToDataUrl(capture, dominantHand)
+      .then((dataUrl) => {
+        if (!cancelled) setUrl(dataUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setUrl(`data:image/jpeg;base64,${capture.jpegBase64}`);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [capture, dominantHand]);
+
+  return (
+    <button
+      type="button"
+      className="tap"
+      onClick={onOpen}
+      aria-label={capture.phase}
+      style={{
+        width: 56,
+        height: 74,
+        padding: 0,
+        border: '1px solid var(--line)',
+        borderRadius: 'var(--radius-sm)',
+        overflow: 'hidden',
+        flex: 'none',
+        background: '#000',
+        cursor: 'pointer',
+      }}
+    >
+      {url ? (
+        <img
+          src={url}
+          alt=""
+          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+        />
+      ) : null}
+    </button>
+  );
+}
+
 /** A single ShotIssue chip: localized message (or key), measured value in mono. */
 function IssueChip({ issue, lang }: { issue: ShotIssue; lang: Lang }) {
   const label = (lang === 'th' ? issue.messageTH : issue.messageEN) || issue.key;
@@ -199,6 +263,10 @@ export default function SummaryScreen() {
   const improvements = useAppStore(selectSessionImprovements);
   const stats = useAppStore(selectUserStats);
   const history = useAppStore((s) => s.history);
+  const dominantHand = useAppStore((s) => s.settings.dominantHand);
+  const [lightbox, setLightbox] = useState<{ capture: SwingCapture; shotIndex: number } | null>(
+    null,
+  );
 
   const goodFormPct =
     shotCount === 0
@@ -296,17 +364,10 @@ export default function SummaryScreen() {
                     #{sh.index}
                   </span>
                   {contact && (
-                    <img
-                      src={`data:image/jpeg;base64,${contact.jpegBase64}`}
-                      alt=""
-                      style={{
-                        width: 46,
-                        height: 62,
-                        objectFit: 'cover',
-                        borderRadius: 'var(--radius-sm)',
-                        border: '1px solid var(--line)',
-                        flex: 'none',
-                      }}
+                    <ShotThumb
+                      capture={contact}
+                      dominantHand={dominantHand}
+                      onOpen={() => setLightbox({ capture: contact, shotIndex: sh.index })}
                     />
                   )}
                   <div className="col" style={{ gap: 4, flex: 1, minWidth: 0 }}>
@@ -497,6 +558,15 @@ export default function SummaryScreen() {
           {t('summary.done')}
         </button>
       </div>
+
+      {lightbox && (
+        <CaptureLightbox
+          capture={lightbox.capture}
+          shotIndex={lightbox.shotIndex}
+          dominantHand={dominantHand}
+          onClose={() => setLightbox(null)}
+        />
+      )}
     </div>
   );
 }
