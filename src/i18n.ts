@@ -163,6 +163,11 @@ const DICT = {
     th: 'สวิงให้สุดวง — ภาพช็อตจะแสดงที่นี่',
     en: 'Complete a swing — shot captures appear here',
   },
+  'gallery.clipHint': { th: 'แตะเพื่อดูวิดีโอสวิง', en: 'Tap to watch the swing' },
+
+  // --- swing video clips ---
+  'clip.badge': { th: 'วิดีโอ', en: 'Video' },
+  'clip.replay': { th: 'ดูซ้ำ', en: 'Replay' },
 
   // --- on-court detection HUD (phase trail short forms, TH primary) ---
   'hud.phase.idle': { th: 'พร้อม', en: 'Idle' },

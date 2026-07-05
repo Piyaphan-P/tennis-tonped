@@ -201,6 +201,29 @@ export interface SwingCapture {
   critiqueLang?: Lang;
 }
 
+/**
+ * A recorded swing video clip (composite: camera frame + burned-in colored
+ * skeleton), spanning preparation → follow-through. SESSION-ONLY: `url` is a
+ * blob: object URL that lives only for the current Live session. It is
+ * revoked + stripped by endSession/startSession and by clip eviction, and it
+ * MUST NEVER be persisted — history/localStorage (StoredSession) must never
+ * contain a ShotClip or blob URL. Stills (SwingCapture) remain the durable
+ * artifacts for Summary, history and the Gemini contact frame.
+ */
+export interface ShotClip {
+  /** blob: object URL for <video src>. Session-only; revoked as above. */
+  url: string;
+  /** Container/codec actually recorded (e.g. 'video/mp4', 'video/webm;codecs=vp9'). */
+  mimeType: string;
+  /** Wall-clock length of the recording, ms (capped at 6000). */
+  durationMs: number;
+  /** Encoded size, bytes (memory telemetry / eviction decisions). */
+  sizeBytes: number;
+  /** Recording canvas pixel size. */
+  width: number;
+  height: number;
+}
+
 /** Coaching returned by Gemini Live for one shot (or one mic Q&A). */
 export interface CoachingResult {
   /** Full transcript of what the coach said (from outputAudioTranscription). */
@@ -235,6 +258,10 @@ export interface Shot {
    * allowed to go to Gemini for this shot.
    */
   captures: SwingCapture[];
+  /** Session-only swing video clip (skeleton burned in). Undefined when
+   *  recording is unsupported, failed, or the clip was evicted/ended.
+   *  NEVER serialized — buildStoredSession/localStorage must not touch it. */
+  clip?: ShotClip;
   /** JPEG (base64, no data: prefix) captured at contact, if enabled in settings. */
   contactFrameJpegBase64?: string;
   /** Filled in asynchronously when Gemini replies. */

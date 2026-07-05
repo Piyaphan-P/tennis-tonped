@@ -249,6 +249,19 @@ export interface ShotDetectorOptions {
    * override individual keys without mutating the shared exported object.
    */
   thresholds?: Partial<typeof SHOT_THRESHOLDS>;
+  /**
+   * Fired on idle→preparation (a swing attempt begins), immediately after
+   * markSwingStarted(). LiveScreen wires this to SwingRecorder.startSwing().
+   * Absence is a no-op — existing callers are unaffected.
+   */
+  onSwingStarted?: () => void;
+  /**
+   * Fired exactly once per finalize(): the completed shot's id in the
+   * completed branch, or null in the discarded branch. LiveScreen wires this
+   * to finish/attach or discard the swing clip. NOT fired by reset()
+   * (LiveScreen handles that via SwingRecorder.dispose()). Absence is a no-op.
+   */
+  onSwingFinalized?: (completedShotId: string | null) => void;
 }
 
 /**
@@ -385,6 +398,7 @@ export class ShotDetector {
           this.lowSpeedStreak = 0;
           this.prevSnapshot = { ts, angles, landmarks: frame.landmarks, speed };
           appStore.getState().markSwingStarted();
+          this.opts.onSwingStarted?.();
           this.setPhase('preparation');
         }
       } else {
@@ -640,6 +654,10 @@ export class ShotDetector {
         captureCount: captures.length,
         shotIndex: shot.index,
       });
+
+      // Recorder hook: hand the completed shot id to LiveScreen so it can
+      // finish the clip and attach it. Fired exactly once per finalize().
+      this.opts.onSwingFinalized?.(shot.id);
     } else {
       // Discarded swing: still surface it on the detection HUD so a real
       // on-court swing that never reached 'contact' (or was too short/long)
@@ -658,6 +676,10 @@ export class ShotDetector {
         captureCount: 0,
         shotIndex: 0,
       });
+
+      // Recorder hook: null signals "discard the in-flight clip". Fired
+      // exactly once per finalize().
+      this.opts.onSwingFinalized?.(null);
     }
 
     // Reset swing accumulators and enter cooldown, whether the swing was

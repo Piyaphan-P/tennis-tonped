@@ -15,13 +15,14 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../store';
 import { useT } from '../i18n';
 import type { I18nKey } from '../i18n';
-import type { DominantHand, SwingCapture } from '../types';
+import type { DominantHand, ShotClip, SwingCapture } from '../types';
 import { renderCaptureToDataUrl, colorForStatus } from '../analysis/captureRenderer';
 import CaptureLightbox from './CaptureLightbox';
 
 interface GalleryItem {
   capture: SwingCapture;
   shotIndex: number;
+  clip?: ShotClip;
 }
 
 interface CaptureGalleryProps {
@@ -43,9 +44,21 @@ export default function CaptureGallery({ variant = 'strip' }: CaptureGalleryProp
   const rail = variant === 'rail';
 
   // Newest capture first. Derived only when a shot is added (shots ref changes).
+  // Clips are the PRIMARY card: a shot with a clip collapses to ONE item
+  // (the contact capture, or the first capture, supplies the chips/critique
+  // that render below the video). Shots without a clip (unsupported browser,
+  // evicted/old shots) keep the original one-item-per-still fallback.
   const items = useMemo<GalleryItem[]>(() => {
     const out: GalleryItem[] = [];
     for (const shot of shots) {
+      if (shot.clip) {
+        const capture =
+          shot.captures.find((c) => c.phase === 'contact') ?? shot.captures[0];
+        if (capture) {
+          out.push({ capture, shotIndex: shot.index, clip: shot.clip });
+        }
+        continue;
+      }
       for (const capture of shot.captures) {
         out.push({ capture, shotIndex: shot.index });
       }
@@ -85,6 +98,8 @@ export default function CaptureGallery({ variant = 'strip' }: CaptureGalleryProp
             key={it.capture.id}
             capture={it.capture}
             shotIndex={it.shotIndex}
+            clip={it.clip}
+            isNewest={it.capture.id === newestId}
             dominantHand={dominantHand}
             compact={rail}
             onOpen={() => setOpenItem(it)}
@@ -96,6 +111,7 @@ export default function CaptureGallery({ variant = 'strip' }: CaptureGalleryProp
         <CaptureLightbox
           capture={openItem.capture}
           shotIndex={openItem.shotIndex}
+          clip={openItem.clip}
           dominantHand={dominantHand}
           onClose={() => setOpenItem(null)}
         />
@@ -107,6 +123,9 @@ export default function CaptureGallery({ variant = 'strip' }: CaptureGalleryProp
 interface CaptureCardProps {
   capture: SwingCapture;
   shotIndex: number;
+  clip?: ShotClip;
+  /** Only the newest clip card autoplays — one active decoder at a time. */
+  isNewest?: boolean;
   dominantHand: DominantHand;
   /** Rail mode: thumbnail only (no chips/critique) — detail lives in the lightbox. */
   compact?: boolean;
@@ -116,14 +135,23 @@ interface CaptureCardProps {
 const CaptureCard = memo(function CaptureCard({
   capture,
   shotIndex,
+  clip,
+  isNewest = false,
   dominantHand,
   compact = false,
   onOpen,
 }: CaptureCardProps) {
   const t = useT();
   const [url, setUrl] = useState<string | null>(null);
+  // Clip failed to decode (codec quirk / revoked URL) → show the rendered
+  // still instead of a black <video> box. Mirrors CaptureLightbox's fallback.
+  const [clipFailed, setClipFailed] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const showClip = !!clip && !clipFailed;
 
   // Render the image + skeleton overlay once (capture is immutable by id).
+  // Still needed even for clip cards: it supplies the chips/critique below
+  // the video, and is the fallback if the clip fails to decode.
   useEffect(() => {
     let cancelled = false;
     renderCaptureToDataUrl(capture, dominantHand)
@@ -138,6 +166,18 @@ const CaptureCard = memo(function CaptureCard({
       cancelled = true;
     };
   }, [capture, dominantHand]);
+
+  // Only the newest full-size clip card decodes/plays (one active decoder).
+  // Rail/compact clip thumbs never autoplay — they stay paused on frame 1.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !showClip || compact) return;
+    if (isNewest) {
+      v.play().catch(() => {});
+    } else {
+      v.pause();
+    }
+  }, [showClip, isNewest, compact]);
 
   const a = capture.angles;
   const s = capture.statuses;
@@ -157,7 +197,20 @@ const CaptureCard = memo(function CaptureCard({
     return (
       <figure className="capture-card capture-card-mini tap" onClick={onOpen} role="button" tabIndex={0}>
         <div className="capture-img-wrap">
-          {url ? (
+          {showClip ? (
+            // Rail thumbs never autoplay (many can be visible at once) —
+            // paused on frame 1; tapping opens the lightbox to watch.
+            <video
+              ref={videoRef}
+              className="capture-video"
+              src={clip!.url}
+              muted
+              loop
+              playsInline
+              preload="metadata"
+              onError={() => setClipFailed(true)}
+            />
+          ) : url ? (
             <img className="capture-img" src={url} alt={t(phaseKey)} />
           ) : (
             <div className="capture-img capture-img-loading" />
@@ -173,16 +226,29 @@ const CaptureCard = memo(function CaptureCard({
   return (
     <figure className="capture-card tap" onClick={onOpen} role="button" tabIndex={0}>
       <div className="capture-img-wrap">
-        {url ? (
+        {showClip ? (
+          <video
+            ref={videoRef}
+            className="capture-video"
+            src={clip!.url}
+            muted
+            loop
+            playsInline
+            preload="metadata"
+            autoPlay={isNewest}
+            onError={() => setClipFailed(true)}
+          />
+        ) : url ? (
           <img className="capture-img" src={url} alt={t(phaseKey)} />
         ) : (
           <div className="capture-img capture-img-loading">{t('common.loading')}</div>
         )}
+        {showClip && <span className="capture-clip-badge">{t('clip.badge')}</span>}
         <span className="capture-phase-tag">{t(phaseKey)}</span>
         <span className="capture-shot-tag num">
           {t('capture.shot')} {shotIndex}
         </span>
-        <span className="capture-tap-hint">{t('capture.tapHint')}</span>
+        <span className="capture-tap-hint">{showClip ? t('gallery.clipHint') : t('capture.tapHint')}</span>
       </div>
       <div className="capture-chips">
         <span className="capture-chip num" style={{ color: colorForStatus(s.domElbow) }}>

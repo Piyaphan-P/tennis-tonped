@@ -46,6 +46,7 @@ import type {
   SessionState,
   Settings,
   Shot,
+  ShotClip,
   ShotPhase,
   StoredSession,
   SwingCapture,
@@ -85,6 +86,21 @@ function lsSet(key: string, value: string): void {
 /** Drop sessions older than HISTORY_TTL_MS. Pure. */
 export function pruneHistory(sessions: History, nowMs: number): History {
   return sessions.filter((s) => nowMs - s.tsMs <= HISTORY_TTL_MS);
+}
+
+// ---------------------------------------------------------------------------
+// Session-only shot clip cap (blob URLs live only for the current session)
+// ---------------------------------------------------------------------------
+
+export const MAX_SESSION_CLIPS = 20;
+
+function revokeClipUrl(clip?: ShotClip): void {
+  if (!clip) return;
+  try {
+    URL.revokeObjectURL(clip.url);
+  } catch {
+    /* non-browser env */
+  }
 }
 
 /** Load + prune history from localStorage. Never throws. */
@@ -496,6 +512,11 @@ export interface AppState {
   attachCoaching: (id: string, coaching: CoachingResult) => void;
   /** Append one swing capture to its shot (detector calls during the swing). */
   addCapture: (shotId: string, capture: SwingCapture) => void;
+  /** Attach the recorded clip to its shot (SwingRecorder → LiveScreen calls
+   *  this async after finalize). Enforces MAX_SESSION_CLIPS by revoking +
+   *  stripping the OLDEST shot's clip when the cap is exceeded. No-op if the
+   *  shot id no longer exists. */
+  attachShotClip: (shotId: string, clip: ShotClip) => void;
   /** Attach the coach's (or local) critique to one capture. */
   attachCaptureCritique: (
     shotId: string,
@@ -585,18 +606,22 @@ export const useAppStore = create<AppState>()((set) => ({
 
   // --- session lifecycle ---
   startSession: () =>
-    set({
-      session: {
-        status: 'starting',
-        startedAtMs: Date.now(),
-        endedAtMs: 0,
-        error: null,
-      },
-      shots: [],
-      pose: INITIAL_POSE,
-      coach: INITIAL_COACH,
-      cost: INITIAL_COST,
-      detection: INITIAL_DETECTION,
+    set((s) => {
+      // Defensive: a session abandoned without endSession must not leak blobs.
+      for (const sh of s.shots) revokeClipUrl(sh.clip);
+      return {
+        session: {
+          status: 'starting',
+          startedAtMs: Date.now(),
+          endedAtMs: 0,
+          error: null,
+        },
+        shots: [],
+        pose: INITIAL_POSE,
+        coach: INITIAL_COACH,
+        cost: INITIAL_COST,
+        detection: INITIAL_DETECTION,
+      };
     }),
   markSessionLive: () =>
     set((s) => ({ session: { ...s.session, status: 'live', error: null } })),
@@ -610,6 +635,10 @@ export const useAppStore = create<AppState>()((set) => ({
       }
       return {
         history,
+        shots: s.shots.map((sh) => {
+          revokeClipUrl(sh.clip);
+          return sh.clip ? { ...sh, clip: undefined } : sh;
+        }),
         session: { ...s.session, status: 'ended' as const, endedAtMs: Date.now() },
         coach: { ...s.coach, speaking: false, listening: false, micLevel: 0 },
         pose: { ...s.pose, phase: 'idle' as const },
@@ -656,6 +685,25 @@ export const useAppStore = create<AppState>()((set) => ({
         sh.id === shotId ? { ...sh, captures: [...sh.captures, capture] } : sh,
       ),
     })),
+  attachShotClip: (shotId, clip) =>
+    set((s) => {
+      if (!s.shots.some((sh) => sh.id === shotId)) {
+        revokeClipUrl(clip);
+        return s;
+      }
+      let shots = s.shots.map((sh) =>
+        sh.id === shotId ? { ...sh, clip } : sh,
+      );
+      const withClips = shots.filter((sh) => sh.clip);
+      if (withClips.length > MAX_SESSION_CLIPS) {
+        const oldest = withClips[0];
+        revokeClipUrl(oldest.clip);
+        shots = shots.map((sh) =>
+          sh.id === oldest.id ? { ...sh, clip: undefined } : sh,
+        );
+      }
+      return { shots };
+    }),
   attachCaptureCritique: (shotId, captureId, critique, lang) =>
     set((s) => ({
       shots: s.shots.map((sh) =>

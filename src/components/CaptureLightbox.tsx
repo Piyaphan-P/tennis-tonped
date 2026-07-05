@@ -12,15 +12,16 @@
 // used from both LiveScreen (CaptureGallery) and SummaryScreen.
 // ============================================================================
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useT } from '../i18n';
 import type { I18nKey } from '../i18n';
-import type { DominantHand, SwingCapture } from '../types';
+import type { DominantHand, ShotClip, SwingCapture } from '../types';
 import { renderCaptureToDataUrl, colorForStatus } from '../analysis/captureRenderer';
 
 interface CaptureLightboxProps {
   capture: SwingCapture;
   shotIndex: number;
+  clip?: ShotClip;
   dominantHand: DominantHand;
   onClose: () => void;
 }
@@ -28,11 +29,17 @@ interface CaptureLightboxProps {
 export default function CaptureLightbox({
   capture,
   shotIndex,
+  clip,
   dominantHand,
   onClose,
 }: CaptureLightboxProps) {
   const t = useT();
   const [url, setUrl] = useState<string | null>(null);
+  // Dropped to true if the clip <video> fails to decode/load (e.g. a
+  // revoked blob: URL) — falls back to the still, same as an absent clip.
+  const [clipFailed, setClipFailed] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const showClip = !!clip && !clipFailed;
 
   useEffect(() => {
     let cancelled = false;
@@ -47,6 +54,13 @@ export default function CaptureLightbox({
       cancelled = true;
     };
   }, [capture, dominantHand]);
+
+  const handleReplay = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.currentTime = 0;
+    v.play().catch(() => {});
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -77,10 +91,33 @@ export default function CaptureLightbox({
     >
       <div className="capture-lightbox" onClick={(e) => e.stopPropagation()}>
         <div className="capture-lightbox-img-wrap">
-          {url ? (
+          {showClip ? (
+            <video
+              ref={videoRef}
+              className="capture-lightbox-video"
+              src={clip!.url}
+              muted
+              loop
+              autoPlay
+              playsInline
+              onError={() => setClipFailed(true)}
+            />
+          ) : url ? (
             <img className="capture-lightbox-img" src={url} alt={t(phaseKey)} />
           ) : (
             <div className="capture-lightbox-img capture-img-loading">{t('common.loading')}</div>
+          )}
+          {showClip && (
+            <button
+              type="button"
+              className="clip-replay-btn tap"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleReplay();
+              }}
+            >
+              {t('clip.replay')}
+            </button>
           )}
           <span className="capture-phase-tag">{t(phaseKey)}</span>
           <span className="capture-shot-tag num">

@@ -19,6 +19,7 @@ import { useT, translateError } from '../i18n';
 import { startPoseLoop } from '../pose/poseLandmarker';
 import { ShotDetector } from '../analysis/shotDetector';
 import type { CaptureContext } from '../analysis/shotDetector';
+import { SwingRecorder } from '../analysis/swingRecorder';
 import { coachLive } from '../coach/liveClient';
 import type { JointAngles, PoseFrame, Shot } from '../types';
 import PhaseChip from '../components/PhaseChip';
@@ -113,9 +114,27 @@ export default function LiveScreen() {
 
     lastGoodPoseRef.current = null;
 
+    // The swing-clip recorder. Constructed AFTER getUserMedia resolves (below),
+    // so it can read video.videoWidth; held in this closure-local so the
+    // detector option callbacks — created now, before the camera resolves —
+    // can reach it (mirrors the stream/stopLoop pattern).
+    let recorder: SwingRecorder | null = null;
+
     // A completed swing → ask the coach (queued/dropped per liveClient rules).
     const detector = new ShotDetector({
       onShotCompleted: (shot: Shot) => coachLive.sendShotForCoaching(shot),
+      // idle→preparation: arm a fresh clip recording.
+      onSwingStarted: () => recorder?.startSwing(),
+      // finalize(): completed → finish + attach the clip; discarded → drop it.
+      onSwingFinalized: (shotId) => {
+        if (!shotId) {
+          recorder?.discardSwing();
+          return;
+        }
+        recorder?.finishSwing().then((clip) => {
+          if (clip) useAppStore.getState().attachShotClip(shotId, clip);
+        });
+      },
     });
     detector.reset();
 
@@ -140,11 +159,21 @@ export default function LiveScreen() {
         if (!video) return;
         video.srcObject = stream;
         await video.play().catch(() => undefined);
+        recorder = new SwingRecorder(video);
         stopLoop = startPoseLoop(video, (frame, angles) => {
           if (frame.landmarks.length === 33) {
             lastGoodPoseRef.current = { frame, angles };
           }
           detector.onFrame(frame, angles, getJpeg);
+          // Composite this frame into the active clip (no-op unless a swing is
+          // recording). Read statuses AFTER onFrame so the burned-in skeleton
+          // coloring reflects the current phase (pushPoseFrame already ran
+          // earlier in this same tick, before onFrame).
+          recorder?.drawFrame(
+            frame,
+            useAppStore.getState().pose.statuses,
+            useAppStore.getState().settings.dominantHand,
+          );
         });
       } catch {
         // Bilingual camera-denied overlay — NEVER a raw getUserMedia string.
@@ -155,6 +184,9 @@ export default function LiveScreen() {
     return () => {
       cancelled = true;
       stopLoop?.();
+      // Discard any in-flight recording + release the capture stream before the
+      // camera tracks stop.
+      recorder?.dispose();
       stream?.getTracks().forEach((tr) => tr.stop());
       const video = videoRef.current;
       if (video) video.srcObject = null;
