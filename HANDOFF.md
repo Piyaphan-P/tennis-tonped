@@ -6,6 +6,14 @@
 
 แอป deploy อยู่ที่ https://ton-phet-tennis-862607193158.asia-southeast1.run.app (**revision `00004`**, image `…/ton-phet/app:v3`, git tag **v0.3**). บั๊ก "จับภาพวงสวิงไม่ขึ้น" **แก้แล้ว** (Fable verdict: ship, 39/39 tests) — ต้นตอคือ threshold จับ contact ตั้งไว้ ~2 เท่าของความเร็วสวิงจริงบนกล้องมือถือ 15fps. เพิ่ม Detection HUD บนจอ Live ไว้จูนในสนาม. เหลือ blocker เดียว: **ยังไม่มี `GEMINI_API_KEY` (AIza…)** — เสียง/โค้ชสดยังใช้ได้เฉพาะผ่าน AQ. token ชั่วคราวที่ paste ใน Settings (user ยืนยัน token ล่าสุดใช้ได้จริง เทสผ่าน Live API แล้ว)
 
+## v0.4 (2026-07-05) — วิดีโอคลิปวงสวิง (ล่าสุด, revision `00007`, tag v0.4)
+
+- feedback สนาม: ภาพนิ่ง "ไม่เนียน ดูยาก" → เปลี่ยนเป็น**คลิปวิดีโอทั้งวงสวิง** โครงกระดูกสีฝังในคลิป (composite canvas ~480px + MediaRecorder ต่อวง; mp4 บน iOS / webm บน Android; ไม่รองรับ → fallback ภาพนิ่งเดิม)
+- เริ่มอัดตอนเข้า preparation, เก็บเมื่อ shot สำเร็จ, ทิ้งเมื่อ discard, cap 6s; จำกัด 20 คลิป/เซสชัน + revoke URL ตอนจบเซสชัน; localStorage/Gemini ไม่แตะ (คลิปเป็น session-only)
+- ไฟล์หลักใหม่: `src/analysis/swingRecorder.ts` (+tests) · hooks ใหม่ใน shotDetector: `onSwingStarted`/`onSwingFinalized`
+- 47/47 tests · Fable verdict: ship · minor findings คงเหลือ: recorder ยัง composite ต่อหลัง 6s cap จน finalize (เสีย draw เปล่า), durationMs เกินจริงเล็กน้อย
+- v0.3.1: ปรับ wording โค้ชให้พูดเหมือนคน (คำง่ายนำ ตัวเลของศาเป็นหมายเหตุ) · v0.3.2: **half-duplex** — ตัด mic chunk ระหว่างโค้ชพูด → โค้ชพูดจบเสมอ (ลบ RMS duck แล้ว) + แกลเลอรีกลับ strip ล่าง (rail ขวาเล็กเกิน อ่านไม่ออก — โค้ดยังอยู่แต่ไม่ใช้)
+
 ## v0.3 (2026-07-04) — สิ่งที่แก้
 
 - **Shot detection จูนสำหรับสวิงจริง**: backswing 0.8→0.5, forward 1.2→0.7, contact peak 2.0→1.1, rising frames 2→1 + `forwardBypass` (speed>1.0 ×2 เฟรม) สำหรับวงสวิงแนวดิ่ง/แกนกล้องที่ velX ไม่พลิกเครื่องหมาย. Idle/เดิน/เก็บลูกไม่ false-trigger (มีเทสยืนยัน)
