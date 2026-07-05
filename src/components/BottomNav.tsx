@@ -11,6 +11,8 @@ interface NavItem {
 
 const ITEMS: NavItem[] = [
   { screen: 'home', labelKey: 'nav.home', icon: '⌂' },
+  { screen: 'compare', labelKey: 'nav.compare', icon: '⇆' },
+  { screen: 'history', labelKey: 'nav.history', icon: '▤' },
   { screen: 'summary', labelKey: 'nav.summary', icon: '≡' },
   { screen: 'devplan', labelKey: 'nav.devplan', icon: '◎' },
 ];

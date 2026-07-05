@@ -1,10 +1,21 @@
 # HANDOFF.md — สถานะงาน + สิ่งที่ต้องทำต่อ
 
-> อัปเดตล่าสุด: 2026-07-04 (release v0.3) · สำหรับ Claude session ถัดไป (หรือคนที่มารับช่วง) อ่านคู่กับ `CLAUDE.md`
+> อัปเดตล่าสุด: 2026-07-05 (release v0.5) · สำหรับ Claude session ถัดไป (หรือคนที่มารับช่วง) อ่านคู่กับ `CLAUDE.md`
 
 ## TL;DR
 
-แอป deploy อยู่ที่ https://ton-phet-tennis-862607193158.asia-southeast1.run.app (**revision `00004`**, image `…/ton-phet/app:v3`, git tag **v0.3**). บั๊ก "จับภาพวงสวิงไม่ขึ้น" **แก้แล้ว** (Fable verdict: ship, 39/39 tests) — ต้นตอคือ threshold จับ contact ตั้งไว้ ~2 เท่าของความเร็วสวิงจริงบนกล้องมือถือ 15fps. เพิ่ม Detection HUD บนจอ Live ไว้จูนในสนาม. เหลือ blocker เดียว: **ยังไม่มี `GEMINI_API_KEY` (AIza…)** — เสียง/โค้ชสดยังใช้ได้เฉพาะผ่าน AQ. token ชั่วคราวที่ paste ใน Settings (user ยืนยัน token ล่าสุดใช้ได้จริง เทสผ่าน Live API แล้ว)
+แอป deploy อยู่ที่ https://ton-phet-tennis-862607193158.asia-southeast1.run.app (**revision `00008`**, image `…/ton-phet/app:v5`, git tag **v0.5**). ล่าสุด: **cloud persistence + หน้า Compare + หน้า History** ครบ (Fable verdict: ship-with-fixes → แก้ครบแล้ว, 98/98 tests, E2E จริงบน prod ผ่านหมด). เหลือ blocker เดียวเหมือนเดิม: **ยังไม่มี `GEMINI_API_KEY` (AIza…)** — เสียง/โค้ชสดยังใช้ได้เฉพาะผ่าน AQ. token ชั่วคราวที่ paste ใน Settings
+
+## v0.5 (2026-07-05) — Cloud + Compare + History (ล่าสุด, revision `00008`, tag v0.5)
+
+- **สถาปัตยกรรม:** คลิป → GCS bucket `ton-phet-clips` (**ลบอัตโนมัติ 3 วันที่ระดับ bucket** — server ห้ามลบ object เอง) · metadata → **Supabase Postgres** ผ่าน `DATABASE_URL` · client อัปโหลดแบบ fire-and-forget ไม่บล็อก pose loop · env หาย → 503 สองภาษา + fallback localStorage (แอปไม่พังไม่ว่ากรณีไหน)
+- **⚠️ Supabase gotcha (จ่ายบทเรียนแล้ว):** host ตรง `db.*.supabase.co` เป็น IPv6-only (ENOTFOUND) — ต้องใช้ pooler IPv4 `aws-0-ap-northeast-1.pooler.supabase.com:5432` user `postgres.<ref>` + password URL-encode (`@`→`%40`). ค่าจริงอยู่ใน `.env.local` (gitignored)
+- **Deploy env:** SA ใช้ Secret Manager ไม่ได้ → ส่งเป็น env vars: `gcloud run deploy … --update-env-vars "^|^GCS_BUCKET=ton-phet-clips|DATABASE_URL=<จาก .env.local>"` (delimiter `^|^` กันอักขระพิเศษ)
+- **ไฟล์ใหม่:** `server/db.mjs` (pg Pool + auto-migrate + purge 3 วัน) · `server/gcs.mjs` (proxy-stream พร้อม **Range/206** เพื่อ iOS Safari + offline latch 60 วิ) · `server/routes.mjs` · `server/lib.mjs` (+tests) · `src/data/api.ts`+`cloudSync.ts` · `src/screens/CompareScreen.tsx` (เทียบคลิปเรากับ YouTube/URL ต้นแบบ — default refs ตรวจ oEmbed แล้วว่า embed ได้จริง) · `src/screens/HistoryScreen.tsx` + `src/history/derive.ts` + SVG `RadarChart`/`BarChart` (วาดเอง ไม่มี lib)
+- **Fable findings ที่แก้แล้ว:** default YouTube ตาย 2 ตัว → แทนด้วยของจริง (verified) · GCS latch ถาวร → time-box 60 วิ · streamClip ไม่รองรับ Range → 206/Content-Range (เทสจริงแล้วทั้ง local+prod) · Compare preselect เอาคลิปเก่าสุด → ใหม่สุด · doc comment เรื่องลบคลิป
+- **Minor ที่รับสภาพ:** `ssl.rejectUnauthorized:false` ใน db.mjs (convenience ของ pooler) · ลบ session ทิ้ง orphan clip ใน GCS ได้สูงสุด 3 วัน (lifecycle เก็บกวาดเอง — by design)
+- **humanTestNeeded:** เล่นคลิป cloud บน iPhone Safari จริงผ่าน LTE ที่สนาม · ดู 3-day purge ทำงานจริงหลัง 3 วัน
+- **ค้าง:** rotate รหัส Supabase + sb_ keys ที่เคยแชร์ในแชท · rotate AQ. tokens เก่า · `GEMINI_API_KEY` ถาวร
 
 ## v0.4 (2026-07-05) — วิดีโอคลิปวงสวิง (ล่าสุด, revision `00007`, tag v0.4)
 

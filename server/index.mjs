@@ -12,6 +12,8 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GoogleGenAI } from '@google/genai';
+import { mountCloudRoutes } from './routes.mjs';
+import { initDb } from './db.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -55,6 +57,13 @@ app.get('/api/token', async (_req, res) => {
     res.status(502).json({ error: 'mint_failed', message: String(err?.message || err) });
   }
 });
+
+// Cloud persistence (Postgres metadata + GCS clips). Mounted BEFORE the static
+// / SPA fallback so /api/* routes win over the catch-all. Boots the DB
+// (migrate + purge + 6h purge timer); all endpoints degrade to a bilingual 503
+// when DATABASE_URL / GCS creds are absent — nothing crashes.
+initDb();
+mountCloudRoutes(app);
 
 // Static frontend + SPA fallback.
 const dist = path.join(__dirname, '..', 'dist');

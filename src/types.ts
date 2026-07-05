@@ -11,7 +11,7 @@
 export type Lang = 'th' | 'en';
 
 /** Top-level screens routed by App.tsx via store.screen. */
-export type Screen = 'home' | 'live' | 'summary' | 'devplan';
+export type Screen = 'home' | 'live' | 'summary' | 'devplan' | 'compare' | 'history';
 
 // ---------------------------------------------------------------------------
 // Pose (MediaPipe PoseLandmarker, 33 landmarks, normalized [0..1] coords)
@@ -222,6 +222,8 @@ export interface ShotClip {
   /** Recording canvas pixel size. */
   width: number;
   height: number;
+  /** Encoded clip bytes retained ONLY for cloud upload this session. NEVER serialized. */
+  blob?: Blob;
 }
 
 /** Coaching returned by Gemini Live for one shot (or one mic Q&A). */
@@ -344,6 +346,62 @@ export interface StoredSession {
 
 /** Persisted history: pruned to HISTORY_TTL_MS on init and on every save. */
 export type History = StoredSession[];
+
+// ---------------------------------------------------------------------------
+// Cloud sync (Postgres metadata + GCS clips; 3-day server-side lifecycle)
+// ---------------------------------------------------------------------------
+
+/** Session summary blob stored as jsonb in Postgres (sessions.summary). */
+export interface SessionSummaryJson {
+  durationMs: number;
+  goodFormPct: number;
+  bestPeakWristSpeed: number;
+  totalCostTHB: number;
+  focusShot: FocusShot;
+  improvements: SessionImprovement[];
+}
+
+/** One session row from the cloud (GET /api/history list item). */
+export interface CloudSessionSummary {
+  id: string;
+  userName: string;
+  startedAt: string;
+  endedAt: string | null;
+  avgScore: number;
+  shotCount: number;
+  summary: SessionSummaryJson | null;
+}
+
+/** One shot row from the cloud (metadata only; clip streamed separately). */
+export interface CloudShot {
+  id: string;
+  sessionId: string;
+  idx: number;
+  type: ShotType;
+  score: number;
+  angles: JointAngles;
+  statuses: AngleStatuses;
+  issues: ShotIssue[];
+  peakWristSpeed: number;
+  hasClip: boolean;
+  clipMime: string | null;
+  createdAt: string;
+}
+
+/** Full session detail (GET /api/sessions/:id) including its shots. */
+export interface CloudSessionDetail extends CloudSessionSummary {
+  shots: CloudShot[];
+}
+
+/** Remembered reference-video URL per shot type (localStorage 'tp.refVideos'). */
+export type RefPrefs = Partial<Record<ShotType, string>>;
+
+/** A clip selected on the Compare screen (user clip or a picked history clip). */
+export interface CompareClipRef {
+  url: string;
+  mimeType: string;
+  shotType: ShotType;
+}
 
 /** Cross-session aggregate stats shown on Home ("Your Stats"). */
 export interface UserStats {

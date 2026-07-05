@@ -12,9 +12,11 @@
 //   swing discarded        ⇒ discardSwing() (drop chunks, no URL)
 //   effect cleanup         ⇒ dispose()      (discard + release stream)
 //
-// SESSION-ONLY: finishSwing() mints a blob: object URL. The store owns its
-// lifetime (revoked on eviction / endSession / startSession). Clips are NEVER
-// persisted — the durable artifacts remain the still SwingCaptures.
+// SESSION-ONLY: finishSwing() mints a blob: object URL AND retains the encoded
+// Blob (ShotClip.blob) so cloudSync can upload it to GCS this session. The store
+// owns their lifetime (URL revoked + blob dropped on eviction / endSession /
+// startSession). Clips are NEVER persisted to localStorage — the durable
+// artifacts remain the still SwingCaptures.
 //
 // GRACEFUL DEGRADATION: every browser-media API touch is behind the `supported`
 // flag + try/catch. In jsdom/node (no MediaRecorder / captureStream) the whole
@@ -260,6 +262,8 @@ export class SwingRecorder {
         sizeBytes: blob.size,
         width: canvas ? canvas.width : 0,
         height: canvas ? canvas.height : 0,
+        // Retained for this session's cloud upload (never serialized).
+        blob,
       };
     } catch {
       this.clearCapTimer();

@@ -3,6 +3,8 @@ import HomeScreen from './screens/HomeScreen';
 import LiveScreen from './screens/LiveScreen';
 import SummaryScreen from './screens/SummaryScreen';
 import DevPlanScreen from './screens/DevPlanScreen';
+import CompareScreen from './screens/CompareScreen';
+import HistoryScreen from './screens/HistoryScreen';
 import SettingsSheet from './components/SettingsSheet';
 import BottomNav from './components/BottomNav';
 
@@ -16,6 +18,8 @@ export default function App() {
       {screen === 'live' && <LiveScreen />}
       {screen === 'summary' && <SummaryScreen />}
       {screen === 'devplan' && <DevPlanScreen />}
+      {screen === 'compare' && <CompareScreen />}
+      {screen === 'history' && <HistoryScreen />}
       <SettingsSheet />
       <BottomNav />
     </div>

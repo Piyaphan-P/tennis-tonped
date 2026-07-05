@@ -26,6 +26,7 @@ import { create } from 'zustand';
 import { HISTORY_TTL_MS } from './types';
 import type {
   AngleStatuses,
+  CompareClipRef,
   CoachingResult,
   CoachState,
   ConnectionState,
@@ -449,6 +450,13 @@ export interface AppState {
   settings: Settings;
   settingsOpen: boolean;
 
+  /** Cloud session id for the CURRENT live session (null until created lazily
+   *  on first shot; reset to null by startSession). Written by the cloud-sync
+   *  flow, read when uploading shots/clips. */
+  cloudSessionId: string | null;
+  /** Clip chosen on the Compare screen (user clip or picked history clip). */
+  compareClip: CompareClipRef | null;
+
   /**
    * Runtime Gemini ephemeral token override (pasted in Settings). Seeded from
    * VITE_GEMINI_TOKEN; liveClient prefers this over the build-time env var so a
@@ -482,6 +490,10 @@ export interface AppState {
   /** Sets the player name (settings.userName) and persists it. */
   setUserName: (name: string) => void;
   setAuthToken: (token: string) => void;
+  /** Set the cloud session id for the current live session (or null to clear). */
+  setCloudSessionId: (id: string | null) => void;
+  /** Set (or clear) the clip selected on the Compare screen. */
+  setCompareClip: (c: CompareClipRef | null) => void;
 
   // --- actions: session lifecycle ---
   /** Resets shots/cost/pose/coach and marks session 'starting'. Called by Home CTA. */
@@ -566,6 +578,8 @@ export const useAppStore = create<AppState>()((set) => ({
   settings: DEFAULT_SETTINGS,
   settingsOpen: false,
   authToken: envToken(),
+  cloudSessionId: null,
+  compareClip: null,
 
   session: INITIAL_SESSION,
   connection: 'disconnected',
@@ -603,6 +617,8 @@ export const useAppStore = create<AppState>()((set) => ({
     set((s) => ({ settings: { ...s.settings, userName } }));
   },
   setAuthToken: (authToken) => set({ authToken: authToken.trim() }),
+  setCloudSessionId: (cloudSessionId) => set({ cloudSessionId }),
+  setCompareClip: (compareClip) => set({ compareClip }),
 
   // --- session lifecycle ---
   startSession: () =>
@@ -610,6 +626,7 @@ export const useAppStore = create<AppState>()((set) => ({
       // Defensive: a session abandoned without endSession must not leak blobs.
       for (const sh of s.shots) revokeClipUrl(sh.clip);
       return {
+        cloudSessionId: null,
         session: {
           status: 'starting',
           startedAtMs: Date.now(),

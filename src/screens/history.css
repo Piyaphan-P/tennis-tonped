@@ -1,0 +1,186 @@
+/* ============================================================================
+   ต้นและเพชร Tennis Club — History screen styles.
+   Imported ONLY by HistoryScreen.tsx. All colors via theme.css tokens.
+   ============================================================================ */
+
+.hist-back {
+  align-self: flex-start;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  padding: var(--sp-1) 0;
+  cursor: pointer;
+}
+.hist-back:hover {
+  color: var(--text);
+}
+
+/* --- list --- */
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.session-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--sp-4);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+button.session-card:hover {
+  border-color: var(--line-strong);
+}
+.session-card--local {
+  cursor: default;
+  align-items: stretch;
+}
+
+.session-date {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.hist-score {
+  font-size: 1.5rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* --- banners / states --- */
+.hist-banner {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.hist-skeleton {
+  padding: var(--sp-6) var(--sp-4);
+  text-align: center;
+  color: var(--text-dim);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
+
+.hist-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-7) var(--sp-4);
+  text-align: center;
+}
+
+/* --- detail header --- */
+.detail-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.detail-header h1 {
+  font-size: 1.25rem;
+}
+
+.hist-trend {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+/* --- improvement lists (session summary + per clip) --- */
+.hist-improve {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.hist-improve li {
+  font-size: 0.82rem;
+  line-height: 1.35;
+  padding-left: var(--sp-3);
+  position: relative;
+}
+.hist-improve li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  opacity: 0.7;
+}
+
+/* --- bar chart horizontal scroll for wide sessions --- */
+.barchart-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+.barchart {
+  display: block;
+}
+
+/* --- per-clip cards --- */
+.clip-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-4);
+}
+@media (min-width: 720px) {
+  .clip-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.clip-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--sp-4);
+}
+
+.clip-video {
+  width: 100%;
+  border-radius: var(--radius-sm);
+  background: #000;
+  display: block;
+}
+
+.clip-noclip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 9;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+}
+
+.radar-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.radar-chart {
+  max-width: 100%;
+  height: auto;
+}

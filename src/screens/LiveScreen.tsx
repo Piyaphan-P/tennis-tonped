@@ -21,6 +21,7 @@ import { ShotDetector } from '../analysis/shotDetector';
 import type { CaptureContext } from '../analysis/shotDetector';
 import { SwingRecorder } from '../analysis/swingRecorder';
 import { coachLive } from '../coach/liveClient';
+import * as cloudSync from '../data/cloudSync';
 import type { JointAngles, PoseFrame, Shot } from '../types';
 import PhaseChip from '../components/PhaseChip';
 import PoseCanvas from '../components/PoseCanvas';
@@ -122,7 +123,11 @@ export default function LiveScreen() {
 
     // A completed swing → ask the coach (queued/dropped per liveClient rules).
     const detector = new ShotDetector({
-      onShotCompleted: (shot: Shot) => coachLive.sendShotForCoaching(shot),
+      onShotCompleted: (shot: Shot) => {
+        coachLive.sendShotForCoaching(shot);
+        // Fire-and-forget cloud persistence (metadata now, clip after finish).
+        cloudSync.syncShotCompleted(shot);
+      },
       // idle→preparation: arm a fresh clip recording.
       onSwingStarted: () => recorder?.startSwing(),
       // finalize(): completed → finish + attach the clip; discarded → drop it.
@@ -132,11 +137,16 @@ export default function LiveScreen() {
           return;
         }
         recorder?.finishSwing().then((clip) => {
-          if (clip) useAppStore.getState().attachShotClip(shotId, clip);
+          if (clip) {
+            useAppStore.getState().attachShotClip(shotId, clip);
+            cloudSync.syncClipAttached(shotId, clip);
+          }
         });
       },
     });
     detector.reset();
+    // Fresh per-session cloud-sync state (maps, session-create memo, offline latch).
+    cloudSync.resetCloudSync();
 
     // Connect the realtime coach (non-fatal if the token is missing/expired —
     // the local skeleton, angles and score keep working regardless).
@@ -197,6 +207,8 @@ export default function LiveScreen() {
 
   const end = () => {
     coachLive.disconnect();
+    // Snapshot + PATCH the cloud session summary BEFORE endSession() mutates state.
+    cloudSync.syncSessionEnded();
     endSession();
     setScreen('summary');
   };

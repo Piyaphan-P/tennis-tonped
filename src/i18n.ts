@@ -96,6 +96,8 @@ const DICT = {
 
   // --- bottom nav ---
   'nav.home': { th: 'หน้าหลัก', en: 'Home' },
+  'nav.compare': { th: 'เปรียบเทียบ', en: 'Compare' },
+  'nav.history': { th: 'ประวัติ', en: 'History' },
   'nav.summary': { th: 'สรุป', en: 'Summary' },
   'nav.devplan': { th: 'พัฒนา', en: 'Plan' },
   'nav.settings': { th: 'ตั้งค่า', en: 'Settings' },
@@ -234,16 +236,63 @@ const DICT = {
   'stats.bestSpeed': { th: 'สวิงเร็วสุด', en: 'Best Speed' },
 
   // --- session history (3-day auto-expiry) ---
-  'history.title': { th: 'ประวัติการฝึก', en: 'Session History' },
+  'history.title': { th: 'ประวัติการฝึก', en: 'Training History' },
   'history.empty': {
-    th: 'ยังไม่มีประวัติ เริ่มฝึกเซสชันแรกของคุณเลย',
-    en: 'No history yet — start your first session!',
+    th: 'ยังไม่มีประวัติใน 3 วันที่ผ่านมา',
+    en: 'No sessions in the last 3 days',
   },
   'history.expiryNote': {
     th: 'ประวัติเก็บไว้ 3 วัน แล้วลบอัตโนมัติ',
     en: 'History is kept for 3 days, then auto-deleted',
   },
-  'history.shots': { th: 'ช็อต', en: 'shots' },
+  'history.shots': { th: 'ลูก', en: 'shots' },
+  'history.loading': { th: 'กำลังโหลดประวัติ…', en: 'Loading history…' },
+  'history.offlineNote': {
+    th: 'โหมดออฟไลน์ — แสดงสถิติที่บันทึกในเครื่องเท่านั้น',
+    en: 'Offline — showing device-only stats',
+  },
+  'history.avgScore': { th: 'คะแนนเฉลี่ย', en: 'Avg score' },
+  'history.summaryTitle': { th: 'สรุปท้ายเซสชัน', en: 'Session summary' },
+  'history.topFaults': { th: 'จุดที่ควรแก้บ่อยที่สุด', en: 'Most frequent faults' },
+  'history.trendUp': { th: 'ฟอร์มดีขึ้นระหว่างเซสชัน', en: 'Form improved during the session' },
+  'history.trendDown': { th: 'ฟอร์มตกช่วงท้าย', en: 'Form declined late in the session' },
+  'history.trendFlat': { th: 'ฟอร์มคงที่ทั้งเซสชัน', en: 'Form held steady' },
+  'history.perShotScores': { th: 'คะแนนรายลูก', en: 'Per-shot scores' },
+  'history.noClip': { th: 'ไม่มีคลิปสำหรับลูกนี้', en: 'No clip for this shot' },
+  'history.compareThis': { th: 'เปรียบเทียบคลิปนี้', en: 'Compare this clip' },
+  'history.delete': { th: 'ลบเซสชัน', en: 'Delete session' },
+  'history.deleteConfirm': {
+    th: 'ลบเซสชันนี้และคลิปทั้งหมด?',
+    en: 'Delete this session and all its clips?',
+  },
+  'history.deleteFailed': { th: 'ลบไม่สำเร็จ ลองใหม่อีกครั้ง', en: 'Delete failed — try again' },
+  'history.loadFailed': { th: 'โหลดข้อมูลไม่สำเร็จ', en: 'Failed to load' },
+  'history.retry': { th: 'ลองใหม่', en: 'Retry' },
+  'history.radarTitle': { th: 'มุมข้อต่อเทียบเป้าหมาย', en: 'Joints vs target' },
+
+  // --- compare screen (user clip vs reference video) ---
+  'compare.title': { th: 'เปรียบเทียบวงสวิง', en: 'Swing Compare' },
+  'compare.yourSwing': { th: 'วงสวิงของคุณ', en: 'Your swing' },
+  'compare.reference': { th: 'ท่าต้นแบบ', en: 'Reference' },
+  'compare.urlPlaceholder': {
+    th: 'วางลิงก์ YouTube หรือลิงก์วิดีโอ…',
+    en: 'Paste a YouTube or video URL…',
+  },
+  'compare.apply': { th: 'ใช้ลิงก์นี้', en: 'Use link' },
+  'compare.badUrl': {
+    th: 'ลิงก์ไม่ถูกต้อง — ใช้ลิงก์ YouTube หรือไฟล์วิดีโอ',
+    en: 'Invalid link — use a YouTube or direct video URL',
+  },
+  'compare.noClips': {
+    th: 'ยังไม่มีคลิป — เริ่มฝึกซ้อมเพื่อบันทึกวงสวิง',
+    en: 'No clips yet — start a session to record swings',
+  },
+  'compare.cloudOffline': {
+    th: 'คลิปย้อนหลังใช้ไม่ได้ (ออฟไลน์) — ใช้คลิปจากรอบนี้ได้',
+    en: "Cloud clips unavailable (offline) — this session's clips still work",
+  },
+  'compare.pickClip': { th: 'เลือกคลิป', en: 'Pick a clip' },
+  'compare.shotType': { th: 'ประเภทลูก', en: 'Shot type' },
 
   // --- token modality labels ---
   'token.textIn': { th: 'ข้อความเข้า', en: 'Text In' },
