@@ -48,6 +48,32 @@ export default function HomeScreen() {
         <p className="dim">{t('home.tagline')}</p>
       </div>
 
+      {/* --- dominant hand: prominent, must be explicit before playing --- */}
+      <div className="card col" style={{ gap: 8 }}>
+        <h3>{t('home.handedness.title')}</h3>
+        <div className="row" style={{ gap: 8 }}>
+          <button
+            className={`btn tap${settings.dominantHand === 'right' ? ' btn-primary' : ' btn-ghost'}`}
+            style={{ flex: 1, fontSize: '1.05rem', padding: '14px 8px' }}
+            onClick={() => updateSettings({ dominantHand: 'right' })}
+            aria-pressed={settings.dominantHand === 'right'}
+          >
+            {t('home.handedness.right')}
+          </button>
+          <button
+            className={`btn tap${settings.dominantHand === 'left' ? ' btn-primary' : ' btn-ghost'}`}
+            style={{ flex: 1, fontSize: '1.05rem', padding: '14px 8px' }}
+            onClick={() => updateSettings({ dominantHand: 'left' })}
+            aria-pressed={settings.dominantHand === 'left'}
+          >
+            {t('home.handedness.left')}
+          </button>
+        </div>
+        <span className="faint" style={{ fontSize: '0.75rem' }}>
+          {t('home.handedness.explainer')}
+        </span>
+      </div>
+
       {/* --- session setup --- */}
       <div className="card col" style={{ gap: 'var(--sp-4)' }}>
         <h3>{t('home.setup')}</h3>
@@ -120,6 +146,12 @@ export default function HomeScreen() {
         </button>
         <p className="faint" style={{ fontSize: '0.85rem', textAlign: 'center' }}>
           {t('home.subtitle')}
+        </p>
+        <p className="dim" style={{ fontSize: '0.8rem', textAlign: 'center' }}>
+          {t('home.handedness.current')}:{' '}
+          {settings.dominantHand === 'right'
+            ? t('home.handedness.right')
+            : t('home.handedness.left')}
         </p>
       </div>
 

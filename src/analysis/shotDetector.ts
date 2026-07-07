@@ -175,10 +175,32 @@ export const SHOT_THRESHOLDS = {
   minShotDurationMs: 300,
   /** Discard swings longer than this (ms) — state machine likely desynced. */
   maxShotDurationMs: 3000,
-  /** After finalizing (completed or discarded), block re-entry for this long (ms). */
-  cooldownMs: 800,
+  /**
+   * POST-SHOT COOLDOWN (v0.9): after finalizing (completed OR discarded), block
+   * re-arming a new preparation for this long (ms). Raised 800 -> 2500 on
+   * on-court feedback that captures fired far too frequently ("จับภาพรัวมาก"):
+   * a real player needs ~2-3s to reset between ball-machine feeds, so this
+   * spaces shots out and stops one long swing's residual motion (or a two-part
+   * follow-through) from immediately arming a second phantom shot. A would-be
+   * swing inside this window is surfaced on the HUD as a 'cooldown' discard,
+   * never recorded and never sent to the coach.
+   */
+  cooldownMs: 2500,
   /** Dominant-wrist visibility below this at contact -> type 'unknown'. */
   minVisibilityForType: 0.5,
+  /**
+   * Shot-type orientation gate: minimum |domShoulder.x − nonDomShoulder.x|
+   * (normalized) needed to read which image side is the dominant-hand side.
+   * Below this the player is too side-on for an x-based forehand/backhand call
+   * -> 'unknown'. Checked BEFORE the span is used as a divisor.
+   */
+  typeShoulderMinSpanX: 0.04,
+  /**
+   * Shot-type hysteresis: the dominant wrist must sit at least this fraction of
+   * the shoulder span away from the body midline to commit to forehand/backhand;
+   * nearer-center contacts fall back to 'unknown' rather than guess wrong.
+   */
+  typeMidlineMarginFrac: 0.12,
   /**
    * While in 'backswing', if speed stays above this for forwardBypassFrames
    * consecutive frames WITHOUT velX ever flipping sign, enter 'forward-swing'
@@ -195,11 +217,30 @@ export const SHOT_THRESHOLDS = {
 // ---------------------------------------------------------------------------
 
 /**
- * Forehand vs backhand from the contact-frame landmarks: compare the
- * dominant wrist's side of the body midline (hip midpoint) to the dominant
- * shoulder's side. Same side -> forehand (wrist stays on the racquet-arm
- * side). Opposite side -> backhand (wrist has crossed the body). Low
- * dominant-wrist visibility -> 'unknown' rather than guessing.
+ * HANDEDNESS-ANCHORED forehand vs backhand (v0.9 bug fix).
+ *
+ * Anchored on the player's stated dominant hand (settings.dominantHand), NOT on
+ * where the racquet-arm happens to sit in the image: a swing whose dominant
+ * wrist is on the player's DOMINANT-HAND side of the body midline at contact is
+ * a FOREHAND (right-handed & ball on the right = โฟร์แฮนด์แน่ ๆ), the opposite
+ * side is a BACKHAND (the arm has crossed the body).
+ *
+ * MIRROR-INVARIANT by construction. MediaPipe landmarks are RAW normalized
+ * video coords — the store's cameraFacing / PoseCanvas mirroring (px = 1−x) is
+ * DISPLAY-ONLY and never touches these landmarks. So we never assume "+x = the
+ * player's right"; instead we read which image side the dominant side is on
+ * from the SHOULDER PAIR (dominant shoulder x − non-dominant shoulder x). That
+ * baseline flips together with a coordinate mirror, and the dominant wrist's
+ * offset flips with it, so `sign(wristOffset) === orientationSign` is identical
+ * whether the coords are mirrored or not. Using the full shoulder baseline
+ * (not a single shoulder vs. the midline) also survives the torso rotation at
+ * contact that made the old single-shoulder test flip a forehand to backhand.
+ *
+ * Falls back to 'unknown' (never a wrong guess) when:
+ *  - dominant wrist / shoulder visibility is too low,
+ *  - the player is too side-on to resolve orientation from x (shoulder x-span
+ *    below typeShoulderMinSpanX — an x-based method genuinely can't tell), or
+ *  - the wrist sits within a hysteresis margin of the midline (near-center).
  */
 export function classifyShotType(
   landmarks: Landmark[],
@@ -207,27 +248,45 @@ export function classifyShotType(
 ): ShotType {
   if (!landmarks || landmarks.length < 33) return 'unknown';
 
+  const domShoulderIdx = dominantHand === 'right' ? LM.RIGHT_SHOULDER : LM.LEFT_SHOULDER;
+  const nonDomShoulderIdx = dominantHand === 'right' ? LM.LEFT_SHOULDER : LM.RIGHT_SHOULDER;
   const wristIdx = dominantHand === 'right' ? LM.RIGHT_WRIST : LM.LEFT_WRIST;
-  const shoulderIdx = dominantHand === 'right' ? LM.RIGHT_SHOULDER : LM.LEFT_SHOULDER;
+
   const wrist = landmarks[wristIdx];
-  const shoulder = landmarks[shoulderIdx];
+  const domShoulder = landmarks[domShoulderIdx];
+  const nonDomShoulder = landmarks[nonDomShoulderIdx];
   const leftHip = landmarks[LM.LEFT_HIP];
   const rightHip = landmarks[LM.RIGHT_HIP];
-  if (!wrist || !shoulder || !leftHip || !rightHip) return 'unknown';
+  if (!wrist || !domShoulder || !nonDomShoulder || !leftHip || !rightHip) return 'unknown';
 
   if (
     (wrist.visibility ?? 1) < SHOT_THRESHOLDS.minVisibilityForType ||
-    (shoulder.visibility ?? 1) < SHOT_THRESHOLDS.minVisibilityForType
+    (domShoulder.visibility ?? 1) < SHOT_THRESHOLDS.minVisibilityForType ||
+    (nonDomShoulder.visibility ?? 1) < SHOT_THRESHOLDS.minVisibilityForType
   ) {
     return 'unknown';
   }
 
-  const midlineX = (leftHip.x + rightHip.x) / 2;
-  const wristSide = Math.sign(wrist.x - midlineX);
-  const shoulderSide = Math.sign(shoulder.x - midlineX);
+  // Orientation baseline: which image side is the player's dominant-hand side,
+  // read from the shoulder pair. Signed; magnitude = confidence.
+  const shoulderSpanX = domShoulder.x - nonDomShoulder.x;
+  // GATE FIRST — must run BEFORE the division below, or a near-zero span (a
+  // side-on player) would blow up `rel` into a CONFIDENT WRONG answer.
+  if (Math.abs(shoulderSpanX) < SHOT_THRESHOLDS.typeShoulderMinSpanX) return 'unknown';
+  const orientationSign = Math.sign(shoulderSpanX);
 
-  if (wristSide === 0 || shoulderSide === 0) return 'unknown';
-  return wristSide === shoulderSide ? 'forehand' : 'backhand';
+  // Body midline (torso central axis). Shoulder-center + hip-center averaged;
+  // hip-center stabilizes it against shoulder rotation at contact.
+  const shoulderCenterX = (domShoulder.x + nonDomShoulder.x) / 2;
+  const hipCenterX = (leftHip.x + rightHip.x) / 2;
+  const midlineX = (shoulderCenterX + hipCenterX) / 2;
+
+  // Dominant wrist offset from the midline, normalized by the (already-gated,
+  // non-tiny) shoulder span so the hysteresis margin is scale-invariant.
+  const rel = (wrist.x - midlineX) / Math.abs(shoulderSpanX);
+  if (Math.abs(rel) < SHOT_THRESHOLDS.typeMidlineMarginFrac) return 'unknown';
+
+  return Math.sign(rel) === orientationSign ? 'forehand' : 'backhand';
 }
 
 // ---------------------------------------------------------------------------
@@ -295,6 +354,17 @@ export class ShotDetector {
 
   // cooldown after finalizing a shot (completed or discarded)
   private cooldownUntilMs = 0;
+  // consecutive would-be-prep frames observed DURING cooldown (for the HUD
+  // 'cooldown' suppression event); and a latch so we surface it at most once
+  // per cooldown window.
+  private cooldownPrepStreak = 0;
+  private cooldownEventFired = false;
+
+  // FULL-CYCLE guard: a swing only completes (→ coach dispatch) if the FSM
+  // actually traversed through follow-through. Set true on entering
+  // 'follow-through'; a swing that stalls mid-phase leaves it false and is
+  // discarded instead of dispatched.
+  private followThroughReached = false;
 
   // accumulated shot data
   private startMs = 0;
@@ -324,6 +394,9 @@ export class ShotDetector {
     this.lowSpeedStreak = 0;
     this.lowSpeedStreakStartMs = 0;
     this.cooldownUntilMs = 0;
+    this.cooldownPrepStreak = 0;
+    this.cooldownEventFired = false;
+    this.followThroughReached = false;
     this.clearAccumulated();
     appStore.getState().setPhase('idle');
     // Keep HUD counters in lockstep with the detector's lifecycle — re-entering
@@ -384,7 +457,33 @@ export class ShotDetector {
 
     // --- idle: gate entry into 'preparation' ------------------------------
     if (this.phase === 'idle') {
-      if (ts < this.cooldownUntilMs) return; // cooling down after last shot
+      if (ts < this.cooldownUntilMs) {
+        // Cooling down after the last shot: a new prep MUST NOT arm here (no
+        // recording, no captures, no coach dispatch). But a real would-be swing
+        // during the window is worth surfacing on the HUD once, so the player
+        // sees WHY nothing was captured ("คูลดาวน์") instead of silence.
+        if (speed > this.th.prepEnterSpeed) {
+          this.cooldownPrepStreak += 1;
+          if (this.cooldownPrepStreak >= this.th.prepEnterFrames && !this.cooldownEventFired) {
+            this.cooldownEventFired = true;
+            appStore.getState().pushDetectionEvent({
+              atMs: ts,
+              kind: 'swing-discarded',
+              reason: 'cooldown',
+              peakWristSpeed: speed,
+              durationMs: 0,
+              captureCount: 0,
+              shotIndex: 0,
+            });
+          }
+        } else {
+          this.cooldownPrepStreak = 0;
+        }
+        return;
+      }
+      // Window just elapsed — clear the suppression latch for next time.
+      this.cooldownPrepStreak = 0;
+      this.cooldownEventFired = false;
 
       if (speed > this.th.prepEnterSpeed) {
         if (this.prepStreak === 0) this.prepStreakStartMs = ts;
@@ -396,6 +495,7 @@ export class ShotDetector {
           this.backswingSign = 0;
           this.bypassStreak = 0;
           this.lowSpeedStreak = 0;
+          this.followThroughReached = false;
           this.prevSnapshot = { ts, angles, landmarks: frame.landmarks, speed };
           appStore.getState().markSwingStarted();
           this.opts.onSwingStarted?.();
@@ -502,6 +602,9 @@ export class ShotDetector {
         // trying every tick from here on, synthesized from the detector's OWN
         // stored peak data — never the late ctx's pose — until one lands.
         this.retryContactCapture(getJpeg);
+        // FULL-CYCLE marker: the swing has now traversed the complete cycle
+        // through follow-through, so finalize() is allowed to dispatch it.
+        this.followThroughReached = true;
         this.setPhase('follow-through');
         break;
       }
@@ -555,10 +658,14 @@ export class ShotDetector {
   private finalize(endMs: number, getJpeg?: GetJpeg): void {
     const duration = endMs - this.startMs;
     const hasContact = this.contactAngles !== null && this.contactLandmarks !== null;
+    // FULL-SWING-ONLY: a shot only reaches the coach if the FSM ran the complete
+    // cycle through follow-through. A partial swing that stalled mid-phase
+    // (never locked contact, or never entered follow-through) is discarded.
+    const fullCycle = hasContact && this.followThroughReached;
     const validDuration =
       duration >= this.th.minShotDurationMs && duration <= this.th.maxShotDurationMs;
 
-    if (hasContact && validDuration) {
+    if (fullCycle && validDuration) {
       const { settings, shots } = appStore.getState();
       const type = classifyShotType(this.contactLandmarks as Landmark[], settings.dominantHand);
       const { score, issues } = scoreShot({
@@ -662,7 +769,11 @@ export class ShotDetector {
       // Discarded swing: still surface it on the detection HUD so a real
       // on-court swing that never reached 'contact' (or was too short/long)
       // is visible instead of silently vanishing.
-      const reason: SwingDiscardReason = !hasContact
+      // A swing that never completed the full cycle (no contact locked, or
+      // contact but no follow-through) reads as 'no-contact' — it's a partial
+      // swing, not a valid shot. Duration reasons only apply once the cycle
+      // was otherwise complete.
+      const reason: SwingDiscardReason = !fullCycle
         ? 'no-contact'
         : duration < this.th.minShotDurationMs
           ? 'too-short'
@@ -691,6 +802,9 @@ export class ShotDetector {
     this.backswingSign = 0;
     this.bypassStreak = 0;
     this.lowSpeedStreak = 0;
+    this.followThroughReached = false;
+    this.cooldownPrepStreak = 0;
+    this.cooldownEventFired = false;
     this.cooldownUntilMs = endMs + this.th.cooldownMs;
     this.setPhase('idle');
   }

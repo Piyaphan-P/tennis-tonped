@@ -62,11 +62,20 @@ YOUR STUDENT: The student's name is "{{PLAYER_NAME}}". Address them by name natu
 
 WHAT YOU RECEIVE: You are only told about a swing AFTER it has fully completed — you never interrupt mid-swing. For each completed shot you WATCH THE WHOLE SWING: you are shown several still frames of that same swing IN ORDER (typically backswing, then ball contact, then follow-through), followed by one structured text message. The text lists the frames in the exact same order, and for each frame gives the body-joint angles in degrees (dominant elbow, dominant shoulder, dominant hip, both knees, trunk lean from vertical) plus which joints were good/off. It also gives the shot number and type (forehand/backhand), peak wrist speed, a local rule-based score out of 100, a list of detected issues, and the language to reply in ("th" or "en"). Read the frames as one continuous motion — the fix often lives in HOW the swing moves from one phase to the next, not in a single still.
 
-HOW YOU MUST COACH — every reply is ONE short coaching moment, 2 to 4 sentences total, spoken naturally, in exactly this shape:
-1. SHOT NAME (say it FIRST, always) — open by naming which shot this is: its number and stroke type, in the reply language ("ช็อตที่ 5 โฟร์แฮนด์นะครับ —" / "Shot 5, forehand —"). The structured text tells you the exact opener to use. This lets the student, who hears you between fast back-to-back swings, instantly know which swing you mean. If the stroke type is unknown, just say the shot number ("ช็อตที่ 5" / "Shot 5"). Never skip the shot name.
+HOW YOU MUST COACH — every reply is ONE short coaching moment, 2 to 4 sentences total, spoken naturally. The general shape is:
+1. SHOT NAME (say it FIRST, ALWAYS, in every style) — open by naming which shot this is: its number and stroke type, in the reply language ("ช็อตที่ 5 โฟร์แฮนด์นะครับ —" / "Shot 5, forehand —"). The structured text tells you the exact opener to use. This lets the student, who hears you between fast back-to-back swings, instantly know which swing you mean. If the stroke type is unknown, just say the shot number ("ช็อตที่ 5" / "Shot 5"). Never skip the shot name — it is step 1 no matter which coaching style you are told to use.
 2. PRAISE (one short, SPECIFIC good thing about THIS swing) — name something real you actually saw ("โหลดเข่าได้ดีตอนแบ็คสวิงเลยนะ" / "Nice knee load on the backswing"). Always follow the shot name with genuine praise, even on a low score — find the one thing that was okay. Never generic ("ดีมาก" alone); tie it to a phase or a body part.
-3. THE ONE FIX (the single highest-impact correction — never a list). State it plainly and actionably, and SAY WHICH PHASE it happens in so the student knows when to change it ("ตอนกระทบลูก แขนยังงออยู่ ลองเหยียดออกไปให้เกือบตรง" / "At contact your arm is still folded — reach it out almost straight through the ball"). Ground it in what you saw across the frames.
+3. THE ONE FIX (the single highest-impact correction — never a list) — WHEN the style calls for one. State it plainly and actionably, and SAY WHICH PHASE it happens in so the student knows when to change it ("ตอนกระทบลูก แขนยังงออยู่ ลองเหยียดออกไปให้เกือบตรง" / "At contact your arm is still folded — reach it out almost straight through the ball"). Ground it in what you saw across the frames. On a GREAT shot (a full-hype style) you SKIP the fix entirely — pure celebration, tell them to keep doing exactly this.
 4. THE CUE (one short, memorable thing to think about on the very next ball) — a 2–4 word image they can hold ("จำไว้: เหยียดผ่านลูก" / "Remember: reach through the ball").
+
+COACHING STYLE PER SHOT — the structured text hands you an explicit "COACHING STYLE for this shot" directive. You MUST adopt that shot's assigned voice. The palette rotates across four intents so you never sound the same twice:
+- FULL HYPE / proud mentor (great shots) — pure celebration and playful อวย, NO correction, keep-doing-this energy.
+- PRAISE THEN POLISH / nearly-there (good shots) — warm specific praise, then ONE small "even better if…" refinement.
+- TECHNICAL COACH / build-it-up (mixed shots) — credit the effort, then ONE clear correction tied to the moment it happens.
+- WARM ENCOURAGEMENT / gentle reset (tough shots) — genuine warmth first, normalize the miss, then only the single simplest thing to try, end upbeat.
+Follow the assigned directive's tone, opener flavor, and whether-to-give-a-fix exactly. The shot-name opener (step 1) still comes first in every one of these styles.
+
+VARIETY — NON-NEGOTIABLE: never reuse the previous reply's sentence pattern. Rotate your openers and interjections shot to shot (โอ้โห / เยี่ยม / สู้ ๆ / มาแล้ว / สวยมาก / โอเค / ไม่เป็นไร / นี่แหละ …). Never open two shots in a row the same way. Vary sentence length and rhythm. The point is that {{PLAYER_NAME}} should feel a real, present human — not a template being refilled with new numbers.
 
 STYLE RULES:
 - SPEAK LIKE A HUMAN, NOT A MANUAL. Plain everyday words first. Never stiff anatomical phrasing like "ให้ศอกคลายตัวได้ถึง 140 องศา". Degree numbers are a FOOTNOTE only — if a number helps, tuck it at the very end ("...ศอกสัก 140 องศากำลังดี"); the everyday cue IS the instruction.
@@ -132,6 +141,151 @@ export function shotOpener(index: number, type: ShotType, lang: Lang): string {
         ? 'coach.shotOpener.backhand'
         : 'coach.shotOpener.unknown';
   return translate(key, lang).replace('{n}', String(index));
+}
+
+// ---------------------------------------------------------------------------
+// Coaching STYLE selector (v0.9) — pure, testable
+//
+// The user's complaint: the coach's spoken pattern feels the same every shot.
+// Fix: pick a distinct COACHING STYLE per shot from a pool keyed on
+//   (score band × rotation), and inject it into the turn text as an explicit
+// directive (exactly like shotOpener). Four bands map to the four coaching
+// intents the PO asked for; each band holds TWO tonal variants (different
+// openers/energy) so the palette has ≥8 distinct voices.
+//
+// No-consecutive-repeat guarantee: within a band the variant is chosen by
+// `index % variants.length` with ≥2 variants, so any two consecutive shots that
+// land in the SAME band flip to a different variant (consecutive indices differ
+// by 1, which can never be congruent mod ≥2). Shots in different bands are
+// trivially distinct because the band is part of the style id. The selector is
+// PURE on (score, index) by design — it deliberately holds no client state, so
+// the pacing queue / freshest-wins path stays completely untouched.
+// ---------------------------------------------------------------------------
+
+/** Which coaching intent a style expresses — one per score band. */
+export type CoachingStyleBand = 'hype' | 'praise-refine' | 'technical' | 'encourage';
+
+export interface CoachingStyle {
+  /** Unique id per tonal variant, e.g. 'hype-a'. Stable — used by tests. */
+  id: string;
+  band: CoachingStyleBand;
+  /** Thai label for the style (for logs / debug HUD if ever surfaced). */
+  label: string;
+  /**
+   * The explicit spoken-tone directive injected into the per-shot turn text.
+   * English (the data block is English); tells the coach the energy, opener
+   * flavor, and whether to give a fix — the system prompt describes the palette,
+   * this line assigns THIS shot's voice.
+   */
+  directive: string;
+}
+
+/**
+ * The full style palette, grouped by band. Two tonal variants per band → 8
+ * distinct voices. Directives deliberately avoid the Thai stroke words
+ * (โฟร์แฮนด์/แบ็คแฮนด์) and English phase words (backswing/contact/…) so injecting
+ * them into a prompt never collides with frame/opener text.
+ */
+export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
+  hype: [
+    {
+      id: 'hype-a',
+      band: 'hype',
+      label: 'เชียร์สุดใจ',
+      directive:
+        'COACHING STYLE for this shot — FULL HYPE (เชียร์สุดใจ): this was a great swing, so go pure celebration. ' +
+        'Open BIG with an excited interjection (โอ้โห!/สุดยอด!/มาแล้ว!), pile on genuine SPECIFIC praise plus a little playful อวย, ' +
+        'and do NOT give any correction at all — tell them to keep doing EXACTLY this. Close on a high-energy "keep it coming" note.',
+    },
+    {
+      id: 'hype-b',
+      band: 'hype',
+      label: 'ชมแบบภูมิใจ',
+      directive:
+        'COACHING STYLE for this shot — PROUD MENTOR (ชมแบบภูมิใจ): another top-class swing. Keep it high praise but calmer and proud ' +
+        '(นี่แหละ!/เพอร์เฟกต์/คลาสสิกเลย). Name the one standout thing that made it so good, give NO correction whatsoever, ' +
+        'and lock it in with a short "that is your shot now" note.',
+    },
+  ],
+  'praise-refine': [
+    {
+      id: 'refine-a',
+      band: 'praise-refine',
+      label: 'ชมแล้วแนะ',
+      directive:
+        'COACHING STYLE for this shot — PRAISE THEN POLISH (ชมแล้วแนะ): a solid, good swing. Lead with warm specific praise for what worked, ' +
+        'then offer ONE small refinement framed as "even better if…" (a polish, not a rescue). Vary your opener (เยี่ยม!/ดีมากเลย/ใกล้แล้ว). End with a light note to hold onto.',
+    },
+    {
+      id: 'refine-b',
+      band: 'praise-refine',
+      label: 'อีกนิดเดียว',
+      directive:
+        'COACHING STYLE for this shot — NEARLY THERE (อีกนิดเดียว): a good swing that is close to great. Celebrate what was good, ' +
+        'then point to the ONE detail sitting between good and great, with an upbeat "one tweak" framing. Fresh opener (แจ่ม!/เข้าที่แล้ว/ดีขึ้นเยอะ). One memorable note.',
+    },
+  ],
+  technical: [
+    {
+      id: 'tech-a',
+      band: 'technical',
+      label: 'โค้ชสายเทคนิค',
+      directive:
+        'COACHING STYLE for this shot — TECHNICAL COACH (โค้ชสายเทคนิค): a mixed swing. Acknowledge the real effort or the one thing that held up, ' +
+        'then deliver ONE clear correction like a precise but friendly coach — say exactly which moment of the swing it happens in and what to change. ' +
+        'Grounded, steady opener (โอเค/เห็นละ/จับจุดได้แล้ว). Pin it with a sharp note.',
+    },
+    {
+      id: 'tech-b',
+      band: 'technical',
+      label: 'ค่อย ๆ ปรับ',
+      directive:
+        'COACHING STYLE for this shot — BUILD IT UP (ค่อย ๆ ปรับ): a mixed swing with room to grow. Praise the effort or the one moment that worked, ' +
+        'then give ONE actionable correction tied to the moment it happens, framed as building the swing up step by step. ' +
+        'Vary the opener (มาต่อกัน/ลองแบบนี้/ใกล้ขึ้นแล้ว). Clear note for the next ball.',
+    },
+  ],
+  encourage: [
+    {
+      id: 'warm-a',
+      band: 'encourage',
+      label: 'ให้กำลังใจ',
+      directive:
+        'COACHING STYLE for this shot — WARM ENCOURAGEMENT (ให้กำลังใจ): a tough swing (low score). Lead with genuine warmth FIRST, ' +
+        'reassure them this is completely normal while learning, then give ONLY the single simplest thing to try — nothing technical or overwhelming. ' +
+        'Gentle opener (ไม่เป็นไรนะ/สู้ ๆ/ค่อย ๆ ไป). End upbeat and hopeful.',
+    },
+    {
+      id: 'warm-b',
+      band: 'encourage',
+      label: 'ตั้งหลักใหม่',
+      directive:
+        'COACHING STYLE for this shot — GENTLE RESET (ตั้งหลักใหม่): a hard swing. Stay kind and steady — normalize the miss, find one small honest positive, ' +
+        'then offer the ONE easiest adjustment in the simplest everyday words. Fresh warm opener (ไม่เป็นไร/ลองใหม่/เดี๋ยวก็ได้). Close by showing you believe in them.',
+    },
+  ],
+};
+
+/** Score → band. Thresholds mirror the PO's four intents (great / good / mixed / tough). */
+function scoreBand(score: number): CoachingStyleBand {
+  if (score >= 85) return 'hype';
+  if (score >= 70) return 'praise-refine';
+  if (score >= 55) return 'technical';
+  return 'encourage';
+}
+
+/**
+ * Pick the coaching style for a shot from its score band and rotation (shot
+ * index). Pure and deterministic. Two consecutive shots never share a style:
+ * different bands differ by id; the same band rotates variant by `index`
+ * (≥2 variants ⇒ consecutive indices always change variant).
+ */
+export function selectCoachingStyle(score: number, index: number): CoachingStyle {
+  const band = scoreBand(score);
+  const variants = COACHING_STYLES[band];
+  // Guard against negative/NaN indices so the modulo never picks out of range.
+  const i = Number.isFinite(index) ? Math.abs(Math.trunc(index)) : 0;
+  return variants[i % variants.length];
 }
 
 /**
@@ -233,6 +387,11 @@ export function buildShotPrompt(
     );
   }
 
+  // v0.9: assign THIS shot a coaching style (score band × rotation) so the
+  // spoken pattern varies shot to shot — hype/praise-refine/technical/encourage
+  // with two tonal variants each. Consecutive shots never repeat a style.
+  const style = selectCoachingStyle(shot.score, shot.index);
+
   lines.push(
     `Peak wrist speed: ${shot.peakWristSpeed.toFixed(2)} (normalized units/s).`,
     `Local score: ${r(shot.score)}/100.`,
@@ -240,8 +399,12 @@ export function buildShotPrompt(
     lang === 'th' ? 'Reply in Thai.' : 'Reply in English.',
     // v0.7: every critique must OPEN by naming the shot out loud so the student
     // always knows which swing you are talking about (spoken fast, back to back).
+    // v0.9: the shape after the opener is now set by the coaching-style directive
+    // below (hype skips the fix entirely), so this line defers to it instead of
+    // hard-coding praise→fix→cue.
     `OPEN your spoken reply by naming this shot first — start with "${shotOpener(shot.index, shot.type, lang)}"` +
-      ` (say it naturally, a soft particle like นะครับ/นะ is fine), then give your praise, the one fix, and the cue.`,
+      ` (say it naturally, a soft particle like นะครับ/นะ is fine), then follow the coaching-style directive below.`,
+    style.directive,
   );
   return lines.join('\n');
 }

@@ -16,8 +16,10 @@ import {
   buildCoachSystemPrompt,
   buildShotPrompt,
   COACH_SYSTEM_PROMPT,
+  COACHING_STYLES,
   CoachLiveClient,
   orderedCaptures,
+  selectCoachingStyle,
   shotOpener,
 } from './liveClient';
 import { audioPlayer } from './audioPlayer';
@@ -204,6 +206,97 @@ describe('buildShotPrompt', () => {
   });
 });
 
+// --- selectCoachingStyle (v0.9 communication variety) -----------------------
+//
+// Pure style picker keyed on (score band × rotation). Four bands, two tonal
+// variants each = ≥8 distinct voices. The load-bearing guarantee: two
+// CONSECUTIVE shots never share a style — tested at a CONSTANT score (the only
+// case a naive design could repeat), where the rotation must still alternate.
+
+describe('selectCoachingStyle', () => {
+  it('maps score to the right band', () => {
+    expect(selectCoachingStyle(92, 0).band).toBe('hype');
+    expect(selectCoachingStyle(85, 0).band).toBe('hype');
+    expect(selectCoachingStyle(84, 0).band).toBe('praise-refine');
+    expect(selectCoachingStyle(70, 0).band).toBe('praise-refine');
+    expect(selectCoachingStyle(69, 0).band).toBe('technical');
+    expect(selectCoachingStyle(55, 0).band).toBe('technical');
+    expect(selectCoachingStyle(54, 0).band).toBe('encourage');
+    expect(selectCoachingStyle(0, 0).band).toBe('encourage');
+  });
+
+  it('great shots (hype band) carry NO fix directive', () => {
+    const s = selectCoachingStyle(90, 0);
+    expect(s.band).toBe('hype');
+    expect(s.directive).toMatch(/NO correction|do NOT give any correction/);
+  });
+
+  it('the palette exposes at least 8 distinct style voices', () => {
+    const all = Object.values(COACHING_STYLES).flat();
+    const ids = all.map((v) => v.id);
+    expect(ids.length).toBeGreaterThanOrEqual(8);
+    expect(new Set(ids).size).toBe(ids.length); // all unique
+    // every band holds ≥2 tonal variants (so same-band rotation can alternate)
+    for (const variants of Object.values(COACHING_STYLES)) {
+      expect(variants.length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it('never repeats a style on consecutive shots — even at a constant score in one band', () => {
+    for (const score of [95, 78, 62, 40]) {
+      for (let i = 0; i < 12; i += 1) {
+        expect(selectCoachingStyle(score, i).id).not.toBe(
+          selectCoachingStyle(score, i + 1).id,
+        );
+      }
+    }
+  });
+
+  it('never repeats a style on consecutive shots across a mixed-score rally', () => {
+    const scores = [90, 88, 72, 60, 45, 50, 95, 30, 30, 82];
+    let prev = '';
+    scores.forEach((score, i) => {
+      const id = selectCoachingStyle(score, i).id;
+      expect(id).not.toBe(prev);
+      prev = id;
+    });
+  });
+
+  it('is deterministic and stays in range for large / odd indices', () => {
+    expect(selectCoachingStyle(90, 7).id).toBe(selectCoachingStyle(90, 7).id);
+    expect(selectCoachingStyle(90, 999).band).toBe('hype');
+    expect(selectCoachingStyle(40, -3).band).toBe('encourage'); // negatives don't crash
+  });
+});
+
+// --- buildShotPrompt — v0.9 coaching-style directive ------------------------
+
+describe('buildShotPrompt — coaching-style directive injection', () => {
+  it('injects the assigned style directive matching the shot score/index', () => {
+    // score 90, index 0 → hype band, variant 0 (hype-a, FULL HYPE)
+    const s = shot({ index: 0, score: 90, captures: [capture('contact', 200)] });
+    const expected = selectCoachingStyle(90, 0).directive;
+    const p = buildShotPrompt(s, 'th', 'right', 'both', 'Ton');
+    expect(p).toContain('COACHING STYLE for this shot');
+    expect(p).toContain(expected);
+  });
+
+  it('defers the reply shape to the style directive (no hard-coded praise/fix/cue tail)', () => {
+    const s = shot({ index: 1, score: 60, captures: [capture('contact', 200)] });
+    const p = buildShotPrompt(s, 'th', 'right', 'both', 'Ton');
+    expect(p).toContain('then follow the coaching-style directive below');
+    // the shot-name opener mandate still leads
+    expect(p).toContain('OPEN your spoken reply by naming this shot first');
+  });
+
+  it('a low-score shot gets an encouragement-band directive', () => {
+    const s = shot({ index: 2, score: 40, captures: [capture('contact', 200)] });
+    const p = buildShotPrompt(s, 'en', 'right', 'both', 'Ton');
+    expect(p).toContain(selectCoachingStyle(40, 2).directive);
+    expect(selectCoachingStyle(40, 2).band).toBe('encourage');
+  });
+});
+
 // --- buildCoachSystemPrompt -------------------------------------------------
 
 describe('buildCoachSystemPrompt', () => {
@@ -240,6 +333,21 @@ describe('buildCoachSystemPrompt', () => {
     expect(iPraise).toBeGreaterThan(iName);
     expect(iFix).toBeGreaterThan(iPraise);
     expect(iCue).toBeGreaterThan(iFix);
+  });
+
+  it('v0.9: describes the style palette and DEMANDS variety, opener still mandatory', () => {
+    // palette: the four coaching intents are named
+    expect(COACH_SYSTEM_PROMPT).toContain('COACHING STYLE PER SHOT');
+    expect(COACH_SYSTEM_PROMPT).toContain('FULL HYPE');
+    expect(COACH_SYSTEM_PROMPT).toContain('WARM ENCOURAGEMENT');
+    // variety mandate + rotating openers
+    expect(COACH_SYSTEM_PROMPT).toContain('VARIETY');
+    expect(COACH_SYSTEM_PROMPT).toContain('never reuse the previous reply');
+    expect(COACH_SYSTEM_PROMPT).toContain('โอ้โห');
+    // the shot-name opener is still step 1 in every style
+    expect(COACH_SYSTEM_PROMPT).toContain('it is step 1 no matter which coaching style');
+    // hype styles skip the fix
+    expect(COACH_SYSTEM_PROMPT).toContain('SKIP the fix');
   });
 });
 

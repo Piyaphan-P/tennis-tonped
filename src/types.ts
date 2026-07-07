@@ -570,8 +570,13 @@ export interface CostState {
 // Detection HUD (on-court swing detection telemetry)
 // ---------------------------------------------------------------------------
 
-/** Why the detector discarded a swing ('' when the swing completed as a shot). */
-export type SwingDiscardReason = '' | 'no-contact' | 'too-short' | 'too-long';
+/**
+ * Why the detector discarded a swing ('' when the swing completed as a shot).
+ * 'cooldown' = a would-be swing was suppressed because it started inside the
+ * post-shot cooldown window (see SHOT_THRESHOLDS.cooldownMs); it never armed a
+ * recording and nothing was sent to the coach.
+ */
+export type SwingDiscardReason = '' | 'no-contact' | 'too-short' | 'too-long' | 'cooldown';
 
 /** One detector outcome, pushed by ShotDetector.finalize() for the on-court detection HUD. */
 export interface DetectionEvent {

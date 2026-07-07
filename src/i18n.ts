@@ -62,6 +62,14 @@ const DICT = {
   'home.forehand': { th: 'โฟร์แฮนด์', en: 'Forehand' },
   'home.backhand': { th: 'แบ็คแฮนด์', en: 'Backhand' },
   'home.both': { th: 'ทั้งสอง', en: 'Both' },
+  'home.handedness.title': { th: 'มือที่ถือแร็กเกต', en: 'Racket Hand' },
+  'home.handedness.right': { th: 'ถนัดขวา 🎾', en: 'Right-handed 🎾' },
+  'home.handedness.left': { th: 'ถนัดซ้าย 🎾', en: 'Left-handed 🎾' },
+  'home.handedness.explainer': {
+    th: 'การแยกโฟร์แฮนด์/แบ็คแฮนด์ใช้มือที่เลือกนี้',
+    en: 'Forehand/backhand detection uses this hand.',
+  },
+  'home.handedness.current': { th: 'กำลังวิเคราะห์แบบมือ', en: 'Analyzing as' },
 
   // --- errors (ALWAYS bilingual, never raw API strings) ---
   'error.tokenMissing.title': { th: 'ยังไม่ได้ตั้งค่าโทเคนโค้ช', en: 'Coach token not set' },
@@ -200,6 +208,10 @@ const DICT = {
   'hud.discard.tooLong': {
     th: 'สวิงยาวเกินไป ({ms}ms)',
     en: 'swing too long ({ms}ms)',
+  },
+  'hud.discard.cooldown': {
+    th: 'พักระหว่างช็อต (คูลดาวน์)',
+    en: 'resting between shots (cooldown)',
   },
 
   // --- cost (demoted: corner ฿ button + testing panel) ---
