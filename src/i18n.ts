@@ -94,6 +94,12 @@ const DICT = {
   'shot.backhand': { th: 'แบ็คแฮนด์', en: 'Backhand' },
   'shot.unknown': { th: 'ไม่ทราบชนิด', en: 'Unknown' },
 
+  // --- coach spoken shot-name opener (v0.7): every critique OPENS by naming
+  // the shot number + stroke, in the reply language. {n} = shot number. ---
+  'coach.shotOpener.forehand': { th: 'ช็อตที่ {n} โฟร์แฮนด์', en: 'Shot {n}, forehand' },
+  'coach.shotOpener.backhand': { th: 'ช็อตที่ {n} แบ็คแฮนด์', en: 'Shot {n}, backhand' },
+  'coach.shotOpener.unknown': { th: 'ช็อตที่ {n}', en: 'Shot {n}' },
+
   // --- bottom nav ---
   'nav.home': { th: 'หน้าหลัก', en: 'Home' },
   'nav.compare': { th: 'เปรียบเทียบ', en: 'Compare' },

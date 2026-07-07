@@ -1,10 +1,17 @@
 # HANDOFF.md — สถานะงาน + สิ่งที่ต้องทำต่อ
 
-> อัปเดตล่าสุด: 2026-07-07 (release v0.6) · สำหรับ Claude session ถัดไป (หรือคนที่มารับช่วง) อ่านคู่กับ `CLAUDE.md`
+> อัปเดตล่าสุด: 2026-07-07 (release v0.7) · สำหรับ Claude session ถัดไป (หรือคนที่มารับช่วง) อ่านคู่กับ `CLAUDE.md`
 
 ## TL;DR
 
-แอป deploy อยู่ที่ https://ton-phet-tennis-862607193158.asia-southeast1.run.app (**revision `00009`**, image `…/ton-phet/app:v6`, git tag **v0.6**). ล่าสุด: **ตัดไมค์ฟังเสียง user ออกทั้งหมด + โค้ชอ่านวงสวิงทั้งวงจากคีย์เฟรมทุกเฟส** (Fable verdict: ship, 111/111 tests). เหลือ blocker เดียวเหมือนเดิม: **ยังไม่มี `GEMINI_API_KEY` (AIza…)** — เสียง/โค้ชสดยังใช้ได้เฉพาะผ่าน AQ. token ชั่วคราวที่ paste ใน Settings
+แอป deploy อยู่ที่ https://ton-phet-tennis-862607193158.asia-southeast1.run.app (**revision `00010`**, image `…/ton-phet/app:v7`, git tag **v0.7**). ล่าสุด: **โค้ชขานชื่อช็อต ("ช็อตที่ N โฟร์แฮนด์…") + พูดจบก่อนค่อยวิจารณ์ช็อตถัดไป** (Fable verdict: ship, 122/122 tests). เหลือ blocker เดียวเหมือนเดิม: **ยังไม่มี `GEMINI_API_KEY` (AIza…)** — เสียง/โค้ชสดยังใช้ได้เฉพาะผ่าน AQ. token ชั่วคราวที่ paste ใน Settings
+
+## v0.7 (2026-07-07) — โค้ชขานช็อต + จังหวะไม่รัว (ล่าสุด, revision `00010`, tag v0.7)
+
+- **ขานชื่อช็อต:** ทุกคำวิจารณ์เปิดด้วย "ช็อตที่ {N} โฟร์แฮนด์/แบ็คแฮนด์" (ไม่รู้ท่า → เลขอย่างเดียว) — บังคับทั้งใน system prompt (step 1, ห้ามข้าม) และแนบ opener string ต่อ turn (`shotOpener()` ใน liveClient + i18n 3 keys)
+- **Pacing gate:** ช็อตใหม่จะถูกส่งให้โค้ชก็ต่อเมื่อ (ก) ไม่มี turn ค้าง (ข) `audioPlayer.isSpeaking()` = false — ผูกกับ**เสียงเล่นจบจริง** ไม่ใช่แค่ข้อความจบ · `onPlaybackDone` (ยิงเฉพาะเสียง drain ธรรมชาติ ไม่ยิงตอน stop/barge-in) → `flushQueue()` · คิว 1 ช่อง freshest-wins (สวิงใหม่แทนที่อันเก่า — คะแนน/คลิปยังเก็บครบทุกวง แค่เสียงวิจารณ์ได้เฉพาะวงล่าสุด)
+- **Hardening หลัง review:** `lastDispatchedIndex` stale-guard (requeue จาก error path ไม่มีทางเล่นย้อนลำดับ; index เท่ากัน = retry ที่ถูกต้อง ปล่อยผ่าน) + **wedge watchdog** ใน audioPlayer (กำหนดเวลาจบ+5วิ — iOS พับแอป/สายเข้าแล้ว AudioContext ค้าง จะปลดล็อก gate เองแทนที่จะแช่ทั้งระบบโค้ช)
+- **เทสสนาม:** ตีรัว 3-4 ลูกติดระหว่างโค้ชพูด → เสียงต้องไม่ซ้อน, วงที่วิจารณ์ถัดไปคือวงล่าสุด · พับแอปกลางประโยคแล้วกลับมา → โค้ชต้องกลับมาทำงานต่อ ไม่เงียบค้าง
 
 ## v0.6 (2026-07-07) — ตัดไมค์ + โค้ชอ่านทั้งวงสวิง (ล่าสุด, revision `00009`, tag v0.6)
 

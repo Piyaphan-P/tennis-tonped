@@ -51,6 +51,57 @@ export class AudioPlayer {
   private activeSources = new Set<AudioBufferSourceNode>();
   /** True between the first chunk of a burst and the last onended. */
   private speaking = false;
+  /**
+   * Optional idle callback (v0.7 pacing gate). Fired ONLY when a burst finishes
+   * playing NATURALLY (the last scheduled source ends) — never on stop()/barge-in.
+   * liveClient uses this to dispatch the next queued shot only after the coach
+   * has fully FINISHED SPEAKING the current critique, so critiques never overlap.
+   */
+  onPlaybackDone: (() => void) | null = null;
+  /**
+   * Wedge watchdog (v0.7): if the AudioContext gets suspended mid-burst and
+   * never resumes (iOS backgrounding / audio-session interruption), onended
+   * never fires and `speaking` would stay true FOREVER — which now freezes the
+   * whole coaching pipeline, not just audio. Armed to the scheduled end of the
+   * burst + grace; force-releases the gate fail-soft.
+   */
+  private wedgeTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private clearWedgeTimer(): void {
+    if (this.wedgeTimer) {
+      clearTimeout(this.wedgeTimer);
+      this.wedgeTimer = null;
+    }
+  }
+
+  /** (Re)arm the watchdog for the current scheduled timeline end + grace. */
+  private armWedgeTimer(): void {
+    this.clearWedgeTimer();
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const remainingMs = Math.max(0, (this.nextStartTime - ctx.currentTime) * 1000);
+    const WEDGE_GRACE_MS = 5000;
+    this.wedgeTimer = setTimeout(() => {
+      this.wedgeTimer = null;
+      if (!this.speaking || this.activeSources.size === 0) return;
+      console.warn('[audio] wedge watchdog: playback never drained — force-releasing gate');
+      for (const source of this.activeSources) {
+        try {
+          source.onended = null;
+          source.stop();
+          source.disconnect();
+        } catch {
+          /* already stopped */
+        }
+      }
+      this.activeSources.clear();
+      this.nextStartTime = ctx.currentTime;
+      this.speaking = false;
+      appStore.getState().setCoachSpeaking(false);
+      // Fail-soft: release the pacing gate so queued coaching resumes.
+      this.onPlaybackDone?.();
+    }, remainingMs + WEDGE_GRACE_MS);
+  }
 
   /**
    * Create/resume the AudioContext. MUST run inside a user gesture (the Live
@@ -131,13 +182,19 @@ export class AudioPlayer {
     source.onended = () => {
       this.activeSources.delete(source);
       if (this.activeSources.size === 0) {
+        this.clearWedgeTimer();
         this.speaking = false;
         appStore.getState().setCoachSpeaking(false);
         this.markLatestCoachingPlayed();
+        // Playback finished naturally — release the pacing gate so the next
+        // queued shot can be coached. (stop()/barge-in deliberately does NOT
+        // fire this: those paths clear the queue instead.)
+        this.onPlaybackDone?.();
       }
     };
 
     source.start(startAt);
+    this.armWedgeTimer();
   }
 
   /**
@@ -145,6 +202,7 @@ export class AudioPlayer {
    * disconnect and when the user starts talking (don't talk over the coach).
    */
   stop(): void {
+    this.clearWedgeTimer();
     for (const source of this.activeSources) {
       try {
         source.onended = null;

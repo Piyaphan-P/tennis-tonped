@@ -27,7 +27,8 @@ import type { Session } from '@google/genai';
 import { costMonitor } from '../cost/costMonitor';
 import type { RawUsageMetadata } from '../cost/costMonitor';
 import { appStore } from '../store';
-import type { DominantHand, FocusShot, JointAngles, Lang, Shot, ShotPhase, SwingCapture } from '../types';
+import { translate } from '../i18n';
+import type { DominantHand, FocusShot, JointAngles, Lang, Shot, ShotPhase, ShotType, SwingCapture } from '../types';
 import { audioPlayer } from './audioPlayer';
 
 const DEFAULT_MODEL = 'gemini-2.5-flash-native-audio-preview-09-2025';
@@ -62,9 +63,10 @@ YOUR STUDENT: The student's name is "{{PLAYER_NAME}}". Address them by name natu
 WHAT YOU RECEIVE: You are only told about a swing AFTER it has fully completed — you never interrupt mid-swing. For each completed shot you WATCH THE WHOLE SWING: you are shown several still frames of that same swing IN ORDER (typically backswing, then ball contact, then follow-through), followed by one structured text message. The text lists the frames in the exact same order, and for each frame gives the body-joint angles in degrees (dominant elbow, dominant shoulder, dominant hip, both knees, trunk lean from vertical) plus which joints were good/off. It also gives the shot number and type (forehand/backhand), peak wrist speed, a local rule-based score out of 100, a list of detected issues, and the language to reply in ("th" or "en"). Read the frames as one continuous motion — the fix often lives in HOW the swing moves from one phase to the next, not in a single still.
 
 HOW YOU MUST COACH — every reply is ONE short coaching moment, 2 to 4 sentences total, spoken naturally, in exactly this shape:
-1. PRAISE (one short, SPECIFIC good thing about THIS swing) — name something real you actually saw ("โหลดเข่าได้ดีตอนแบ็คสวิงเลยนะ" / "Nice knee load on the backswing"). Always open with genuine praise, even on a low score — find the one thing that was okay. Never generic ("ดีมาก" alone); tie it to a phase or a body part.
-2. THE ONE FIX (the single highest-impact correction — never a list). State it plainly and actionably, and SAY WHICH PHASE it happens in so the student knows when to change it ("ตอนกระทบลูก แขนยังงออยู่ ลองเหยียดออกไปให้เกือบตรง" / "At contact your arm is still folded — reach it out almost straight through the ball"). Ground it in what you saw across the frames.
-3. THE CUE (one short, memorable thing to think about on the very next ball) — a 2–4 word image they can hold ("จำไว้: เหยียดผ่านลูก" / "Remember: reach through the ball").
+1. SHOT NAME (say it FIRST, always) — open by naming which shot this is: its number and stroke type, in the reply language ("ช็อตที่ 5 โฟร์แฮนด์นะครับ —" / "Shot 5, forehand —"). The structured text tells you the exact opener to use. This lets the student, who hears you between fast back-to-back swings, instantly know which swing you mean. If the stroke type is unknown, just say the shot number ("ช็อตที่ 5" / "Shot 5"). Never skip the shot name.
+2. PRAISE (one short, SPECIFIC good thing about THIS swing) — name something real you actually saw ("โหลดเข่าได้ดีตอนแบ็คสวิงเลยนะ" / "Nice knee load on the backswing"). Always follow the shot name with genuine praise, even on a low score — find the one thing that was okay. Never generic ("ดีมาก" alone); tie it to a phase or a body part.
+3. THE ONE FIX (the single highest-impact correction — never a list). State it plainly and actionably, and SAY WHICH PHASE it happens in so the student knows when to change it ("ตอนกระทบลูก แขนยังงออยู่ ลองเหยียดออกไปให้เกือบตรง" / "At contact your arm is still folded — reach it out almost straight through the ball"). Ground it in what you saw across the frames.
+4. THE CUE (one short, memorable thing to think about on the very next ball) — a 2–4 word image they can hold ("จำไว้: เหยียดผ่านลูก" / "Remember: reach through the ball").
 
 STYLE RULES:
 - SPEAK LIKE A HUMAN, NOT A MANUAL. Plain everyday words first. Never stiff anatomical phrasing like "ให้ศอกคลายตัวได้ถึง 140 องศา". Degree numbers are a FOOTNOTE only — if a number helps, tuck it at the very end ("...ศอกสัก 140 องศากำลังดี"); the everyday cue IS the instruction.
@@ -114,6 +116,22 @@ function phaseLabel(phase: ShotPhase): string {
     default:
       return phase;
   }
+}
+
+/**
+ * The spoken shot-name opener the coach must SAY FIRST, in the reply language:
+ * shot number + stroke ("ช็อตที่ 5 โฟร์แฮนด์" / "Shot 5, forehand"); an unknown
+ * stroke collapses to just the number ("ช็อตที่ 5" / "Shot 5"). Pulled from the
+ * i18n dictionary so TH/EN phrasing stays centralized.
+ */
+export function shotOpener(index: number, type: ShotType, lang: Lang): string {
+  const key =
+    type === 'forehand'
+      ? 'coach.shotOpener.forehand'
+      : type === 'backhand'
+        ? 'coach.shotOpener.backhand'
+        : 'coach.shotOpener.unknown';
+  return translate(key, lang).replace('{n}', String(index));
 }
 
 /**
@@ -220,6 +238,10 @@ export function buildShotPrompt(
     `Local score: ${r(shot.score)}/100.`,
     `Detected issues: ${issues}.`,
     lang === 'th' ? 'Reply in Thai.' : 'Reply in English.',
+    // v0.7: every critique must OPEN by naming the shot out loud so the student
+    // always knows which swing you are talking about (spoken fast, back to back).
+    `OPEN your spoken reply by naming this shot first — start with "${shotOpener(shot.index, shot.type, lang)}"` +
+      ` (say it naturally, a soft particle like นะครับ/นะ is fine), then give your praise, the one fix, and the cue.`,
   );
   return lines.join('\n');
 }
@@ -278,8 +300,23 @@ export class CoachLiveClient {
   /** Language requested for the in-flight turn's reply. */
   private requestedLang: Lang = 'th';
 
-  /** Single-slot queue: newest shot waiting for a free turn (busy rule). */
+  /**
+   * Single-slot queue: the newest completed shot waiting for the pacing gate to
+   * open (v0.7). A shot may only be dispatched when NO coaching turn is in
+   * flight AND the coach's audio has fully FINISHED SPEAKING the previous
+   * critique — otherwise critiques rattle out too fast to follow. While blocked
+   * we hold AT MOST one shot; a newer swing replaces the older queued one so the
+   * freshest advice always wins.
+   */
   private queuedShot: Shot | null = null;
+  /** How many queued shots have been dropped by a newer one (freshest-wins). Diagnostics only. */
+  private queuedReplaced = 0;
+  /**
+   * Highest shot.index ever handed to dispatchShot this session — flushQueue
+   * drops a queued shot strictly older than this so an error-path requeue can
+   * never replay out of order after a newer shot was critiqued.
+   */
+  private lastDispatchedIndex = 0;
 
   /** Auto-reconnect bookkeeping. */
   private reconnectAttempts = 0;
@@ -294,6 +331,13 @@ export class CoachLiveClient {
    * store status to 'error' and would otherwise abort the backoff after one try.
    */
   private sessionLive = false;
+
+  constructor() {
+    // v0.7 pacing gate: when the coach finishes SPEAKING a critique (audio
+    // playback drains naturally), release the gate and dispatch the queued shot.
+    // Fires only on natural end — stop()/barge-in clears the queue instead.
+    audioPlayer.onPlaybackDone = () => this.flushQueue();
+  }
 
   private store() {
     return appStore.getState();
@@ -500,21 +544,38 @@ export class CoachLiveClient {
   // -------------------------------------------------------------------------
 
   sendShotForCoaching(shot: Shot): void {
-    // Not connected yet, or a coaching turn is already in flight → keep only
-    // the newest shot (drop older). Never queue more than one.
-    if (!this.isConnected() || this.pendingShotId !== null) {
-      this.queuedShot = shot;
+    // Pacing gate (v0.7): a shot may dispatch ONLY when we're connected, no turn
+    // is in flight, AND the coach is not still SPEAKING the previous critique.
+    // Otherwise hold the newest shot in the 1-slot queue (dropping any older one
+    // — freshest advice wins) and let flushQueue send it once the gate opens.
+    if (!this.isConnected() || this.pendingShotId !== null || audioPlayer.isSpeaking()) {
+      this.enqueueLatest(shot);
       return;
     }
     this.dispatchShot(shot);
   }
 
+  /**
+   * Hold `shot` in the single slot, replacing (and counting) any older waiting
+   * shot so the coach always critiques the freshest swing when the gate opens.
+   */
+  private enqueueLatest(shot: Shot): void {
+    if (this.queuedShot && this.queuedShot.id !== shot.id) {
+      this.queuedReplaced += 1;
+      console.debug(
+        `[coach] pacing: replaced queued shot #${this.queuedShot.index} with newer #${shot.index} (freshest-wins, replaced=${this.queuedReplaced})`,
+      );
+    }
+    this.queuedShot = shot;
+  }
+
   private dispatchShot(shot: Shot): void {
     const session = this.session;
     if (!session) {
-      this.queuedShot = shot;
+      this.enqueueLatest(shot);
       return;
     }
+    this.lastDispatchedIndex = Math.max(this.lastDispatchedIndex, shot.index);
 
     const state = this.store();
     this.requestedLang = state.lang;
@@ -582,7 +643,11 @@ export class CoachLiveClient {
       state.endShotCost(shot.id);
       this.pendingShotId = null;
       this.pendingContactCaptureId = null;
-      this.queuedShot = shot;
+      // Guarded requeue: never let a failed OLD shot clobber a newer queued one
+      // (freshest-wins even on the error path).
+      if (!this.queuedShot || this.queuedShot.index <= shot.index) {
+        this.queuedShot = shot;
+      }
       console.warn('[coach] send failed:', errMsg(e, 'send failed'));
       this.store().setCoachError('coach.reconnecting');
     }
@@ -590,9 +655,20 @@ export class CoachLiveClient {
 
   private flushQueue(): void {
     if (!this.queuedShot) return;
-    if (!this.isConnected() || this.pendingShotId !== null) return;
+    // Same pacing gate as sendShotForCoaching: connected, no turn in flight, and
+    // the coach has finished speaking. If still speaking, stay queued — the
+    // audioPlayer.onPlaybackDone hook will re-drive flushQueue when audio drains.
+    if (!this.isConnected() || this.pendingShotId !== null || audioPlayer.isSpeaking()) return;
     const next = this.queuedShot;
     this.queuedShot = null;
+    // Stale guard (strictly older only): a shot requeued by the error path can
+    // be older than one that has since dispatched directly — the coach must
+    // never announce "ช็อตที่ 3" after already critiquing shot 4. Equal index
+    // stays allowed: that's the legitimate retry of a failed send.
+    if (next.index < this.lastDispatchedIndex) {
+      console.debug(`[coach] pacing: dropped stale queued shot #${next.index}`);
+      return;
+    }
     this.dispatchShot(next);
   }
 
@@ -701,6 +777,8 @@ export class CoachLiveClient {
     this.reconnecting = false;
     this.reconnectAttempts = 0;
     this.queuedShot = null;
+    this.queuedReplaced = 0;
+    this.lastDispatchedIndex = 0;
     this.pendingShotId = null;
     this.pendingContactCaptureId = null;
     this.turnText = '';
