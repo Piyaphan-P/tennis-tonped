@@ -3,14 +3,20 @@
 //
 // Owns the realtime Live session end-to-end:
 //   • connect once when the session starts (lazy)
-//   • per completed shot: send a compact text turn (angles + phase + score +
-//     issues + reply language) plus an optional contact JPEG frame
+//   • per completed shot: send EVERY captured keyframe of the swing (backswing /
+//     contact / follow-through, in phase order) as still frames, then a compact
+//     text turn (per-phase angles + score + issues + reply language) so the
+//     coach reads the WHOLE swing, not just the contact moment
 //   • stream the coach's spoken reply (PCM 24k) to audioPlayer, and push the
 //     transcript to the store as a bubble
-//   • ALWAYS-ON continuous mic: stream PCM 16k via sendRealtimeInput for the
-//     whole session (no push-to-talk); Gemini's server-side VAD handles turns
 //   • forward EVERY usageMetadata to the cost monitor (source of truth)
 //   • graceful close / token-expiry handling with auto-reconnect + backoff
+//
+// v0.6: the user's VOICE INPUT is cut entirely — no mic is opened, nothing is
+// ever streamed to Gemini as realtime audio. Coach AUDIO OUTPUT (audioPlayer)
+// is unchanged. serverContent.interrupted handling is kept (harmless) but with
+// no mic there is nothing to barge in. `setMicEnabled` survives as a dead-gated
+// no-op only because MicControl.tsx (another agent's file) still calls it.
 //
 // All facts here follow the VERIFIED SPIKE FACTS in CLAUDE.md exactly.
 // Store access is always via appStore.getState() (no React).
@@ -21,9 +27,8 @@ import type { Session } from '@google/genai';
 import { costMonitor } from '../cost/costMonitor';
 import type { RawUsageMetadata } from '../cost/costMonitor';
 import { appStore } from '../store';
-import type { DominantHand, FocusShot, Lang, Shot } from '../types';
+import type { DominantHand, FocusShot, JointAngles, Lang, Shot, ShotPhase, SwingCapture } from '../types';
 import { audioPlayer } from './audioPlayer';
-import { mic, MicPermissionError } from './mic';
 
 const DEFAULT_MODEL = 'gemini-2.5-flash-native-audio-preview-09-2025';
 
@@ -46,34 +51,29 @@ function errMsg(e: unknown, fallback = 'coach disconnected'): string {
 /** Backoff schedule (ms) for auto-reconnect; length = max reconnect attempts. */
 const RECONNECT_DELAYS_MS = [1000, 2000, 4000];
 
-// HALF-DUPLEX (on-court feedback): while the coach's audio is playing we DROP
-// outgoing mic chunks entirely, so neither court noise (ball machine, bounces,
-// wind) nor the phone speaker's own output can barge-in and cut the advice
-// mid-sentence. The coach ALWAYS finishes speaking, then the mic resumes
-// automatically on the next chunk. The old RMS "duck" that hard-stopped
-// playback on any loud sound was removed for the same reason.
-
 // ---------------------------------------------------------------------------
 // Coach persona (provided by the PO — see CLAUDE.md). Sent as systemInstruction.
 // ---------------------------------------------------------------------------
 
 export const COACH_SYSTEM_PROMPT = `You are "โค้ชต้นและเพชร" (Coach Ton & Phet), the head coach of ต้นและเพชร Tennis Club (Ton & Phet Tennis Club) — a warm, encouraging, but technically precise tennis coach standing courtside while your student practices. You speak out loud through the student's phone between shots, so they cannot read long text — they can only hear you for a few seconds before their next swing.
 
-YOUR STUDENT: The student's name is "{{PLAYER_NAME}}". Address them by name naturally and warmly, the way a real Thai coach would — in Thai typically "คุณ{{PLAYER_NAME}}" or just "{{PLAYER_NAME}}" (e.g. "เยี่ยมมาก {{PLAYER_NAME}}!"), in English just their name. Use the name often enough to feel personal (greeting, praise, key corrections) but NOT in every single sentence — that sounds robotic. If the name is empty, simply coach without a name.
+YOUR STUDENT: The student's name is "{{PLAYER_NAME}}". Address them by name naturally and warmly, the way a real Thai coach would — in Thai typically "คุณ{{PLAYER_NAME}}" or just "{{PLAYER_NAME}}" (e.g. "เยี่ยมมาก {{PLAYER_NAME}}!"), in English just their name. Use the name once or twice, not in every sentence — that sounds robotic. If the name is empty, simply coach without a name.
 
-WHAT YOU RECEIVE: You are only told about a swing AFTER it has fully completed — you never interrupt mid-swing. After each completed shot you get a structured text message containing: the student's name, shot number and type (forehand/backhand), body-joint angles in degrees measured at ball contact (dominant elbow, both knees, dominant shoulder, hip, trunk lean from vertical), peak wrist speed, a local rule-based score out of 100, a list of detected issues, and the language to reply in ("th" or "en"). Sometimes you also receive ONE photo captured at the moment of ball contact for that shot, and sometimes the student asks you a question by voice.
+WHAT YOU RECEIVE: You are only told about a swing AFTER it has fully completed — you never interrupt mid-swing. For each completed shot you WATCH THE WHOLE SWING: you are shown several still frames of that same swing IN ORDER (typically backswing, then ball contact, then follow-through), followed by one structured text message. The text lists the frames in the exact same order, and for each frame gives the body-joint angles in degrees (dominant elbow, dominant shoulder, dominant hip, both knees, trunk lean from vertical) plus which joints were good/off. It also gives the shot number and type (forehand/backhand), peak wrist speed, a local rule-based score out of 100, a list of detected issues, and the language to reply in ("th" or "en"). Read the frames as one continuous motion — the fix often lives in HOW the swing moves from one phase to the next, not in a single still.
 
-HOW YOU MUST COACH:
-1. Give EXACTLY ONE correction per shot — the single highest-impact fix. Maximum 2 short sentences. Never list multiple problems.
-2. SPEAK LIKE A HUMAN, NOT A MANUAL. Lead with a plain-language cue any beginner instantly pictures — "เหยียดแขนออกไปอีกหน่อยตอนตีโดนลูก ให้แขนเกือบตรงนะครับ" / "Reach further through the ball — arm almost straight at contact." One flowing natural sentence, never chopped fragments, never stiff anatomical phrasing like "ให้ศอกคลายตัวได้ถึง 140 องศา". You may anchor with the number briefly at the END if it helps ("...ศอกสัก 140 องศากำลังดี"), but the everyday cue IS the instruction — the number is a footnote, not the message.
-3. WHEN YOU RECEIVE A CONTACT PHOTO: look at it and ground your one correction in what is visibly wrong in that frame — point at the body part as if you both are looking at the picture together (e.g. "ดูภาพนี้นะครับ {{PLAYER_NAME}} แขนยังงออยู่ตอนตีโดนลูก ลองเหยียดออกไปให้เกือบตรง" / "See this frame — your arm is still folded at contact; reach it out almost straight."). Keep it to the same one-correction, 2-sentence limit and the same plain-spoken style from rule 2. Never describe the photo itself, never say you were "sent an image" — you simply watched the shot.
-4. Be a real coach: brief praise first when the score is 80+ ("เยี่ยมมาก {{PLAYER_NAME}}!", "Nice one!"), then the refinement. Below 60, skip praise, be direct but kind — never harsh, never discouraging.
-5. Reference tennis fundamentals (unit turn, low-to-high swing path, contact point in front, knee loading, balanced follow-through) — not generic fitness advice.
-6. Reply ONLY in the requested language. Thai replies use natural spoken coaching Thai (ครับ/นะครับ), with English tennis terms where Thai players normally use them (โฟร์แฮนด์, ฟอลโลว์ทรู, สปลิตสเต็ป). English replies are equally short and spoken-style.
-7. For voice questions from the student, answer conversationally in the same language they used, still concise (under 3 sentences), addressing them by name where natural.
-8. Never mention that you are an AI, never mention angle data or photos "being sent to you", never read out raw JSON or issue keys — you are simply the coach who watched the shot. Do not repeat the same correction word-for-word on consecutive shots; vary phrasing, escalate ("ยังงออยู่นะครับ {{PLAYER_NAME}} ลองใหม่") if the same fault repeats.
+HOW YOU MUST COACH — every reply is ONE short coaching moment, 2 to 4 sentences total, spoken naturally, in exactly this shape:
+1. PRAISE (one short, SPECIFIC good thing about THIS swing) — name something real you actually saw ("โหลดเข่าได้ดีตอนแบ็คสวิงเลยนะ" / "Nice knee load on the backswing"). Always open with genuine praise, even on a low score — find the one thing that was okay. Never generic ("ดีมาก" alone); tie it to a phase or a body part.
+2. THE ONE FIX (the single highest-impact correction — never a list). State it plainly and actionably, and SAY WHICH PHASE it happens in so the student knows when to change it ("ตอนกระทบลูก แขนยังงออยู่ ลองเหยียดออกไปให้เกือบตรง" / "At contact your arm is still folded — reach it out almost straight through the ball"). Ground it in what you saw across the frames.
+3. THE CUE (one short, memorable thing to think about on the very next ball) — a 2–4 word image they can hold ("จำไว้: เหยียดผ่านลูก" / "Remember: reach through the ball").
 
-Your goal: after every shot, {{PLAYER_NAME}} instantly knows the ONE thing to change on the very next ball.`;
+STYLE RULES:
+- SPEAK LIKE A HUMAN, NOT A MANUAL. Plain everyday words first. Never stiff anatomical phrasing like "ให้ศอกคลายตัวได้ถึง 140 องศา". Degree numbers are a FOOTNOTE only — if a number helps, tuck it at the very end ("...ศอกสัก 140 องศากำลังดี"); the everyday cue IS the instruction.
+- Reference tennis fundamentals (unit turn, low-to-high swing path, contact point in front, knee loading, balanced follow-through) — not generic fitness advice.
+- Reply ONLY in the requested language. Thai replies use natural spoken coaching Thai (ครับ/นะครับ/นะ), with English tennis terms where Thai players normally use them (โฟร์แฮนด์, ฟอลโลว์ทรู, สปลิตสเต็ป). English replies are equally short and spoken-style.
+- Never mention that you are an AI, never say frames/photos/angles were "sent to you", never read out raw JSON, issue keys, or frame numbers — you simply watched the swing. Vary your phrasing shot to shot; if the same fault repeats, escalate gently ("ยังงออยู่อยู่นะ {{PLAYER_NAME}} ลองใหม่").
+- Never lecture. 2–4 sentences, then stop.
+
+Your goal: after every swing, {{PLAYER_NAME}} feels seen, knows the ONE thing to change, and has a cue to hold on the very next ball.`;
 
 /**
  * Build the coach systemInstruction with the player's name substituted in.
@@ -89,10 +89,91 @@ export function buildCoachSystemPrompt(playerName: string): string {
 // Prompt builder (pure)
 // ---------------------------------------------------------------------------
 
+/** Canonical order the swing's keyframes are presented to the coach. */
+const PHASE_ORDER: ShotPhase[] = [
+  'preparation',
+  'backswing',
+  'forward-swing',
+  'contact',
+  'follow-through',
+];
+
+/** Human phase label used in the prompt (matches how a coach names the moment). */
+function phaseLabel(phase: ShotPhase): string {
+  switch (phase) {
+    case 'backswing':
+      return 'backswing';
+    case 'forward-swing':
+      return 'forward swing';
+    case 'contact':
+      return 'ball contact';
+    case 'follow-through':
+      return 'follow-through';
+    case 'preparation':
+      return 'preparation';
+    default:
+      return phase;
+  }
+}
+
+/**
+ * Captured keyframes of the swing, sorted into canonical phase order. Ties
+ * (same phase captured twice) keep their capture time order. This is the SINGLE
+ * source of truth for both the frames we send to Gemini and the per-frame lines
+ * in the text prompt, so image order and text order can never drift apart.
+ */
+export function orderedCaptures(shot: Shot): SwingCapture[] {
+  const rank = (p: ShotPhase): number => {
+    const i = PHASE_ORDER.indexOf(p);
+    return i === -1 ? PHASE_ORDER.length : i;
+  };
+  return [...shot.captures].sort((x, y) => {
+    const d = rank(x.phase) - rank(y.phase);
+    return d !== 0 ? d : x.atMs - y.atMs;
+  });
+}
+
+/** One frame's key joint angles + which of them read off-target, spoken plainly. */
+function frameAngleLine(
+  a: JointAngles,
+  statuses: SwingCapture['statuses'] | undefined,
+  dominantHand: DominantHand,
+): string {
+  const r = (n: number): number => Math.round(n);
+  const isRight = dominantHand === 'right';
+  const domElbow = isRight ? a.rightElbowDeg : a.leftElbowDeg;
+  const domShoulder = isRight ? a.rightShoulderDeg : a.leftShoulderDeg;
+  const domHip = isRight ? a.rightHipDeg : a.leftHipDeg;
+
+  const flags: string[] = [];
+  for (const [key, label] of [
+    ['domElbow', 'dominant elbow'],
+    ['domShoulder', 'dominant shoulder'],
+    ['leftKnee', 'left knee'],
+    ['rightKnee', 'right knee'],
+    ['trunk', 'trunk'],
+  ] as const) {
+    const s = statuses?.[key];
+    if (s === 'warn' || s === 'fault') flags.push(`${label} ${s === 'fault' ? 'clearly off' : 'slightly off'}`);
+  }
+  const off = flags.length ? ` — off-target here: ${flags.join(', ')}` : ' — all judged joints on target';
+
+  return (
+    `dominant elbow ${r(domElbow)}, dominant shoulder ${r(domShoulder)}, ` +
+    `dominant hip ${r(domHip)}, left knee ${r(a.leftKneeDeg)}, right knee ${r(a.rightKneeDeg)}, ` +
+    `trunk lean ${r(a.trunkLeanDeg)}${off}.`
+  );
+}
+
 /**
  * Build the compact English data block sent per completed shot. Always English
  * (the model reads the data in English regardless of UI language); the final
  * line instructs the reply language. Angles are rounded to whole degrees.
+ *
+ * v0.6: describes the WHOLE swing — one line per captured keyframe, in the SAME
+ * order and count the still frames are streamed to Gemini (see orderedCaptures),
+ * so "Frame N = <phase>" in the text always matches the Nth image. When no
+ * frames were captured, falls back to the contact-angle snapshot alone.
  */
 export function buildShotPrompt(
   shot: Shot,
@@ -100,13 +181,9 @@ export function buildShotPrompt(
   dominantHand: DominantHand = 'right',
   focusShot: FocusShot = 'both',
   userName = '',
+  captures: SwingCapture[] = orderedCaptures(shot),
 ): string {
-  const a = shot.contactAngles;
   const r = (n: number): number => Math.round(n);
-  const isRight = dominantHand === 'right';
-  const domElbow = isRight ? a.rightElbowDeg : a.leftElbowDeg;
-  const domShoulder = isRight ? a.rightShoulderDeg : a.leftShoulderDeg;
-  const domHip = isRight ? a.rightHipDeg : a.leftHipDeg;
 
   const issues =
     shot.issues.length > 0
@@ -114,22 +191,36 @@ export function buildShotPrompt(
       : 'none';
 
   const name = userName.trim();
-  const lines = [
+  const lines: string[] = [
     ...(name ? [`Student's name: ${name}.`] : []),
     focusShot !== 'both'
       ? `Player is drilling ${focusShot}s this session.`
       : 'Player is drilling forehands and backhands this session.',
     `Shot #${shot.index} — ${shot.type} (${dominantHand}-handed).`,
-    `Contact angles (deg): dominant elbow ${r(domElbow)}, dominant shoulder ${r(
-      domShoulder,
-    )}, dominant hip ${r(domHip)}, left knee ${r(a.leftKneeDeg)}, right knee ${r(
-      a.rightKneeDeg,
-    )}, trunk lean ${r(a.trunkLeanDeg)}.`,
+  ];
+
+  if (captures.length > 0) {
+    lines.push(
+      `You are shown ${captures.length} still frame${captures.length > 1 ? 's' : ''} of this one swing, in order:`,
+    );
+    captures.forEach((c, i) => {
+      lines.push(
+        `  Frame ${i + 1} = ${phaseLabel(c.phase)} — ${frameAngleLine(c.angles, c.statuses, dominantHand)}`,
+      );
+    });
+  } else {
+    const a = shot.contactAngles;
+    lines.push(
+      `No swing frames were captured; ball-contact angles only: ${frameAngleLine(a, undefined, dominantHand)}`,
+    );
+  }
+
+  lines.push(
     `Peak wrist speed: ${shot.peakWristSpeed.toFixed(2)} (normalized units/s).`,
     `Local score: ${r(shot.score)}/100.`,
     `Detected issues: ${issues}.`,
     lang === 'th' ? 'Reply in Thai.' : 'Reply in English.',
-  ];
+  );
   return lines.join('\n');
 }
 
@@ -267,7 +358,8 @@ export class CoachLiveClient {
         config: {
           responseModalities: [Modality.AUDIO],
           outputAudioTranscription: {},
-          inputAudioTranscription: {},
+          // v0.6: no inputAudioTranscription — the mic is never opened, so
+          // there is no user audio to transcribe.
           systemInstruction: buildCoachSystemPrompt(this.store().settings.userName),
         },
         callbacks: {
@@ -306,14 +398,9 @@ export class CoachLiveClient {
       // Flush a shot queued while we were connecting.
       this.flushQueue();
 
-      // AUTO-START the always-on mic once the socket is live — on the FIRST
-      // connect AND on every reconnect (a dropped socket stops the stream in
-      // handleClose; a successful reconnect must bring it back). Default ON, so
-      // the player can just talk with zero interaction. Fire-and-forget: mic
-      // permission is resolved inside startMicStream.
-      if (this.store().coach.micOn) {
-        void this.startMicStream();
-      }
+      // v0.6: NO mic. The user's voice input is cut entirely — nothing is ever
+      // opened or streamed to Gemini. Coach audio OUTPUT still flows via
+      // audioPlayer from handleMessage.
     } catch (e) {
       this.connecting = false;
       this.connected = false;
@@ -436,38 +523,57 @@ export class CoachLiveClient {
     this.pendingShotId = shot.id;
     this.pendingContactCaptureId = null;
 
-    // The single image allowed to Gemini for this shot: prefer the detector's
-    // dedicated contact capture (so we can attach the coach's critique back to
-    // that exact gallery frame); fall back to the legacy contactFrame blob.
-    const contactCapture = shot.captures.find((c) => c.phase === 'contact');
-    const image = contactCapture?.jpegBase64 ?? shot.contactFrameJpegBase64;
+    // v0.6: send the WHOLE swing. Order the captured keyframes canonically
+    // (backswing → contact → follow-through); this same ordered list drives the
+    // per-frame lines in buildShotPrompt so image order == text order exactly.
+    // Critique attribution still pins to the CONTACT frame (the gallery hero),
+    // unchanged from before.
+    const ordered = orderedCaptures(shot);
+    const contactCapture = ordered.find((c) => c.phase === 'contact');
 
     // Open the cost attribution window for this shot.
     state.beginShotCost(shot.id);
 
     try {
-      // Send the contact frame FIRST (if enabled + available), then the text.
-      let photoSent = false;
-      if (image && state.settings.sendContactFrame) {
-        session.sendRealtimeInput({
-          video: { data: image, mimeType: 'image/jpeg' },
-        });
-        photoSent = true;
-        // Only remember a capture id when the image came from a real capture;
-        // the legacy fallback has none, so no critique gets attached for it.
-        this.pendingContactCaptureId = contactCapture?.id ?? null;
+      // Send every captured frame FIRST, in phase order (if enabled). Fall back
+      // to the legacy single contact-frame blob only when NOTHING was captured.
+      let framesSent = 0;
+      if (state.settings.sendContactFrame) {
+        if (ordered.length > 0) {
+          for (const cap of ordered) {
+            if (!cap.jpegBase64) continue;
+            session.sendRealtimeInput({
+              video: { data: cap.jpegBase64, mimeType: 'image/jpeg' },
+            });
+            framesSent += 1;
+          }
+          // Attach the coach's critique to the contact frame (falls back to the
+          // first sent frame if this swing had no dedicated contact capture).
+          this.pendingContactCaptureId = contactCapture?.id ?? ordered[0]?.id ?? null;
+        } else if (shot.contactFrameJpegBase64) {
+          session.sendRealtimeInput({
+            video: { data: shot.contactFrameJpegBase64, mimeType: 'image/jpeg' },
+          });
+          framesSent += 1;
+          // Legacy fallback has no capture id, so no critique is pinned to it.
+        }
       }
 
+      // The text prompt must enumerate EXACTLY the frames we actually sent, in
+      // the same order — otherwise the coach's "Frame N = <phase>" mapping lies.
+      // When images are disabled or none were sent, describe no frames.
+      const promptCaptures = framesSent > 0 && ordered.length > 0 ? ordered : [];
       let turns = buildShotPrompt(
         shot,
         this.requestedLang,
         state.settings.dominantHand,
         state.settings.focusShot,
         state.settings.userName,
+        promptCaptures,
       );
-      if (photoSent) {
+      if (framesSent > 0) {
         turns +=
-          '\nA photo of the contact moment is attached — ground your correction in what you see in it.';
+          '\nThe still frames of this swing are attached in the order listed above — read them as one motion and ground your correction in what you see.';
       }
       session.sendClientContent({ turns, turnComplete: true });
     } catch (e) {
@@ -491,90 +597,27 @@ export class CoachLiveClient {
   }
 
   // -------------------------------------------------------------------------
-  // Always-on continuous mic (server-side VAD; no push-to-talk)
+  // Mic — DISABLED for v0.6
   //
-  // COEXISTENCE WITH PER-SHOT COACHING: the per-shot path (sendShotForCoaching/
-  // dispatchShot/flushQueue/finalizeTurn, single-slot pendingShotId queue,
-  // sendClientContent text turns + one contact JPEG via sendRealtimeInput
-  // video) is byte-for-byte unchanged. Voice and shot turns share the one
-  // session cleanly; note that a VAD voice-turn's turnComplete may finalize a
-  // pending shot's attribution window early — acceptable, since per-shot cost
-  // is labelled approximate. Every usageMetadata (including continuous audio-in)
-  // is still forwarded to costMonitor unchanged, so cost stays accurate.
+  // The user's voice INPUT is cut entirely: no getUserMedia, no PCM stream, no
+  // realtime audio ever sent to Gemini. The old always-on mic + half-duplex
+  // drop + barge-in duck are gone. Coach AUDIO OUTPUT (audioPlayer) is
+  // untouched. `setMicEnabled` remains ONLY because MicControl.tsx (outside this
+  // module's ownership) still calls it; it is a no-op that keeps the persisted
+  // toggle intent off and never opens a mic. Whenever voice input is wanted back,
+  // restore the stream methods here (git history) and re-add inputAudioTranscription.
   // -------------------------------------------------------------------------
 
-  /** User toggle: turn the always-on mic on/off. Persists intent in the store. */
-  async setMicEnabled(on: boolean): Promise<void> {
-    this.store().setMicOn(on);
-    if (on) {
-      await this.startMicStream();
-    } else {
-      this.stopMicStream();
-    }
-  }
-
   /**
-   * Open the continuous mic and stream PCM16k to the live session. No-op if the
-   * mic is already active or there is no live session (connect() re-invokes this
-   * once the socket is up). On failure, flips the mic off with a bilingual error.
+   * Dead-gated: voice input is disabled this phase. Persists micOn=false so the
+   * UI never shows a "listening" state, and NEVER opens a mic or streams audio.
+   * Kept for API compatibility with MicControl.tsx. The `on` argument is ignored.
    */
-  private async startMicStream(): Promise<void> {
-    if (mic.isActive()) return;
-    const session = this.session;
-    if (!session || !this.isConnected()) return;
-
-    try {
-      await mic.start(
-        (chunk) => {
-          // Half-duplex: never stream mic audio while the coach is speaking —
-          // the advice must finish; listening resumes on the next chunk.
-          if (audioPlayer.isSpeaking()) return;
-          try {
-            session.sendRealtimeInput({
-              audio: { data: chunk, mimeType: 'audio/pcm;rate=16000' },
-            });
-          } catch {
-            /* socket may have closed mid-utterance; drop this chunk */
-          }
-        },
-        (level) => {
-          this.store().setMicLevel(level);
-        },
-      );
-      this.store().setCoachListening(true);
-      this.store().setCoachError(null);
-    } catch (e) {
-      // Diagnostics only; the store gets a bilingual i18n key. Any mic-start
-      // failure (denied or otherwise) maps to the mic-permission explainer —
-      // the only mic-related bilingual copy we have. Flip the toggle back off
-      // so the UI reflects reality and we don't retry on every reconnect.
-      console.warn('[coach] mic start failed:', e instanceof MicPermissionError ? e.code : errMsg(e, 'mic error'));
-      this.store().setCoachListening(false);
-      this.store().setMicOn(false);
-      this.store().setCoachError('error.micDenied');
-    }
-  }
-
-  /**
-   * Close the mic. Sends audioStreamEnd ONLY on an explicit toggle-off / teardown
-   * while still connected — NEVER between VAD turns (server VAD owns turn ends).
-   * When called from handleClose the socket is already dead, so the send is
-   * naturally skipped.
-   */
-  private stopMicStream(): void {
-    const wasStreaming = mic.isActive();
-    mic.stop();
+  async setMicEnabled(_on: boolean): Promise<void> {
+    // No mic in v0.6. Force the stored toggle + meter to a clean off state.
+    this.store().setMicOn(false);
     this.store().setCoachListening(false);
     this.store().setMicLevel(0);
-    const session = this.session;
-    if (wasStreaming && session && this.isConnected()) {
-      try {
-        // Signal end-of-input for this open-mic session; VAD also handles this.
-        session.sendRealtimeInput({ audioStreamEnd: true });
-      } catch {
-        /* rely on VAD */
-      }
-    }
   }
 
   // -------------------------------------------------------------------------
@@ -603,12 +646,6 @@ export class CoachLiveClient {
     this.pendingContactCaptureId = null;
     this.turnText = '';
     this.turnInterrupted = false;
-
-    // A dead socket must not keep the mic hot. stopMicStream() sees session=null
-    // here so it won't try to send audioStreamEnd; a successful reconnect
-    // re-opens the mic in connect() (if coach.micOn). The micOn INTENT is left
-    // untouched so the reconnect restores exactly what the user chose.
-    this.stopMicStream();
 
     if (this.manualClose) return;
 
@@ -679,9 +716,8 @@ export class CoachLiveClient {
     this.connecting = false;
 
     audioPlayer.stop();
-    mic.stop();
-    // Reset the mic UI state (listening + level meter). We do NOT touch micOn:
-    // it is the user's per-session toggle intent, restored on the next connect.
+    // v0.6: no mic to stop. Reset the mic UI state defensively so no stale
+    // "listening"/level lingers from an earlier build.
     this.store().setCoachListening(false);
     this.store().setMicLevel(0);
     this.store().setConnection('disconnected');

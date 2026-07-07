@@ -1,10 +1,16 @@
 # HANDOFF.md — สถานะงาน + สิ่งที่ต้องทำต่อ
 
-> อัปเดตล่าสุด: 2026-07-05 (release v0.5) · สำหรับ Claude session ถัดไป (หรือคนที่มารับช่วง) อ่านคู่กับ `CLAUDE.md`
+> อัปเดตล่าสุด: 2026-07-07 (release v0.6) · สำหรับ Claude session ถัดไป (หรือคนที่มารับช่วง) อ่านคู่กับ `CLAUDE.md`
 
 ## TL;DR
 
-แอป deploy อยู่ที่ https://ton-phet-tennis-862607193158.asia-southeast1.run.app (**revision `00008`**, image `…/ton-phet/app:v5`, git tag **v0.5**). ล่าสุด: **cloud persistence + หน้า Compare + หน้า History** ครบ (Fable verdict: ship-with-fixes → แก้ครบแล้ว, 98/98 tests, E2E จริงบน prod ผ่านหมด). เหลือ blocker เดียวเหมือนเดิม: **ยังไม่มี `GEMINI_API_KEY` (AIza…)** — เสียง/โค้ชสดยังใช้ได้เฉพาะผ่าน AQ. token ชั่วคราวที่ paste ใน Settings
+แอป deploy อยู่ที่ https://ton-phet-tennis-862607193158.asia-southeast1.run.app (**revision `00009`**, image `…/ton-phet/app:v6`, git tag **v0.6**). ล่าสุด: **ตัดไมค์ฟังเสียง user ออกทั้งหมด + โค้ชอ่านวงสวิงทั้งวงจากคีย์เฟรมทุกเฟส** (Fable verdict: ship, 111/111 tests). เหลือ blocker เดียวเหมือนเดิม: **ยังไม่มี `GEMINI_API_KEY` (AIza…)** — เสียง/โค้ชสดยังใช้ได้เฉพาะผ่าน AQ. token ชั่วคราวที่ paste ใน Settings
+
+## v0.6 (2026-07-07) — ตัดไมค์ + โค้ชอ่านทั้งวงสวิง (ล่าสุด, revision `00009`, tag v0.6)
+
+- **ตัด voice input หมด** (คำสั่ง user): ไม่ start mic, ไม่ส่ง audio เข้า Gemini, ไม่ขอ mic permission เลย (Playwright ยืนยัน permission ยังเป็น "prompt" หลังใช้งานเต็ม session) · **เสียงโค้ชพูดออกยังอยู่ครบ** · `mic.ts`/`MicControl.tsx` เก็บไฟล์ไว้ (dead, ไม่มี import) เผื่อ release หน้าเอาเสียงถามตอบกลับมา · `setMicEnabled` เป็น no-op, `micOn` default false
+- **โค้ชอ่านทั้งวง**: `dispatchShot` ส่งคีย์เฟรมทุกเฟสเรียงตามลำดับวงสวิง (ง้าง→สวิง→กระทบ→ส่ง ผ่าน `orderedCaptures()`) + text ที่ "Frame N = เฟส" ตรงกับภาพหนึ่งต่อหนึ่ง (มุมรายเฟส + จุดที่หลุดเป้า) · prompt ใหม่บังคับโครงโค้ช: ชมเจาะจงสั้น → จุดแก้หลัก 1 ระบุเฟส → cue จำง่ายไว้ลูกถัดไป, ภาษาพูดไทย, องศาเป็นหมายเหตุท้าย · critique ยัง pin กับภาพ contact เหมือนเดิม (+13 tests ใหม่)
+- **ดูในสนาม:** ค่า THB ต่อช็อต (ตอนนี้ส่งหลายภาพ/วง) + ความเร็วตอบของโค้ช · เช็คว่าเบราว์เซอร์ขอแค่กล้อง ไม่ขอไมค์
 
 ## v0.5 (2026-07-05) — Cloud + Compare + History (ล่าสุด, revision `00008`, tag v0.5)
 

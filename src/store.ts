@@ -327,7 +327,9 @@ const INITIAL_COACH: CoachState = {
   bubbleLang: 'th',
   speaking: false,
   listening: false,
-  micOn: true,
+  // v0.6: voice input is cut — must stay false so any future consumer of this
+  // state can never show a live mic that isn't there.
+  micOn: false,
   micLevel: 0,
   error: null,
 };

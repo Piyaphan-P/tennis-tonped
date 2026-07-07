@@ -8,7 +8,8 @@
 //   • compact HUD (phase chip, score pill, telemetry) + corner ฿ cost button
 //   • swipeable swing-capture gallery strip
 //   • the BIG coach message (lower third) — the dominant element
-//   • continuous open mic (MicControl) + End Session
+//   • End Session (v0.6: mic input removed — coach reads the whole swing's
+//     captured keyframes and replies by voice; no live listening UI here)
 // Bilingual overlays cover camera-denied, pose-init-failed and coach errors —
 // never a raw API/English string, never a silent black screen.
 // ============================================================================
@@ -31,7 +32,6 @@ import TelemetryStrip from '../components/TelemetryStrip';
 import DetectionHud from '../components/DetectionHud';
 import ScoreBadge from '../components/ScoreBadge';
 import CostFab from '../components/CostFab';
-import MicControl from '../components/MicControl';
 
 /** Max width (px) of the JPEG we snapshot for captures + the coach frame. */
 const CAPTURE_MAX_W = 640;
@@ -276,8 +276,10 @@ export default function LiveScreen() {
               rail was too small to read — reverted in v0.3.2). */}
           <CaptureGallery />
           <CoachBubble />
-          <div className="row live-controls">
-            <MicControl />
+          {/* v0.6: mic input removed — only End Session remains here, so
+              center it (was a left-aligned .row with MicControl as the
+              first child) to keep the bottom row visually balanced. */}
+          <div className="row live-controls" style={{ justifyContent: 'center' }}>
             <button className="btn btn-danger" onClick={end}>
               {t('live.end')}
             </button>
