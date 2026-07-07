@@ -1,10 +1,19 @@
 # HANDOFF.md — สถานะงาน + สิ่งที่ต้องทำต่อ
 
-> อัปเดตล่าสุด: 2026-07-07 (release v0.7) · สำหรับ Claude session ถัดไป (หรือคนที่มารับช่วง) อ่านคู่กับ `CLAUDE.md`
+> อัปเดตล่าสุด: 2026-07-07 (release v0.8) · สำหรับ Claude session ถัดไป (หรือคนที่มารับช่วง) อ่านคู่กับ `CLAUDE.md`
 
 ## TL;DR
 
-แอป deploy อยู่ที่ https://ton-phet-tennis-862607193158.asia-southeast1.run.app (**revision `00010`**, image `…/ton-phet/app:v7`, git tag **v0.7**). ล่าสุด: **โค้ชขานชื่อช็อต ("ช็อตที่ N โฟร์แฮนด์…") + พูดจบก่อนค่อยวิจารณ์ช็อตถัดไป** (Fable verdict: ship, 122/122 tests). เหลือ blocker เดียวเหมือนเดิม: **ยังไม่มี `GEMINI_API_KEY` (AIza…)** — เสียง/โค้ชสดยังใช้ได้เฉพาะผ่าน AQ. token ชั่วคราวที่ paste ใน Settings
+แอป deploy อยู่ที่ https://ton-phet-tennis-862607193158.asia-southeast1.run.app (**revision `00011`**, image `…/ton-phet/app:v8`, git tag **v0.8**). ล่าสุด: **แผนพัฒนาโชว์คลิปวงที่พลาด + แนวทางซ้อมชัด ๆ + แชร์ Story 9:16 ลง IG/FB/TikTok** (Fable verdict: ship-with-fixes → แก้ major แล้ว, 148/148 tests). เหลือ blocker เดียวเหมือนเดิม: **ยังไม่มี `GEMINI_API_KEY` (AIza…)** — เสียง/โค้ชสดยังใช้ได้เฉพาะผ่าน AQ. token ชั่วคราวที่ paste ใน Settings
+
+## v0.8 (2026-07-07) — แผนพัฒนา + แชร์ Story (ล่าสุด, revision `00011`, tag v0.8)
+
+- **จุดที่พลาด:** 3 วงคะแนนต่ำสุดที่มีคลิป (แย่สุดขึ้นก่อน) เล่นคลิปในการ์ด แตะเปิด lightbox + ป้ายคะแนน + ข้อผิดหลักภาษาคน + พลาดเฟสไหน · คลิป decode ไม่ได้ → ภาพนิ่ง skeleton แทน
+- **แนวทางพัฒนา:** จัดกลุ่ม issue เป็น 5 พื้นที่โค้ช (contact-extension / knee-load / balance / racket-prep / swing-speed) การ์ดละ อาการ → เพราะอะไร → วิธีซ้อม (drill จริง มีจำนวนครั้ง) → cue สั้น · copy ไทยธรรมชาติใน i18n
+- **แชร์ Story:** `src/share/storyRenderer.ts` การ์ด 1080×1920 (หัวแบรนด์ 🎾, เฟรม skeleton, คะแนนสีใหญ่, "จุดที่ต้องแก้"/"ท่องไว้ตอนตี", footer วันที่) — วิดีโอ ≤8 วิ (canvas.captureStream + MediaRecorder, chain เดียวกับ swingRecorder) หรือ PNG · `shareStory`: navigator.share files (เด้ง share sheet IG/FB/TikTok) → โหลดไฟล์ fallback · มี **watchdog 10 วิ** กัน share() ค้าง (พบจริงใน headless)
+- **แก้หลัง review (major):** การ์ด EN ข้อความ fix 3 บรรทัดเคยดัน cue หลุด clamp หายเงียบ → cue ปัก y ตายตัวเหนือ footer (label 1716/body 1772) + fix โดนตัดด้วย "…" เมื่อยาวเกิน
+- **Trade-off ที่รู้ (minor):** แชร์แบบวิดีโอ เรนเดอร์เกิน ~5 วิ อาจเสีย user activation → browser ปฏิเสธ share sheet แล้วกลายเป็นดาวน์โหลด+toast แทน (ภาพเปิด sheet ได้ปกติ) — **เทสบนมือถือจริง**; ถ้าน่ารำคาญค่อยเปลี่ยนเป็น 2 จังหวะ (เรนเดอร์เสร็จ → กดแชร์อีกที)
+- **เทสสนาม:** แชร์ story ทั้งแบบภาพและวิดีโอจากมือถือจริง ดูว่า share sheet เปิด + วิดีโอเล่นใน IG story ได้
 
 ## v0.7 (2026-07-07) — โค้ชขานช็อต + จังหวะไม่รัว (ล่าสุด, revision `00010`, tag v0.7)
 

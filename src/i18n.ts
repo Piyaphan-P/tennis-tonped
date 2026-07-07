@@ -353,6 +353,141 @@ const DICT = {
     th: 'ฟอร์มโดยรวมดีมาก ไม่พบจุดที่ต้องแก้ไขซ้ำ ๆ',
     en: 'Great overall form — no recurring faults detected.',
   },
+
+  // --- dev plan v0.8: miss clips + clear guidance + story share ---
+  'devplan.missTitle': { th: 'จุดที่พลาด', en: 'Missed Moments' },
+  'devplan.missSubtitle': {
+    th: 'ช็อตที่คะแนนต่ำสุดในเซสชันนี้ กดดูวิดีโอแล้วดูวิธีแก้ด้านล่าง',
+    en: 'Your lowest-scoring shots this session — watch them, then see how to fix them below.',
+  },
+  'devplan.missPhase': { th: 'พลาดช่วง', en: 'Missed during' },
+  'devplan.missScore': { th: 'คะแนน', en: 'Score' },
+  'devplan.noClips': {
+    th: 'เซสชันนี้ยังไม่มีวิดีโอสวิง (วิดีโอจะบันทึกอัตโนมัติเมื่อกล้องจับสวิงได้ครบจังหวะ) — ดูแนวทางพัฒนาด้านล่างได้เลย',
+    en: 'No swing videos this session yet (clips record automatically once a full swing is detected) — see your guidance below.',
+  },
+  'devplan.noMiss': {
+    th: 'ไม่มีจุดพลาดชัด ๆ วันนี้ ฟอร์มนิ่งมาก 👍',
+    en: "No clear misses today — your form is rock solid 👍",
+  },
+
+  // structured guidance block labels
+  'devplan.guideTitle': { th: 'แนวทางพัฒนา', en: 'How to Improve' },
+  'devplan.symptom': { th: 'อาการ', en: "What's happening" },
+  'devplan.why': { th: 'เพราะอะไร', en: 'Why it matters' },
+  'devplan.drill': { th: 'วิธีซ้อม', en: 'How to practice' },
+  'devplan.cue': { th: 'cue สั้น', en: 'Quick cue' },
+
+  // share
+  'devplan.share': { th: 'แชร์', en: 'Share' },
+  'devplan.shareStory': { th: 'แชร์เป็นสตอรี่', en: 'Share as story' },
+  'devplan.shareSummary': { th: 'แชร์สรุปวันนี้', en: "Share today's highlight" },
+  'devplan.sharing': { th: 'กำลังสร้างสตอรี่…', en: 'Creating story…' },
+  'devplan.savedToast': {
+    th: 'บันทึกไฟล์ลงเครื่องแล้ว เปิดแอป IG / Facebook / TikTok แล้วเลือกไฟล์นี้เพื่อลงสตอรี่ได้เลย',
+    en: 'Saved to your device — open IG / Facebook / TikTok and pick this file to post your story.',
+  },
+  'devplan.shareError': {
+    th: 'สร้างสตอรี่ไม่สำเร็จ ลองใหม่อีกครั้ง',
+    en: "Couldn't create the story — please try again.",
+  },
+
+  // story headlines (rendered onto the 9:16 image; both langs always provided)
+  'devplan.storyMissTitle': { th: 'จุดที่ตั้งใจพัฒนา', en: 'Working on this' },
+  'devplan.storyBestTitle': { th: 'ฟอร์มวันนี้', en: "Today's form" },
+  'devplan.bestFix': {
+    th: 'รักษาฟอร์มนี้ไว้ ตีให้สม่ำเสมอทุกลูก',
+    en: 'Keep this form — repeat it every ball.',
+  },
+  'devplan.bestCue': { th: 'จบสวิงให้สุด', en: 'Finish the swing fully' },
+
+  // per-area guidance (TH coach speech first) — ids match areaForIssue()
+  'devplan.area.contact-extension.title': {
+    th: 'จุดกระทบและการเหยียดแขน',
+    en: 'Contact point & arm extension',
+  },
+  'devplan.area.contact-extension.symptom': {
+    th: 'ศอกยังงอตอนโดนลูก แขนไม่เหยียดออกไปข้างหน้า',
+    en: "Your elbow stays bent at contact — the arm doesn't extend out front.",
+  },
+  'devplan.area.contact-extension.why': {
+    th: 'แขนงอทำให้จุดกระทบชิดตัวเกินไป เสียทั้งพลังและการคุมทิศทาง',
+    en: 'A bent arm brings contact too close to your body, costing power and control.',
+  },
+  'devplan.area.contact-extension.drill': {
+    th: 'เงาสวิง 10 ครั้ง เน้นเหยียดศอกให้ถึง ~140° และโดนลูกด้านหน้าลำตัว',
+    en: '10 shadow swings extending the elbow to ~140°, meeting the ball out in front.',
+  },
+  'devplan.area.contact-extension.cue': { th: 'เหยียดแขนหาลูก', en: 'Reach out to the ball' },
+
+  'devplan.area.knee-load.title': {
+    th: 'การย่อเข่าและการโหลดพลัง',
+    en: 'Knee bend & loading',
+  },
+  'devplan.area.knee-load.symptom': {
+    th: 'ยืนขาตรง ไม่ได้ย่อเข่าก่อนตี',
+    en: 'You hit with straight legs, without loading the knees.',
+  },
+  'devplan.area.knee-load.why': {
+    th: 'ไม่ย่อเข่า = ไม่มีสปริงส่งพลังจากพื้นขึ้นมา ลูกเลยเบาและตื้น',
+    en: 'No knee bend means no spring from the ground — the ball comes out light and shallow.',
+  },
+  'devplan.area.knee-load.drill': {
+    th: 'สปลิตสเต็ปแล้วย่อเข่าค้าง 2 วินาทีก่อนตี 15 ลูก ให้เข่าอยู่ ~130–150°',
+    en: 'Split-step then hold a 2-second knee bend before each of 15 balls, knees ~130–150°.',
+  },
+  'devplan.area.knee-load.cue': { th: 'ย่อเข่าก่อนตี', en: 'Load the knees first' },
+
+  'devplan.area.balance.title': { th: 'การทรงตัวและลำตัว', en: 'Balance & trunk' },
+  'devplan.area.balance.symptom': {
+    th: 'ลำตัวเอียงตอนสวิง เสียการทรงตัวตอนจบ',
+    en: 'Your trunk tilts during the swing and you lose balance at the finish.',
+  },
+  'devplan.area.balance.why': {
+    th: 'ตัวเอียงทำให้จุดกระทบไม่นิ่ง คุมทิศทางและความลึกของลูกได้ยาก',
+    en: 'Leaning makes contact unstable, so direction and depth get hard to control.',
+  },
+  'devplan.area.balance.drill': {
+    th: 'ตีโดยตั้งลำตัวตรง ค้างท่า follow-through 2 วินาทีทุกลูก เช็กว่าไม่เสียหลัก',
+    en: 'Hit with an upright trunk and hold the follow-through 2 seconds each ball, checking you stay balanced.',
+  },
+  'devplan.area.balance.cue': { th: 'ตั้งตัวตรง จบให้นิ่ง', en: 'Stay tall, finish still' },
+
+  'devplan.area.racket-prep.title': {
+    th: 'การเตรียมไม้และหัวไหล่',
+    en: 'Racket prep & shoulder',
+  },
+  'devplan.area.racket-prep.symptom': {
+    th: 'เตรียมไม้ช้า มุมหัวไหล่ตอนกระทบยังไม่เข้าที่',
+    en: "You prepare the racket late, so the shoulder isn't set at contact.",
+  },
+  'devplan.area.racket-prep.why': {
+    th: 'เตรียมช้าทำให้ตีไม่ทันจังหวะ แรงและความแม่นลดลง',
+    en: "Late prep means you're rushed at contact, dropping both power and accuracy.",
+  },
+  'devplan.area.racket-prep.drill': {
+    th: 'เน้น unit turn หมุนตัวเตรียมไม้ทันทีที่เห็นลูก ตั้งหัวไหล่ ~80–100° ตอนกระทบ 15 ลูก',
+    en: 'Emphasize an early unit turn — set the racket the moment you see the ball, shoulder ~80–100° at contact, 15 balls.',
+  },
+  'devplan.area.racket-prep.cue': { th: 'หมุนตัวเตรียมไม้เร็ว', en: 'Turn and prepare early' },
+
+  'devplan.area.swing-speed.title': {
+    th: 'ความเร็วและการเร่งสวิง',
+    en: 'Swing speed & acceleration',
+  },
+  'devplan.area.swing-speed.symptom': {
+    th: 'สวิงช้า ไม่เร่งความเร็วช่วงเข้าหาลูก',
+    en: "Your swing is slow — you don't accelerate into the ball.",
+  },
+  'devplan.area.swing-speed.why': {
+    th: 'หัวไม้ช้าตอนกระทบ = ลูกไม่มีสปินและความลึก คู่แข่งตีสวนง่าย',
+    en: 'A slow racket head at contact means no spin or depth — easy for opponents to attack.',
+  },
+  'devplan.area.swing-speed.drill': {
+    th: 'ดริลล์ low-to-high เร่งหัวไม้ช่วงเข้าหาลูก ตี 15 ลูกให้ได้ยินเสียงวืดดังขึ้น',
+    en: 'Low-to-high drill: accelerate the racket head through the ball — 15 balls chasing a louder "whoosh".',
+  },
+  'devplan.area.swing-speed.cue': { th: 'เร่งหัวไม้ตอนโดนลูก', en: 'Accelerate through contact' },
 } as const;
 
 // ---------------------------------------------------------------------------

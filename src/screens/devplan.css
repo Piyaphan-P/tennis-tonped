@@ -1,0 +1,204 @@
+/* ============================================================================
+   ต้นและเพชร Tennis Club — Development Plan screen (v0.8)
+   Miss-clip cards, structured guidance blocks, story-share button + toast.
+   Uses the shared design tokens from theme.css; scoped to .devplan-screen.
+   ============================================================================ */
+
+.devplan-screen .devplan-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin-top: var(--sp-5);
+}
+
+.devplan-screen .devplan-section-sub {
+  margin-top: calc(-1 * var(--sp-2));
+  font-size: 0.85rem;
+}
+
+.devplan-note {
+  text-align: center;
+  padding: var(--sp-5) var(--sp-4);
+}
+
+/* ---- Miss clip cards ---- */
+
+.devplan-miss-list,
+.devplan-guide-list {
+  gap: var(--sp-3);
+}
+
+.devplan-miss-media {
+  position: relative;
+  width: 100%;
+  /* portrait swing clip; cap height so 3 cards fit a phone scroll */
+  aspect-ratio: 3 / 4;
+  max-height: 60vh;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #000;
+}
+
+.devplan-miss-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.devplan-miss-badge {
+  position: absolute;
+  top: var(--sp-2);
+  left: var(--sp-2);
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-weight: 800;
+  font-size: 0.95rem;
+  background: rgba(10, 17, 19, 0.82);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--line);
+}
+
+.devplan-miss-shot {
+  position: absolute;
+  top: var(--sp-2);
+  right: var(--sp-2);
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  background: rgba(10, 17, 19, 0.7);
+  border: 1px solid var(--line);
+}
+
+.devplan-miss-issue {
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.devplan-miss-phase {
+  font-size: 0.78rem;
+}
+
+/* ---- Structured guidance block ---- */
+
+.devplan-guide-card .devplan-affected {
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.devplan-guide-row {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: var(--sp-2);
+  align-items: start;
+}
+
+.devplan-guide-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  text-align: center;
+  white-space: nowrap;
+  align-self: start;
+}
+
+.devplan-tag-fault {
+  color: var(--fault);
+  background: rgba(255, 106, 77, 0.12);
+}
+.devplan-tag-good {
+  color: var(--good);
+  background: rgba(57, 208, 138, 0.12);
+}
+.devplan-tag-dim {
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.devplan-guide-text {
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.devplan-cue {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-sm);
+  background: rgba(214, 244, 65, 0.08);
+  border: 1px solid rgba(214, 244, 65, 0.25);
+}
+
+.devplan-cue-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.devplan-cue-text {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* ---- Share button + toast ---- */
+
+.devplan-summary-share {
+  margin-top: var(--sp-6);
+}
+
+.story-share {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.story-share-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.story-share-btn[disabled] {
+  opacity: 0.75;
+  cursor: progress;
+}
+
+.story-spinner {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: currentColor;
+  animation: story-spin 0.7s linear infinite;
+}
+
+@keyframes story-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.story-toast {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--text-dim);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.story-toast-err {
+  color: var(--fault);
+  border-color: rgba(255, 106, 77, 0.4);
+}
