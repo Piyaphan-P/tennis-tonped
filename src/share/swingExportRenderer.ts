@@ -124,8 +124,6 @@ export interface RadarLayout {
   r: number;
   /** Axis labels sit at r × labelFactor from center (mirrors RadarChart 1.28). */
   labelFactor: number;
-  /** Baseline y of the "มุมข้อต่อเทียบเป้าหมาย" title above the radar. */
-  titleY: number;
 }
 
 export interface ExportLayout {
@@ -139,21 +137,18 @@ export interface ExportLayout {
   fixStartY: number;
 }
 
-/** Approx ascent of the radar title glyphs (title font is 26px). */
-export const RADAR_TITLE_ASCENT = 26;
-
 /**
  * Fixed layout for the 1080×1920 card (kept pure so it is unit-testable).
- * Clearances are asserted in the test: the radar title lives in the band
- * BELOW the video box and ABOVE the top axis label, and the bottom axis label
- * clears the fix-bullet block.
+ * Clearances are asserted in the test: the radar's top axis label sits BELOW
+ * the video box, and the bottom axis label gets a WIDE gap (user feedback:
+ * the fix bullets were crowding the chart) before the fix-bullet block.
  */
 export function exportLayout(): ExportLayout {
   return {
     video: { x: SIDE_PAD, y: 372, w: CONTENT_W, h: 680 },
-    radar: { cx: EXPORT_W / 2, cy: 1300, r: 118, labelFactor: 1.34, titleY: 1100 },
+    radar: { cx: EXPORT_W / 2, cy: 1268, r: 118, labelFactor: 1.34 },
     headerRowY: 318,
-    fixStartY: 1512,
+    fixStartY: 1560,
   };
 }
 
@@ -373,13 +368,12 @@ function drawRadar(
 ): void {
   const n = data.length;
   if (n === 0) return;
-  const { cx, cy, r, labelFactor, titleY } = radar;
+  const { cx, cy, r, labelFactor } = radar;
 
+  // (v1.0.3) No title above the radar — the chart explains itself; the freed
+  // space goes to a wider gap between the radar and the fix bullets below.
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = C_DIM;
-  ctx.font = `600 ${RADAR_TITLE_ASCENT}px ${FONT_STACK}`;
-  ctx.fillText(lang === 'th' ? 'มุมข้อต่อเทียบเป้าหมาย' : 'Joints vs target', cx, titleY);
 
   // grid rings
   ctx.strokeStyle = C_LINE;

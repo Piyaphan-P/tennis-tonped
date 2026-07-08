@@ -10,7 +10,6 @@ import {
   EXPORT_W,
   EXPORT_H,
   EXPORT_MAX_MS,
-  RADAR_TITLE_ASCENT,
   exportLayout,
   radarAxisPoint,
   radarPolygon,
@@ -48,18 +47,15 @@ describe('exportLayout', () => {
     expect(l.fixStartY).toBeLessThan(EXPORT_H);
   });
 
-  it('gives the radar title real clearance from the video box and the top axis label', () => {
+  it('keeps the radar clear of the video box and gives the fix bullets a wide gap (v1.0.3)', () => {
     const l = exportLayout();
     const videoBottom = l.video.y + l.video.h;
     const topLabelY = l.radar.cy - l.radar.r * l.radar.labelFactor;
     const bottomLabelY = l.radar.cy + l.radar.r * l.radar.labelFactor;
-    const MARGIN = 16;
-    // title sits BELOW the video box (not overlapping the clip)
-    expect(l.radar.titleY - RADAR_TITLE_ASCENT).toBeGreaterThan(videoBottom);
-    // title baseline sits clearly ABOVE the top axis label (the reported bug)
-    expect(l.radar.titleY + MARGIN).toBeLessThan(topLabelY);
-    // bottom axis label clears the fix-bullet block
-    expect(bottomLabelY + MARGIN).toBeLessThan(l.fixStartY);
+    // top axis label sits BELOW the video box (no title row anymore)
+    expect(topLabelY - 26).toBeGreaterThan(videoBottom);
+    // bottom axis label gets a WIDE gap before the fix bullets (was crowding)
+    expect(l.fixStartY - bottomLabelY).toBeGreaterThanOrEqual(100);
   });
 });
 
