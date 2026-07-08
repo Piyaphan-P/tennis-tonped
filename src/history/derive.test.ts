@@ -38,6 +38,7 @@ function cloudShot(idx: number, score: number, issues: ShotIssue[] = []): CloudS
     issues,
     peakWristSpeed: 3,
     hasClip: true,
+    hasAudio: false,
     clipMime: 'video/mp4',
     createdAt: '2026-07-05T10:00:00.000Z',
   };

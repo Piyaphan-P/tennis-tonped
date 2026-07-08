@@ -133,6 +133,21 @@ export function syncClipAttached(localShotId: string, clip: ShotClip): void {
 }
 
 /**
+ * The coach finished speaking for a shot: upload the accumulated WAV (the PCM we
+ * already received — zero extra Gemini tokens) to the (possibly still in-flight)
+ * cloud shot. Skips blobs > 8MB. Fire-and-forget; never blocks the caller.
+ * Mirrors syncClipAttached exactly.
+ */
+export function syncCoachAudio(localShotId: string, wav: Blob): void {
+  void (async () => {
+    if (!wav || wav.size > MAX_CLIP_BYTES) return;
+    const cloudId = await resolveCloudShotId(localShotId);
+    if (!cloudId) return;
+    await api.uploadShotAudio(cloudId, wav);
+  })().catch(() => {});
+}
+
+/**
  * Session ended: PATCH the cloud session with the summary, computed from the
  * SAME fields as buildStoredSession. State is snapshotted SYNCHRONOUSLY here so
  * a subsequent endSession() can't race the async PATCH. No-op without a cloud

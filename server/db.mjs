@@ -80,6 +80,16 @@ CREATE TABLE IF NOT EXISTS shots (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS shots_session_idx ON shots(session_id, idx);
+ALTER TABLE shots ADD COLUMN IF NOT EXISTS audio_path text;
+ALTER TABLE shots ADD COLUMN IF NOT EXISTS audio_mime text;
+CREATE TABLE IF NOT EXISTS leaderboard_records (
+  session_id uuid PRIMARY KEY,
+  user_name text NOT NULL DEFAULT '',
+  avg_score real NOT NULL DEFAULT 0,
+  max_score real NOT NULL DEFAULT 0,
+  shot_count int NOT NULL DEFAULT 0,
+  played_at timestamptz NOT NULL
+);
 `;
 
 /** Create tables/index if absent. No-op (resolves) when DB not configured. */

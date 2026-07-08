@@ -385,6 +385,8 @@ export interface CloudShot {
   peakWristSpeed: number;
   hasClip: boolean;
   clipMime: string | null;
+  /** True when the coach's spoken critique WAV is stored for this shot. */
+  hasAudio: boolean;
   createdAt: string;
 }
 

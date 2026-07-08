@@ -93,6 +93,11 @@ button.session-card:hover {
 .detail-header h1 {
   font-size: 1.25rem;
 }
+.detail-player {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--accent);
+}
 
 .hist-trend {
   display: flex;
@@ -179,6 +184,48 @@ button.session-card:hover {
   flex-direction: column;
   align-items: center;
   gap: var(--sp-1);
+}
+
+/* --- per-clip export (Save / Share the 9:16 swing video) --- */
+.swing-export {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.swing-export-row {
+  display: flex;
+  gap: var(--sp-2);
+}
+.swing-export-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+}
+.swing-export-btn[aria-busy='true'] {
+  opacity: 0.75;
+}
+.swing-export-note {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+/* Spinner shared with StoryShareButton (defined here so HistoryScreen, which
+   does not import devplan.css, still animates the busy state). */
+.story-spinner {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: currentColor;
+  animation: story-spin 0.7s linear infinite;
+}
+@keyframes story-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .radar-chart {
   max-width: 100%;

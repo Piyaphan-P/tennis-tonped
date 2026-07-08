@@ -166,6 +166,28 @@ export async function uploadShotClip(
   return res !== null;
 }
 
+/**
+ * POST /api/shots/:id/audio — raw WAV body (the coach's spoken critique). Skips
+ * >8MB. Returns true on success. Mirrors uploadShotClip.
+ */
+export async function uploadShotAudio(
+  cloudShotId: string,
+  blob: Blob,
+): Promise<boolean> {
+  if (blob.size > 8_000_000) return false;
+  const res = await safeFetch(`/api/shots/${encodeURIComponent(cloudShotId)}/audio`, {
+    method: 'POST',
+    headers: { 'Content-Type': blob.type || 'audio/wav' },
+    body: blob,
+  });
+  return res !== null;
+}
+
+/** Same-origin URL that streams a shot's coach-audio WAV through the server. */
+export function audioUrl(cloudShotId: string): string {
+  return `/api/audio/${encodeURIComponent(cloudShotId)}`;
+}
+
 /** GET /api/history?days=3 — session list, or null when offline. */
 export async function fetchHistory(days = 3): Promise<CloudSessionSummary[] | null> {
   const res = await safeFetch(`/api/history?days=${encodeURIComponent(String(days))}`);

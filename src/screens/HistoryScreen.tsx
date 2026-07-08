@@ -19,6 +19,8 @@ import {
 } from '../history/derive';
 import RadarChart from '../components/charts/RadarChart';
 import BarChart from '../components/charts/BarChart';
+import SwingExportButton from '../components/SwingExportButton';
+import { getCoachAudioBlob } from '../coach/coachAudioTap';
 import type {
   CloudSessionDetail,
   CloudSessionSummary,
@@ -205,6 +207,33 @@ function DetailView({ id, onBack }: { id: string; onBack: () => void }) {
     [cloudSessionId, id, localShots],
   );
 
+  /** The in-memory local Shot for this row when the detail is the live session. */
+  const localShotFor = useCallback(
+    (shot: CloudShot) =>
+      cloudSessionId && cloudSessionId === id
+        ? localShots.find((s) => s.index === shot.idx)
+        : undefined,
+    [cloudSessionId, id, localShots],
+  );
+
+  /**
+   * Coach voice for the export video: prefer the in-memory session Blob (no
+   * network) for the live session, else the same-origin cloud audio stream when
+   * the row has audio. `hasAudio` may be absent on old cloud rows → treat falsy.
+   */
+  const coachAudioSrc = useCallback(
+    (shot: CloudShot): string | Blob | null => {
+      const local = localShotFor(shot);
+      if (local) {
+        const blob = getCoachAudioBlob(local.id);
+        if (blob) return blob;
+      }
+      const hasAudio = (shot as CloudShot & { hasAudio?: boolean }).hasAudio;
+      return hasAudio ? api.audioUrl(shot.id) : null;
+    },
+    [localShotFor],
+  );
+
   const onDelete = async () => {
     if (!window.confirm(t('history.deleteConfirm'))) return;
     setDeleteFailed(false);
@@ -252,6 +281,11 @@ function DetailView({ id, onBack }: { id: string; onBack: () => void }) {
       <BackBar onBack={onBack} label={t('common.back')} />
 
       <div className="detail-header">
+        {detail.userName ? (
+          <span className="detail-player">
+            {t('history.byPlayer').replace('{name}', detail.userName)}
+          </span>
+        ) : null}
         <h1 style={{ margin: 0 }}>{formatSessionDate(detail.startedAt, lang)}</h1>
         <div className="row" style={{ gap: 12, alignItems: 'baseline' }}>
           <span className="faint num">
@@ -311,6 +345,8 @@ function DetailView({ id, onBack }: { id: string; onBack: () => void }) {
           const src = clipSrc(shot);
           const lines = shotImprovementLines(shot.issues, lang);
           const typeKey = `shot.${shot.type}` as I18nKey;
+          const radar = radarData(shot.angles, shot.peakWristSpeed, dominantHand);
+          const localMatch = localShotFor(shot);
           return (
             <div key={shot.id} className="clip-card">
               <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -337,11 +373,7 @@ function DetailView({ id, onBack }: { id: string; onBack: () => void }) {
                 <span className="faint" style={{ fontSize: '0.68rem' }}>
                   {t('history.radarTitle')}
                 </span>
-                <RadarChart
-                  data={radarData(shot.angles, shot.peakWristSpeed, dominantHand)}
-                  lang={lang}
-                  size={180}
-                />
+                <RadarChart data={radar} lang={lang} size={180} />
               </div>
 
               {lines.length > 0 && (
@@ -367,6 +399,23 @@ function DetailView({ id, onBack }: { id: string; onBack: () => void }) {
                 >
                   {t('history.compareThis')}
                 </button>
+              )}
+
+              {shot.hasClip && src && (
+                <SwingExportButton
+                  opts={{
+                    clipSrc: src,
+                    audioSrc: coachAudioSrc(shot),
+                    shotIndex: shot.idx,
+                    shotTypeLabel: t(typeKey),
+                    score: shot.score,
+                    radar,
+                    fixLines: lines,
+                    playerName: detail.userName,
+                    lang,
+                    clipDurationMs: localMatch?.clip?.durationMs,
+                  }}
+                />
               )}
             </div>
           );

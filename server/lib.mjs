@@ -17,6 +17,15 @@ export function clipObjectPath(sessionId, shotId, mime) {
   return `${sessionId}/${shotId}.${extFromMime(mime)}`;
 }
 
+/**
+ * GCS object path for a coach-audio WAV: `audio/<sessionId>/<shotId>.wav`.
+ * The `audio/` prefix keeps clips and audio in disjoint namespaces under the
+ * same bucket (and the same 3-day lifecycle rule reaps both).
+ */
+export function audioObjectPath(sessionId, shotId) {
+  return `audio/${sessionId}/${shotId}.wav`;
+}
+
 /** ISO string from a pg timestamptz value (Date | string | null) → string|null. */
 function isoOrNull(v) {
   if (v == null) return null;
@@ -55,6 +64,7 @@ export function shotRowToJson(row) {
     peakWristSpeed: Number(row.peak_wrist_speed) || 0,
     hasClip: row.clip_path != null,
     clipMime: row.clip_mime ?? null,
+    hasAudio: row.audio_path != null,
     createdAt: isoOrNull(row.created_at),
   };
 }

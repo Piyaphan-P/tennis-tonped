@@ -11,7 +11,7 @@
 // coach's "Frame N = <phase>" mapping never lies. Adds to the test baseline.
 // ============================================================================
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildCoachSystemPrompt,
   buildShotPrompt,
@@ -23,7 +23,22 @@ import {
   shotOpener,
 } from './liveClient';
 import { audioPlayer } from './audioPlayer';
+import { coachAudioTap } from './coachAudioTap';
+import { appStore } from '../store';
 import type { AngleStatuses, JointAngles, Shot, ShotPhase, SwingCapture } from '../types';
+
+/** Toggle the store's coachVoiceOn setting for the audio-tap wiring tests below. */
+function setCoachVoiceOn(on: boolean): void {
+  appStore.setState((s) => ({ settings: { ...s.settings, coachVoiceOn: on } }));
+}
+
+vi.mock('./coachAudioTap', () => ({
+  coachAudioTap: {
+    onChunk: vi.fn(),
+    finalizeForShot: vi.fn(),
+    discard: vi.fn(),
+  },
+}));
 
 // --- fixtures ---------------------------------------------------------------
 
@@ -231,14 +246,28 @@ describe('selectCoachingStyle', () => {
     expect(s.directive).toMatch(/NO correction|do NOT give any correction/);
   });
 
-  it('the palette exposes at least 8 distinct style voices', () => {
+  it('the palette exposes at least 14 distinct style voices (variety v2)', () => {
     const all = Object.values(COACHING_STYLES).flat();
     const ids = all.map((v) => v.id);
-    expect(ids.length).toBeGreaterThanOrEqual(8);
+    expect(ids.length).toBeGreaterThanOrEqual(14);
     expect(new Set(ids).size).toBe(ids.length); // all unique
-    // every band holds ≥2 tonal variants (so same-band rotation can alternate)
+    // every band holds ≥3 tonal variants (so same-band rotation can alternate
+    // AND the stateful recentIds window of 3 never starves a band)
     for (const variants of Object.values(COACHING_STYLES)) {
-      expect(variants.length).toBeGreaterThanOrEqual(2);
+      expect(variants.length).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('praise-refine band includes a PRAISE-ONLY variant (good shots sometimes get no fix)', () => {
+    const variants = COACHING_STYLES['praise-refine'];
+    const praiseOnly = variants.find((v) => /PRAISE-ONLY|do NOT give any correction/i.test(v.directive));
+    expect(praiseOnly).toBeDefined();
+    expect(praiseOnly?.directive).toMatch(/NOT give any correction/i);
+  });
+
+  it('every encourage variant carries explicit try-again ("ลองดูอีกที" / "ลองใหม่อีกที") framing', () => {
+    for (const variant of COACHING_STYLES.encourage) {
+      expect(variant.directive).toMatch(/ลองดูอีกที|ลองใหม่อีกที/);
     }
   });
 
@@ -266,6 +295,43 @@ describe('selectCoachingStyle', () => {
     expect(selectCoachingStyle(90, 7).id).toBe(selectCoachingStyle(90, 7).id);
     expect(selectCoachingStyle(90, 999).band).toBe('hype');
     expect(selectCoachingStyle(40, -3).band).toBe('encourage'); // negatives don't crash
+  });
+
+  // --- recentIds (v1.0 stateful no-repeat window) ---------------------------
+
+  it('recentIds=[] (default) reproduces the old pure index-rotation behavior', () => {
+    for (const score of [95, 78, 62, 40]) {
+      for (let i = 0; i < 8; i += 1) {
+        expect(selectCoachingStyle(score, i)).toEqual(selectCoachingStyle(score, i, []));
+      }
+    }
+  });
+
+  it('skips any id present in recentIds, rotating forward from index', () => {
+    const band = 'hype';
+    const variants = COACHING_STYLES[band];
+    const picked = selectCoachingStyle(90, 0, [variants[0].id]);
+    expect(picked.id).not.toBe(variants[0].id);
+    expect(picked.band).toBe('hype');
+  });
+
+  it('falls back to plain rotation when every variant in the band is recent', () => {
+    const band = 'technical';
+    const allIds = COACHING_STYLES[band].map((v) => v.id);
+    const picked = selectCoachingStyle(60, 2, allIds);
+    // Still returns a valid technical style rather than throwing/undefined.
+    expect(picked).toBeDefined();
+    expect(picked.band).toBe('technical');
+  });
+
+  it('threading a 3-window of recent ids prevents a same-band repeat several shots later', () => {
+    // Simulate: shot 0 (hype) spoken, shot 1/2 in other bands, shot 3 back to
+    // hype at the SAME index parity that a naive index%length rotation would
+    // have repeated — recentIds must steer it away.
+    const first = selectCoachingStyle(90, 0, []);
+    const recent = [first.id];
+    const second = selectCoachingStyle(90, 3, recent); // index 3 ≡ 0 mod 3 variants
+    expect(second.id).not.toBe(first.id);
   });
 });
 
@@ -342,7 +408,7 @@ describe('buildCoachSystemPrompt', () => {
     expect(COACH_SYSTEM_PROMPT).toContain('WARM ENCOURAGEMENT');
     // variety mandate + rotating openers
     expect(COACH_SYSTEM_PROMPT).toContain('VARIETY');
-    expect(COACH_SYSTEM_PROMPT).toContain('never reuse the previous reply');
+    expect(COACH_SYSTEM_PROMPT).toContain('Never reuse the previous reply');
     expect(COACH_SYSTEM_PROMPT).toContain('โอ้โห');
     // the shot-name opener is still step 1 in every style
     expect(COACH_SYSTEM_PROMPT).toContain('it is step 1 no matter which coaching style');
@@ -468,5 +534,179 @@ describe('CoachLiveClient pacing gate / queue', () => {
     // A late playback-done signal must not resurrect a dead/stale shot.
     audioPlayer.onPlaybackDone?.();
     expect(dispatch).not.toHaveBeenCalled();
+  });
+});
+
+// --- pickCoachingStyle statefulness (v1.0 variety v2) -----------------------
+//
+// The stateful wrapper (private on CoachLiveClient) must never hand out a
+// style id that is still inside its own 3-entry recency window, even when the
+// same score band recurs a few "shots" later — this is the actual fix for the
+// v0.9 known-minor (queue-dropped shots letting two HEARD critiques repeat a
+// style). We reach the private method the same way other tests in this file
+// reach private fields: a runtime cast.
+
+describe('CoachLiveClient.pickCoachingStyle (stateful no-repeat window)', () => {
+  function pick(client: CoachLiveClient, score: number, index: number) {
+    return (
+      client as unknown as { pickCoachingStyle: (s: number, i: number) => { id: string; band: string } }
+    ).pickCoachingStyle(score, index);
+  }
+  /** Simulate the clean-turn commit finalizeTurn performs once a critique is SPOKEN. */
+  function commit(client: CoachLiveClient) {
+    (client as unknown as { commitPendingStyle: () => void }).commitPendingStyle();
+  }
+
+  it('never repeats a HEARD style id across consecutive spoken turns, even at a constant (score, index)', () => {
+    const client = new CoachLiveClient();
+    let prev = '';
+    for (let i = 0; i < 20; i += 1) {
+      const id = pick(client, 90, 0).id; // constant score+index would repeat under the old pure selector
+      expect(id).not.toBe(prev);
+      commit(client); // the critique was spoken to completion
+      prev = id;
+    }
+  });
+
+  it('does not repeat a same-band style within its own 3-entry recency window', () => {
+    const client = new CoachLiveClient();
+    const ids: string[] = [];
+    for (const idx of [0, 1, 2]) {
+      ids.push(pick(client, 62, idx).id);
+      commit(client);
+    }
+    // technical band has ≥3 variants — all three spoken picks in the window must be distinct.
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('a pick that is never spoken (failed send) does not pollute the window', () => {
+    const client = new CoachLiveClient();
+    const first = pick(client, 90, 0).id;
+    commit(client); // heard
+    // Two failed dispatches: picked but never committed (error path nulls pendingStyleId;
+    // here simply not committing models "never spoken").
+    pick(client, 90, 1);
+    pick(client, 90, 2);
+    const recentIds = (client as unknown as { recentStyleIds: string[] }).recentStyleIds;
+    // Only the HEARD style is in the window — failed picks must not evict it.
+    expect(recentIds).toEqual([first]);
+    // And the next spoken pick still avoids the heard id.
+    const next = pick(client, 90, 3).id;
+    expect(next).not.toBe(first);
+  });
+
+  it('resets its recency memory on disconnect()', () => {
+    const client = new CoachLiveClient();
+    const first = pick(client, 90, 0).id;
+    client.disconnect();
+    // With a cleared window, the very next pick is free to return the same id
+    // as a fresh session's first pick (index 0, no history) would.
+    const recentIds = (client as unknown as { recentStyleIds: string[] }).recentStyleIds;
+    expect(recentIds).toEqual([]);
+    // Sanity: a fresh CoachLiveClient's first pick at the same score/index
+    // matches what this client now produces post-reset.
+    const freshFirst = pick(new CoachLiveClient(), 90, 0).id;
+    expect(pick(client, 90, 0).id).toBe(freshFirst);
+    void first;
+  });
+});
+
+// --- coachAudioTap wiring (v1.0 audio persistence) --------------------------
+//
+// liveClient forwards every coach PCM chunk to coachAudioTap.onChunk
+// regardless of the coachVoiceOn speaker toggle, finalizes the accumulated
+// turn to the pending shot on a CLEAN turnComplete, and discards on
+// interruption / close / disconnect. Mocked at the top of this file.
+
+describe('coachAudioTap wiring', () => {
+  beforeEach(() => {
+    // Earlier describes in this file exercise real disconnect()/handleClose()
+    // paths (e.g. the pacing-gate tests), which call the real coachAudioTap
+    // mock and leave call history behind — clear it so each test here starts
+    // from a clean slate regardless of run order.
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+    audioPlayer.onPlaybackDone = null;
+  });
+
+  function pcmMessage(base64: string) {
+    return {
+      serverContent: {
+        modelTurn: {
+          parts: [{ inlineData: { data: base64, mimeType: 'audio/pcm;rate=24000' } }],
+        },
+      },
+    };
+  }
+
+  function readyClient() {
+    const client = new CoachLiveClient();
+    (client as unknown as { connected: boolean }).connected = true;
+    (client as unknown as { session: unknown }).session = { sendRealtimeInput: vi.fn(), sendClientContent: vi.fn() };
+    return client;
+  }
+
+  it('taps every PCM chunk and finalizes for the pending shot on a clean turnComplete', () => {
+    const client = readyClient();
+    (client as unknown as { pendingShotId: string | null }).pendingShotId = 'shot-a';
+    const handleMessage = (
+      client as unknown as { handleMessage: (m: unknown) => void }
+    ).handleMessage.bind(client);
+
+    handleMessage(pcmMessage('AAA='));
+    handleMessage(pcmMessage('BBB='));
+    expect(coachAudioTap.onChunk).toHaveBeenCalledWith('AAA=');
+    expect(coachAudioTap.onChunk).toHaveBeenCalledWith('BBB=');
+    expect(coachAudioTap.finalizeForShot).not.toHaveBeenCalled();
+
+    handleMessage({ serverContent: { turnComplete: true } });
+    expect(coachAudioTap.finalizeForShot).toHaveBeenCalledWith('shot-a');
+    expect(coachAudioTap.discard).not.toHaveBeenCalled();
+  });
+
+  it('taps chunks even when coachVoiceOn is off (persist regardless of speaker mute)', () => {
+    const client = readyClient();
+    (client as unknown as { pendingShotId: string | null }).pendingShotId = 'shot-b';
+    const handleMessage = (
+      client as unknown as { handleMessage: (m: unknown) => void }
+    ).handleMessage.bind(client);
+    const spy = vi.spyOn(audioPlayer, 'enqueue').mockImplementation(() => {});
+
+    setCoachVoiceOn(false);
+    handleMessage(pcmMessage('CCC='));
+    expect(coachAudioTap.onChunk).toHaveBeenCalledWith('CCC=');
+    expect(spy).not.toHaveBeenCalled(); // speaker gated off, tap is not
+    setCoachVoiceOn(true);
+  });
+
+  it('discards accumulated audio on an interrupted turn', () => {
+    const client = readyClient();
+    (client as unknown as { pendingShotId: string | null }).pendingShotId = 'shot-c';
+    const handleMessage = (
+      client as unknown as { handleMessage: (m: unknown) => void }
+    ).handleMessage.bind(client);
+    vi.spyOn(audioPlayer, 'stop').mockImplementation(() => {});
+
+    handleMessage(pcmMessage('DDD='));
+    handleMessage({ serverContent: { interrupted: true } });
+    expect(coachAudioTap.discard).toHaveBeenCalled();
+    expect(coachAudioTap.finalizeForShot).not.toHaveBeenCalled();
+  });
+
+  it('discards on handleClose (socket died mid-turn)', () => {
+    const client = readyClient();
+    (client as unknown as { pendingShotId: string | null }).pendingShotId = 'shot-d';
+    (client as unknown as { handleClose: (s: string, e?: unknown) => void }).handleClose('disconnected');
+    expect(coachAudioTap.discard).toHaveBeenCalled();
+  });
+
+  it('discards on disconnect()', () => {
+    const client = readyClient();
+    client.disconnect();
+    expect(coachAudioTap.discard).toHaveBeenCalled();
   });
 });

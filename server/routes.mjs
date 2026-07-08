@@ -16,6 +16,7 @@ import { query, dbReady } from './db.mjs';
 import { gcsReady, saveClip, streamClip } from './gcs.mjs';
 import {
   clipObjectPath,
+  audioObjectPath,
   sessionRowToJson,
   shotRowToJson,
   validateShotMeta,
@@ -28,6 +29,10 @@ export function mountCloudRoutes(app) {
   const json = express.json({ limit: '256kb' });
   const rawVideo = express.raw({
     type: ['video/*', 'application/octet-stream'],
+    limit: '8mb',
+  });
+  const rawAudio = express.raw({
+    type: ['audio/*'],
     limit: '8mb',
   });
 
@@ -78,6 +83,30 @@ export function mountCloudRoutes(app) {
           summary != null ? JSON.stringify(summary) : null,
         ],
       );
+      // Leaderboard (v1.0): sessions/shots purge after 3 days, so the finished
+      // session's name + scores are ALSO recorded on the durable board (never
+      // purged; the ranking site reads only this table). Idempotent by PK;
+      // best-effort — a board failure must not fail the session PATCH.
+      if ((Number(shotCount) || 0) > 0) {
+        try {
+          await query(
+            `INSERT INTO leaderboard_records
+               (session_id, user_name, avg_score, max_score, shot_count, played_at)
+             SELECT s.id, s.user_name, $2,
+                    COALESCE((SELECT max(score) FROM shots WHERE session_id = s.id), 0),
+                    $3, s.started_at
+               FROM sessions s WHERE s.id = $1
+             ON CONFLICT (session_id) DO UPDATE SET
+               user_name = EXCLUDED.user_name,
+               avg_score = EXCLUDED.avg_score,
+               max_score = EXCLUDED.max_score,
+               shot_count = EXCLUDED.shot_count`,
+            [req.params.id, Number(avgScore) || 0, Number(shotCount) || 0],
+          );
+        } catch (err) {
+          console.error('[routes] leaderboard record (non-fatal):', err?.message || err);
+        }
+      }
       res.status(204).end();
     } catch (err) {
       console.error('[routes] patch session:', err?.message || err);
@@ -154,6 +183,40 @@ export function mountCloudRoutes(app) {
     }
   });
 
+  // --- POST /api/shots/:id/audio — raw WAV body → GCS (204) ---------------
+  // The coach's spoken critique (PCM we already received, WAV-wrapped). Same
+  // guards as the clip route. Zero extra Gemini tokens.
+  app.post('/api/shots/:id/audio', rawAudio, async (req, res) => {
+    if (!requireDb(res)) return;
+    if (!requireGcs(res)) return;
+    try {
+      const buf = req.body;
+      if (!Buffer.isBuffer(buf) || buf.length === 0) {
+        return res.status(400).json({ error: 'empty_audio_body' });
+      }
+      if (buf.length > CLIP_MAX_BYTES) {
+        return res.status(413).json({ error: 'audio_too_large' });
+      }
+      const mime = req.get('content-type') || 'audio/wav';
+      const found = await query(`SELECT session_id FROM shots WHERE id = $1`, [req.params.id]);
+      if (found.rowCount === 0) {
+        return res.status(404).json({ error: 'shot_not_found' });
+      }
+      const sessionId = found.rows[0].session_id;
+      const path = audioObjectPath(sessionId, req.params.id);
+      await saveClip(path, buf, mime);
+      await query(`UPDATE shots SET audio_path = $2, audio_mime = $3 WHERE id = $1`, [
+        req.params.id,
+        path,
+        mime,
+      ]);
+      res.status(204).end();
+    } catch (err) {
+      console.error('[routes] upload audio:', err?.message || err);
+      res.status(503).json(unavailableBody('clips'));
+    }
+  });
+
   // --- GET /api/history?days=3 — session list -----------------------------
   app.get('/api/history', async (req, res) => {
     if (!requireDb(res)) return;
@@ -210,6 +273,26 @@ export function mountCloudRoutes(app) {
       await streamClip(rows[0].clip_path, rows[0].clip_mime, req, res);
     } catch (err) {
       console.error('[routes] clip stream:', err?.message || err);
+      if (!res.headersSent) res.status(503).json(unavailableBody('clips'));
+    }
+  });
+
+  // --- GET /api/audio/:shotId — proxy-stream the coach WAV (Range/206) ----
+  app.get('/api/audio/:shotId', async (req, res) => {
+    if (!requireDb(res)) return;
+    if (!requireGcs(res)) return;
+    try {
+      const { rows, rowCount } = await query(
+        `SELECT audio_path, audio_mime FROM shots WHERE id = $1`,
+        [req.params.shotId],
+      );
+      if (rowCount === 0 || !rows[0].audio_path) {
+        return res.status(404).json({ error: 'audio_not_found' });
+      }
+      res.setHeader('Cache-Control', 'private, max-age=3600');
+      await streamClip(rows[0].audio_path, rows[0].audio_mime || 'audio/wav', req, res);
+    } catch (err) {
+      console.error('[routes] audio stream:', err?.message || err);
       if (!res.headersSent) res.status(503).json(unavailableBody('clips'));
     }
   });

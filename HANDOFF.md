@@ -1,10 +1,18 @@
 # HANDOFF.md — สถานะงาน + สิ่งที่ต้องทำต่อ
 
-> อัปเดตล่าสุด: 2026-07-07 (release v0.9) · สำหรับ Claude session ถัดไป (หรือคนที่มารับช่วง) อ่านคู่กับ `CLAUDE.md`
+> อัปเดตล่าสุด: 2026-07-08 (release v1.0 + เว็บ Ranking แยก) · สำหรับ Claude session ถัดไป (หรือคนที่มารับช่วง) อ่านคู่กับ `CLAUDE.md`
 
 ## TL;DR
 
-แอป deploy อยู่ที่ https://ton-phet-tennis-862607193158.asia-southeast1.run.app (**revision `00012`**, image `…/ton-phet/app:v9`, git tag **v0.9**). ล่าสุด: **แก้บั๊กแยกโฟร์แฮนด์/แบ็คแฮนด์ (ยึดมือที่ user เลือก) + คูลดาวน์ 2.5 วิ/ครบวงเท่านั้นถึงส่งโค้ช + โค้ชพูด 8 สไตล์ไม่ซ้ำ** (Fable verdict: ship, 173/173 tests). เหลือ blocker เดียวเหมือนเดิม: **ยังไม่มี `GEMINI_API_KEY` (AIza…)** — เสียง/โค้ชสดยังใช้ได้เฉพาะผ่าน AQ. token ชั่วคราวที่ paste ใน Settings
+แอป deploy อยู่ที่ https://ton-phet-tennis-862607193158.asia-southeast1.run.app (git tag **v1.0**, image `…/ton-phet/app:v10`). ล่าสุด v1.0: **เซฟเสียงโค้ชต่อช็อตขึ้น GCS (token=0) + ปุ่ม Export วิดีโอ 9:16 ในหน้าประวัติ (คลิป+เสียงโค้ช+score+radar → เซฟ/แชร์ IG·FB) + โค้ชหลากสไตล์ v2 (14 เสียง, stateful no-repeat, ชมล้วนได้/วงแย่ปลอบ "ลองใหม่") + ชื่อผู้เล่นในหน้าประวัติ + เขียน `leaderboard_records` (ตารางถาวร ไม่โดน purge 3 วัน) ตอนจบเซสชัน**. มี**เว็บ Ranking แยก** (repo `../tennis_ranking01`, service `ton-phet-ranking`) อ่านบอร์ดนี้โชว์อันดับ วัน/สัปดาห์/เดือน. เหลือ blocker เดียวเหมือนเดิม: **ยังไม่มี `GEMINI_API_KEY` (AIza…)** — เสียง/โค้ชสดยังใช้ได้เฉพาะผ่าน AQ. token ชั่วคราวที่ paste ใน Settings
+
+## v1.0 (2026-07-08) — เสียงโค้ชถาวร + Export วิดีโอ + โค้ช v2 + leaderboard (ล่าสุด, tag v1.0)
+
+- **เซฟเสียงโค้ช:** `coachAudioTap` ดัก PCM chunk ที่ไหลผ่านอยู่แล้ว (เฉพาะตอนมี turn ของช็อตค้าง) → WAV 24kHz mono → GCS `audio/<sess>/<shot>.wav` ผ่าน `POST /api/shots/:id/audio` (สตรีมกลับด้วย Range/206 ที่ `GET /api/audio/:id`) · turn โดน interrupt = ทิ้ง ไม่ให้เสียงครึ่ง ๆ ไปติดช็อต · token Gemini = 0 (ไม่ generate ซ้ำ)
+- **Export วิดีโอ (หน้าประวัติ):** `swingExportRenderer` วาด 1080×1920 — หัวแบรนด์+ชื่อผู้เล่น, "#N · แบ็คแฮนด์"+คะแนนสีใหญ่, คลิปเล่นจริง, radar hexagon, bullet จุดแก้ — mix เสียงโค้ชเข้าแทร็กเสียง (คลิปวนลูปถ้าเสียงยาวกว่า, cap 20 วิ) · ปุ่ม 2 จังหวะ (เรนเดอร์ก่อน → กด เซฟ/แชร์ บน gesture ใหม่ กัน activation หมดอายุ) · MediaRecorder มี **fallback chain ตอนมีแทร็กเสียง** (mp4+mp4a → picked → bare → ตัดเสียง) — แก้ major จากรีวิว
+- **โค้ช v2:** 14 เสียง (hype 3 · praise-refine 4 รวม praise-only ไม่มี fix · technical 3 · encourage 4 โทน "ไม่เป็นไร ลองใหม่อีกที") + **stateful no-repeat window 3** ที่บันทึกตอน**พูดจบจริง** (finalizeTurn) ไม่ใช่ตอน dispatch — ส่งพลาดกี่รอบก็ไม่กินโควตา window
+- **Leaderboard ถาวร:** PATCH จบเซสชัน upsert `leaderboard_records(session_id PK, user_name, avg_score, max_score, shot_count, played_at)` — **ไม่โดน purge 3 วัน** · เว็บ Ranking (`../tennis_ranking01`) อ่านตารางนี้อย่างเดียว + backfill กันเหนียวรายชั่วโมง
+- **เทสสนาม v1.0:** (1) Export บน iPhone จริง — วิดีโอมีเสียงโค้ชไหม, แชร์เข้า IG story เล่นได้ไหม (2) Android: คลิปวนลูปตอนเสียงยาวกว่า ภาพค้างเฟรมสุดท้ายหรือเปล่า (3) จบเซสชันแล้วชื่อ+คะแนนขึ้นเว็บ Ranking ภายในนาทีไหม
 
 ## v0.9 (2026-07-07) — มือถนัด + จังหวะแคป + โค้ชหลายสไตล์ (ล่าสุด, revision `00012`, tag v0.9)
 

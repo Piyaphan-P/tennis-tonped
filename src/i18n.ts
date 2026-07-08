@@ -287,6 +287,16 @@ const DICT = {
   'history.loadFailed': { th: 'โหลดข้อมูลไม่สำเร็จ', en: 'Failed to load' },
   'history.retry': { th: 'ลองใหม่', en: 'Retry' },
   'history.radarTitle': { th: 'มุมข้อต่อเทียบเป้าหมาย', en: 'Joints vs target' },
+  // --- history: export one swing as a 9:16 share video. {name} = player. ---
+  'history.byPlayer': { th: 'ประวัติของ {name}', en: "{name}'s history" },
+  'history.export.save': { th: 'บันทึกวิดีโอ', en: 'Save video' },
+  'history.export.share': { th: 'แชร์', en: 'Share' },
+  'history.export.rendering': { th: 'กำลังสร้างวิดีโอ…', en: 'Rendering…' },
+  'history.export.ready': {
+    th: 'พร้อมแล้ว — แตะอีกครั้งเพื่อบันทึกหรือแชร์',
+    en: 'Ready — tap again to save or share',
+  },
+  'history.export.failed': { th: 'สร้างวิดีโอไม่สำเร็จ ลองใหม่อีกครั้ง', en: 'Export failed — try again' },
 
   // --- compare screen (user clip vs reference video) ---
   'compare.title': { th: 'เปรียบเทียบวงสวิง', en: 'Swing Compare' },
