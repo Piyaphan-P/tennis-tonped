@@ -344,14 +344,16 @@ function DetailView({ id, onBack }: { id: string; onBack: () => void }) {
         {shots.map((shot) => {
           const src = clipSrc(shot);
           const lines = shotImprovementLines(shot.issues, lang);
-          const typeKey = `shot.${shot.type}` as I18nKey;
+          // Unknown stroke ⇒ show just "#N" (no "ไม่ทราบชนิด" placeholder).
+          const typeLabel = shot.type === 'unknown' ? '' : t(`shot.${shot.type}` as I18nKey);
           const radar = radarData(shot.angles, shot.peakWristSpeed, dominantHand);
           const localMatch = localShotFor(shot);
           return (
             <div key={shot.id} className="clip-card">
               <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
                 <span className="dim" style={{ fontSize: '0.85rem' }}>
-                  #{shot.idx} · {t(typeKey)}
+                  #{shot.idx}
+                  {typeLabel ? ` · ${typeLabel}` : ''}
                 </span>
                 <ScoreBadge score={shot.score} />
               </div>
@@ -407,7 +409,7 @@ function DetailView({ id, onBack }: { id: string; onBack: () => void }) {
                     clipSrc: src,
                     audioSrc: coachAudioSrc(shot),
                     shotIndex: shot.idx,
-                    shotTypeLabel: t(typeKey),
+                    shotTypeLabel: typeLabel,
                     score: shot.score,
                     radar,
                     fixLines: lines,

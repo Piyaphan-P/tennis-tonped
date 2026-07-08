@@ -152,7 +152,7 @@ export function exportLayout(): ExportLayout {
   return {
     video: { x: SIDE_PAD, y: 372, w: CONTENT_W, h: 680 },
     radar: { cx: EXPORT_W / 2, cy: 1300, r: 118, labelFactor: 1.34, titleY: 1100 },
-    headerRowY: 300,
+    headerRowY: 318,
     fixStartY: 1512,
   };
 }
@@ -279,16 +279,16 @@ function fitText(ctx: CanvasRenderingContext2D, text: string, maxW: number): str
 }
 
 /**
- * Brand line: CENTERED and prominent (user feedback on v1.0: it must read as
- * the card's title, front and center). The player name moved out of here into
- * drawTitleRow's left column ("ผู้ใช้งาน : <name>").
+ * Brand line: LEFT-aligned on the same left edge as the "ผู้ใช้งาน" and "#N"
+ * lines below (v1.0.2 user feedback — centering rendered off-edge on their
+ * device, and a single flush-left column reads cleaner). Prominent size.
  */
 function drawHeader(ctx: CanvasRenderingContext2D): void {
-  ctx.textAlign = 'center';
+  ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = C_ACCENT;
   ctx.font = `800 58px ${FONT_STACK}`;
-  ctx.fillText(`🎾 ${BRAND}`, EXPORT_W / 2, 132);
+  ctx.fillText(fitText(ctx, `🎾 ${BRAND}`, CONTENT_W), SIDE_PAD, 118);
 }
 
 /**
@@ -315,19 +315,21 @@ function drawTitleRow(
   ctx.fillText(scoreText, EXPORT_W - SIDE_PAD, rowY + 14);
   const leftMaxW = CONTENT_W - ctx.measureText(scoreText).width - 40;
 
+  // Left column: both lines share the SAME font (user feedback: equal sizes).
   ctx.textAlign = 'left';
-  const name = (playerName ?? '').trim();
-  if (name) {
-    // Top line, top-aligned with the score block: "ผู้ใช้งาน : ต้น10".
-    ctx.fillStyle = C_TEXT;
-    ctx.font = `700 46px ${FONT_STACK}`;
-    const label = lang === 'th' ? 'ผู้ใช้งาน' : 'Player';
-    ctx.fillText(fitText(ctx, `${label} : ${name}`, leftMaxW), SIDE_PAD, rowY - 66);
-  }
-
   ctx.fillStyle = C_TEXT;
   ctx.font = `700 52px ${FONT_STACK}`;
-  ctx.fillText(fitText(ctx, `#${shotIndex}  ·  ${shotTypeLabel}`, leftMaxW), SIDE_PAD, rowY);
+  const name = (playerName ?? '').trim();
+  if (name) {
+    const label = lang === 'th' ? 'ผู้ใช้งาน' : 'Player';
+    // Roomier line gap below the brand (user feedback: more breathing space).
+    ctx.fillText(fitText(ctx, `${label} : ${name}`, leftMaxW), SIDE_PAD, rowY - 88);
+  }
+
+  // Unknown stroke type ⇒ just "#N" — never a "ไม่ทราบชนิด" placeholder.
+  const typeLabel = (shotTypeLabel ?? '').trim();
+  const shotLine = typeLabel ? `#${shotIndex}  ·  ${typeLabel}` : `#${shotIndex}`;
+  ctx.fillText(fitText(ctx, shotLine, leftMaxW), SIDE_PAD, rowY);
 }
 
 function drawFrameBorder(ctx: CanvasRenderingContext2D, box: StoryRect): void {
