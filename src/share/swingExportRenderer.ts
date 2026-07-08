@@ -268,39 +268,66 @@ function drawBackground(ctx: CanvasRenderingContext2D): void {
   ctx.fillRect(0, 0, EXPORT_W, EXPORT_H);
 }
 
-function drawHeader(ctx: CanvasRenderingContext2D, playerName?: string): void {
+/** Truncate `text` with an ellipsis so it fits within `maxW` px. */
+function fitText(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
+  if (ctx.measureText(text).width <= maxW) return text;
+  let t = text;
+  while (t.length > 1 && ctx.measureText(`${t}…`).width > maxW) {
+    t = t.slice(0, -1);
+  }
+  return `${t}…`;
+}
+
+/**
+ * Brand line: CENTERED and prominent (user feedback on v1.0: it must read as
+ * the card's title, front and center). The player name moved out of here into
+ * drawTitleRow's left column ("ผู้ใช้งาน : <name>").
+ */
+function drawHeader(ctx: CanvasRenderingContext2D): void {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = C_ACCENT;
-  ctx.font = `700 40px ${FONT_STACK}`;
-  ctx.fillText(`🎾 ${BRAND}`, EXPORT_W / 2, 118);
-  const name = (playerName ?? '').trim();
-  if (name) {
-    ctx.fillStyle = C_TEXT;
-    ctx.font = `700 56px ${FONT_STACK}`;
-    ctx.fillText(name, EXPORT_W / 2, 188);
-  }
+  ctx.font = `800 58px ${FONT_STACK}`;
+  ctx.fillText(`🎾 ${BRAND}`, EXPORT_W / 2, 132);
 }
 
-/** "#N · stroke" left + big semantic-colored score right, on one baseline row. */
+/**
+ * Left column: "ผู้ใช้งาน : <name>" on the TOP line (aligned with the score's
+ * top, per user feedback), "#N · stroke" on the line below. Big semantic-
+ * colored score on the right spans both lines.
+ */
 function drawTitleRow(
   ctx: CanvasRenderingContext2D,
   shotIndex: number,
   shotTypeLabel: string,
   score: number,
   rowY: number,
+  playerName?: string,
+  lang: Lang = 'th',
 ): void {
   ctx.textBaseline = 'alphabetic';
-  ctx.textAlign = 'left';
-  ctx.fillStyle = C_TEXT;
-  ctx.font = `700 52px ${FONT_STACK}`;
-  const left = `#${shotIndex}  ·  ${shotTypeLabel}`;
-  ctx.fillText(left, SIDE_PAD, rowY);
 
+  // Score first (right) so the left column can ellipsis-clamp against it.
   ctx.textAlign = 'right';
   ctx.fillStyle = scoreExportColor(score);
   ctx.font = `800 96px ${FONT_STACK}`;
-  ctx.fillText(String(Math.round(score)), EXPORT_W - SIDE_PAD, rowY + 14);
+  const scoreText = String(Math.round(score));
+  ctx.fillText(scoreText, EXPORT_W - SIDE_PAD, rowY + 14);
+  const leftMaxW = CONTENT_W - ctx.measureText(scoreText).width - 40;
+
+  ctx.textAlign = 'left';
+  const name = (playerName ?? '').trim();
+  if (name) {
+    // Top line, top-aligned with the score block: "ผู้ใช้งาน : ต้น10".
+    ctx.fillStyle = C_TEXT;
+    ctx.font = `700 46px ${FONT_STACK}`;
+    const label = lang === 'th' ? 'ผู้ใช้งาน' : 'Player';
+    ctx.fillText(fitText(ctx, `${label} : ${name}`, leftMaxW), SIDE_PAD, rowY - 66);
+  }
+
+  ctx.fillStyle = C_TEXT;
+  ctx.font = `700 52px ${FONT_STACK}`;
+  ctx.fillText(fitText(ctx, `#${shotIndex}  ·  ${shotTypeLabel}`, leftMaxW), SIDE_PAD, rowY);
 }
 
 function drawFrameBorder(ctx: CanvasRenderingContext2D, box: StoryRect): void {
@@ -460,8 +487,16 @@ function drawFooter(ctx: CanvasRenderingContext2D, lang: Lang): void {
 
 /** Draw all static chrome (everything except the live video frame). */
 function drawChrome(ctx: CanvasRenderingContext2D, opts: SwingExportOpts, layout: ExportLayout): void {
-  drawHeader(ctx, opts.playerName);
-  drawTitleRow(ctx, opts.shotIndex, opts.shotTypeLabel, opts.score, layout.headerRowY);
+  drawHeader(ctx);
+  drawTitleRow(
+    ctx,
+    opts.shotIndex,
+    opts.shotTypeLabel,
+    opts.score,
+    layout.headerRowY,
+    opts.playerName,
+    opts.lang,
+  );
   drawRadar(ctx, opts.radar, opts.lang, layout.radar);
   drawFixLines(ctx, opts.fixLines, layout.fixStartY);
   drawFooter(ctx, opts.lang);
