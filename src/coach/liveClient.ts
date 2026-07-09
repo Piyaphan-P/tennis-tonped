@@ -23,7 +23,6 @@
 // ============================================================================
 
 import { GoogleGenAI, Modality } from '@google/genai';
-import type { Session } from '@google/genai';
 import { costMonitor } from '../cost/costMonitor';
 import type { RawUsageMetadata } from '../cost/costMonitor';
 import { appStore } from '../store';
@@ -33,6 +32,65 @@ import { audioPlayer } from './audioPlayer';
 import { coachAudioTap } from './coachAudioTap';
 
 const DEFAULT_MODEL = 'gemini-2.5-flash-native-audio-preview-09-2025';
+
+/**
+ * Default Live model for the SERVER-RELAY (Vertex) transport. Vertex allowlists
+ * only the half-cascade `gemini-live-2.5-flash` for this project, and only on
+ * location 'global' (see CLAUDE.md). This is a BARE model id: the browser has
+ * no business knowing the project/location, so the relay SERVER rewrites
+ * `setup.model` to the full global resource path
+ * (`projects/<proj>/locations/global/publishers/google/models/<id>`) — see
+ * buildRelaySetupFrame. Overridable at build time via VITE_GEMINI_LIVE_MODEL.
+ */
+const RELAY_DEFAULT_MODEL = 'gemini-live-2.5-flash';
+
+/**
+ * Read a Vite env var without widening the strict ImportMetaEnv interface
+ * (src/vite-env.d.ts is owned by another file set). Mirrors the loose-cast
+ * pattern already used in src/cost/pricing.ts.
+ */
+function envVar(key: string): string {
+  try {
+    const env = (import.meta as unknown as { env?: Record<string, string> }).env;
+    const v = env?.[key];
+    if (typeof v === 'string' && v) return v;
+  } catch {
+    /* ignore */
+  }
+  // Node/SSR/test fallback (guarded — `process` is undefined in the browser
+  // bundle). This is also what vi.stubEnv writes to.
+  try {
+    if (typeof process !== 'undefined' && process.env) {
+      const v = process.env[key];
+      if (typeof v === 'string') return v;
+    }
+  } catch {
+    /* ignore */
+  }
+  return '';
+}
+
+/**
+ * True when the app should talk to the same-origin server WS relay
+ * (`/api/live`) instead of AI Studio's ephemeral-token Live endpoint. Gated on
+ * VITE_LIVE_TRANSPORT === 'relay' (SIT default). Absent / any other value keeps
+ * the exact AI-Studio (AQ. token) behavior, so main-branch semantics survive a
+ * merge untouched.
+ */
+function isRelayTransport(): boolean {
+  return envVar('VITE_LIVE_TRANSPORT') === 'relay';
+}
+
+/** Resolve the same-origin relay WebSocket URL (wss on https, ws otherwise). */
+function relayUrl(): string {
+  const override = envVar('VITE_LIVE_RELAY_URL');
+  if (override) return override;
+  const path = envVar('VITE_LIVE_RELAY_PATH') || '/api/live';
+  const loc = (globalThis as { location?: { protocol?: string; host?: string } }).location;
+  const proto = loc?.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = loc?.host ?? '';
+  return `${proto}//${host}${path}`;
+}
 
 /**
  * Best-effort human-readable message from whatever the SDK/socket throws. The
@@ -88,6 +146,7 @@ STYLE RULES:
 - Reference tennis fundamentals (unit turn, low-to-high swing path, contact point in front, knee loading, balanced follow-through) — not generic fitness advice.
 - Reply ONLY in the requested language. Thai replies use natural spoken coaching Thai (ครับ/นะครับ/นะ), with English tennis terms where Thai players normally use them (โฟร์แฮนด์, ฟอลโลว์ทรู, สปลิตสเต็ป). English replies are equally short and spoken-style.
 - Never mention that you are an AI, never say frames/photos/angles were "sent to you", never read out raw JSON, issue keys, or frame numbers — you simply watched the swing. Vary your phrasing shot to shot; if the same fault repeats, escalate gently ("ยังงออยู่อยู่นะ {{PLAYER_NAME}} ลองใหม่").
+- NUMBERS: when replying in Thai, speak EVERY number as Thai words (ห้า, สิบสอง, แปดสิบสอง) — never read digits in English. Input numbers may be Arabic digits; you still voice them in Thai.
 - Never lecture. 2–4 sentences, then stop.
 
 Your goal: after every swing, {{PLAYER_NAME}} feels seen, knows the ONE thing to change, and has a cue to hold on the very next ball.`;
@@ -146,7 +205,31 @@ export function shotOpener(index: number, type: ShotType, lang: Lang): string {
       : type === 'backhand'
         ? 'coach.shotOpener.backhand'
         : 'coach.shotOpener.unknown';
-  return translate(key, lang).replace('{n}', String(index));
+  // Half-cascade voices (Vertex relay) read Arabic digits in ENGLISH ("ไฟว์");
+  // native audio reads them as Thai fine. Spell the shot number out in Thai
+  // words on the relay path so the opener is always voiced correctly.
+  const n =
+    lang === 'th' && isRelayTransport() ? thaiNumberWords(index) : String(index);
+  return translate(key, lang).replace('{n}', n);
+}
+
+/**
+ * Spell 0–999 as spoken Thai words ("15" → "สิบห้า", "21" → "ยี่สิบเอ็ด").
+ * Out-of-range/non-finite input falls back to the digit string.
+ */
+export function thaiNumberWords(n: number): string {
+  if (!Number.isInteger(n) || n < 0 || n > 999) return String(n);
+  const D = ['ศูนย์', 'หนึ่ง', 'สอง', 'สาม', 'สี่', 'ห้า', 'หก', 'เจ็ด', 'แปด', 'เก้า'];
+  if (n < 10) return D[n];
+  let out = '';
+  const hundreds = Math.floor(n / 100);
+  const tens = Math.floor((n % 100) / 10);
+  const ones = n % 10;
+  if (hundreds > 0) out += D[hundreds] + 'ร้อย';
+  if (tens > 0) out += tens === 1 ? 'สิบ' : tens === 2 ? 'ยี่สิบ' : D[tens] + 'สิบ';
+  // Final "1" is เอ็ด whenever anything precedes it (สิบเอ็ด, ร้อยเอ็ด).
+  if (ones > 0) out += ones === 1 && (tens > 0 || hundreds > 0) ? 'เอ็ด' : D[ones];
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -519,6 +602,283 @@ interface LiveServerMessage {
     interrupted?: boolean;
   };
   usageMetadata?: RawUsageMetadata;
+  /** setup ack from the server relay / Vertex — mirrored through, harmless. */
+  setupComplete?: unknown;
+}
+
+// ---------------------------------------------------------------------------
+// Transport abstraction: the tiny slice of the SDK `Session` the client uses.
+//
+// Both transports resolve to a CoachSession. The AI-Studio path uses the real
+// SDK Session (which structurally satisfies this); the relay path uses
+// RelayLiveSession below. Everything downstream (turn/pacing/cost/audio) is
+// transport-agnostic and untouched.
+// ---------------------------------------------------------------------------
+
+export interface CoachSession {
+  sendClientContent(params: { turns?: unknown; turnComplete?: boolean }): void;
+  sendRealtimeInput(params: { video?: { data: string; mimeType: string } }): void;
+  close(): void;
+}
+
+// ---------------------------------------------------------------------------
+// Gemini Live WS frame builders (server-relay transport)
+//
+// These emit the EXACT BidiGenerateContent JSON the @google/genai v2 SDK
+// serializes for Vertex (extracted byte-for-byte from the installed SDK — see
+// tContent / contentToVertex / tImageBlob / tLiveClientContent /
+// liveSendRealtimeInputParametersToVertex). The relay server pipes these
+// frames straight to the real Vertex Live socket, so their shape must match
+// what the SDK would have sent. Pure + exported so they are unit-testable in
+// isolation from any socket.
+// ---------------------------------------------------------------------------
+
+/** Normalize a `turns` union to Vertex Content[] exactly like the SDK's tContents. */
+function normalizeTurns(turns: unknown): unknown[] {
+  if (turns === null || turns === undefined) return [];
+  if (typeof turns === 'string') {
+    // tContent(string) → { role: 'user', parts: [{ text }] }
+    return [{ role: 'user', parts: [{ text: turns }] }];
+  }
+  if (Array.isArray(turns)) {
+    return turns.map((t) =>
+      typeof t === 'string' ? { role: 'user', parts: [{ text: t }] } : t,
+    );
+  }
+  // Already a single Content-like object.
+  return [turns];
+}
+
+/**
+ * The setup frame. `model` is ADVISORY: the browser sends the bare id it was
+ * built with, but the relay SERVER is expected to OVERRIDE `setup.model` with
+ * the full Vertex global resource path (the browser can't hold the project id).
+ * systemInstruction carries the coach persona + player name (browser-side, the
+ * server does NOT rebuild it), shaped exactly as contentToVertex(tContent(str)).
+ */
+export function buildRelaySetupFrame(model: string, systemInstruction: string): {
+  setup: Record<string, unknown>;
+} {
+  return {
+    setup: {
+      model,
+      generationConfig: { responseModalities: ['AUDIO'] },
+      systemInstruction: { role: 'user', parts: [{ text: systemInstruction }] },
+      outputAudioTranscription: {},
+    },
+  };
+}
+
+/** `{ clientContent: { turns: Content[], turnComplete } }` — mirrors sendClientContent. */
+export function serializeClientContent(params: {
+  turns?: unknown;
+  turnComplete?: boolean;
+}): { clientContent: Record<string, unknown> } {
+  if (params.turns !== null && params.turns !== undefined) {
+    return {
+      clientContent: {
+        turns: normalizeTurns(params.turns),
+        turnComplete: params.turnComplete,
+      },
+    };
+  }
+  return { clientContent: { turnComplete: params.turnComplete } };
+}
+
+/** `{ realtimeInput: { video: { data, mimeType } } }` — mirrors sendRealtimeInput({video}). */
+export function serializeRealtimeInput(params: {
+  video?: { data: string; mimeType: string };
+}): { realtimeInput: Record<string, unknown> } {
+  const out: Record<string, unknown> = {};
+  if (params.video) {
+    out.video = { mimeType: params.video.mimeType, data: params.video.data };
+  }
+  return { realtimeInput: out };
+}
+
+/** Callbacks the RelayLiveSession drives — same names/shape as the SDK's. */
+interface RelayCallbacks {
+  onopen: () => void;
+  onmessage: (msg: unknown) => void;
+  onerror: (e: unknown) => void;
+  onclose: (e: unknown) => void;
+}
+
+/**
+ * A CoachSession backed by a same-origin WebSocket to our relay server. It
+ * speaks the Gemini Live JSON protocol directly: sends the setup frame on open
+ * (correct for a RAW socket — the SDK's "never send in onopen" rule is about
+ * the SDK Session object, not a raw WS), then serializes each client call to a
+ * frame and dispatches every parsed server frame into the existing
+ * handleMessage path. Server→browser frames are assumed to be JSON TEXT
+ * (base64 audio lives inside inlineData.data), matching the SDK message shape.
+ */
+class RelayLiveSession implements CoachSession {
+  private ws: WebSocket;
+  /**
+   * True once the server's `setupComplete` has been seen. Vertex only processes
+   * a turn AFTER setup is acked, and over the relay the browser↔relay socket
+   * opens BEFORE the relay↔Vertex socket does — so the SDK's "send right after
+   * open" pattern isn't safe here. We hold the first outbound client frames
+   * until setupComplete, then flush them in order (the spike scripts inserted a
+   * 300–400ms delay for exactly this reason). REQUIRES the relay server to pipe
+   * the setupComplete frame back to the browser (documented cross-agent contract).
+   */
+  private setupAcked = false;
+  private pendingFrames: unknown[] = [];
+
+  constructor(url: string, setupFrame: unknown, cb: RelayCallbacks) {
+    this.ws = new WebSocket(url);
+    // Belt-and-braces vs the relay's text re-framing: if a binary frame ever
+    // arrives anyway, get an ArrayBuffer (decodable synchronously) — a Blob
+    // would force an async read and drop the frame ordering guarantees.
+    try {
+      this.ws.binaryType = 'arraybuffer';
+    } catch {
+      /* jsdom/test sockets may not expose it */
+    }
+    this.ws.onopen = () => {
+      try {
+        this.ws.send(JSON.stringify(setupFrame));
+      } catch (e) {
+        cb.onerror(e);
+        return;
+      }
+      cb.onopen();
+    };
+    this.ws.onmessage = (ev: MessageEvent) => {
+      // Vertex frames are UTF-8 JSON whatever the WS framing says — the relay
+      // re-frames to text, but decode binary defensively instead of dropping
+      // (dropping setupComplete would silently kill the whole coach).
+      let raw: string;
+      if (typeof ev.data === 'string') {
+        raw = ev.data;
+      } else if (ev.data instanceof ArrayBuffer) {
+        try {
+          raw = new TextDecoder().decode(ev.data);
+        } catch {
+          return;
+        }
+      } else {
+        return; // Blob (binaryType unsupported) — cannot decode synchronously
+      }
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        return;
+      }
+      if (
+        !this.setupAcked &&
+        parsed !== null &&
+        typeof parsed === 'object' &&
+        'setupComplete' in parsed
+      ) {
+        this.setupAcked = true;
+        this.flushPending();
+      }
+      cb.onmessage(parsed);
+    };
+    this.ws.onerror = (ev: unknown) => cb.onerror(ev);
+    this.ws.onclose = (ev: unknown) => cb.onclose(ev);
+  }
+
+  /** Send the frames buffered before setupComplete, in order (open socket only). */
+  private flushPending(): void {
+    const frames = this.pendingFrames;
+    this.pendingFrames = [];
+    if (this.ws.readyState !== WebSocket.OPEN) return;
+    for (const frame of frames) this.ws.send(JSON.stringify(frame));
+  }
+
+  private sendFrame(frame: unknown): void {
+    // Before setupComplete: buffer (do NOT throw — the shot isn't lost, it's
+    // held until Vertex is ready). After: send immediately, but throw when the
+    // socket has died so dispatchShot's try/catch releases attribution and
+    // requeues the shot — same contract the SDK path relies on.
+    if (!this.setupAcked) {
+      this.pendingFrames.push(frame);
+      return;
+    }
+    if (this.ws.readyState !== WebSocket.OPEN) {
+      throw new Error('relay socket not open');
+    }
+    this.ws.send(JSON.stringify(frame));
+  }
+
+  sendClientContent(params: { turns?: unknown; turnComplete?: boolean }): void {
+    this.sendFrame(serializeClientContent(params));
+  }
+
+  sendRealtimeInput(params: { video?: { data: string; mimeType: string } }): void {
+    this.sendFrame(serializeRealtimeInput(params));
+  }
+
+  close(): void {
+    try {
+      this.ws.close();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/**
+ * Open a relay session. Resolves to the CoachSession once the WS is open and
+ * the setup frame has been sent (mirrors the SDK connect() resolving after its
+ * onopen); a close/error BEFORE open rejects so connect()'s catch drives the
+ * existing reconnect/backoff. After open, close/error flow through the same
+ * handleClose path as the SDK transport.
+ */
+function connectRelay(opts: {
+  model: string;
+  systemInstruction: string;
+  callbacks: RelayCallbacks;
+}): Promise<CoachSession> {
+  return new Promise((resolve, reject) => {
+    let opened = false;
+    const setupFrame = buildRelaySetupFrame(opts.model, opts.systemInstruction);
+    const session: CoachSession = new RelayLiveSession(relayUrl(), setupFrame, {
+      onopen: () => {
+        opened = true;
+        resolve(session);
+        opts.callbacks.onopen();
+      },
+      onmessage: opts.callbacks.onmessage,
+      onerror: (e) => {
+        if (!opened) reject(new Error(errMsg(e, 'relay error before open')));
+        else opts.callbacks.onerror(e);
+      },
+      onclose: (e) => {
+        if (!opened) reject(new Error(errMsg(e, 'relay closed before open')));
+        else opts.callbacks.onclose(e);
+      },
+    });
+  });
+}
+
+/**
+ * A relay close whose reason marks a server-side PERMISSION denial (bad ADC,
+ * SA not allowlisted for Live, project not permitted) is PERMANENT — retrying
+ * the same creds can never succeed, so we must stop the backoff and surface a
+ * distinct bilingual notice instead of looping "reconnecting…". Keyed on a
+ * reason SUBSTRING (the relay server defines the exact string — documented in
+ * the handoff) so it can never false-positive on a transient AQ-path close
+ * (e.g. token expiry) that IS worth retrying.
+ */
+function isPermissionDeniedClose(err: unknown): boolean {
+  // Relay-only concept: on the AI-Studio path a "forbidden"-looking close is
+  // recoverable by refetching a fresh token, so it must keep reconnecting.
+  if (!isRelayTransport()) return false;
+  if (!err || typeof err !== 'object') return false;
+  const reason = (err as { reason?: unknown }).reason;
+  if (typeof reason !== 'string' || !reason) return false;
+  // vertex_credentials_unavailable (relay close 4002) is equally permanent —
+  // retrying without ADC/role fixes on the server is futile; surface the
+  // bilingual notice immediately instead of burning the backoff budget.
+  return /permission[\s_-]?denied|permission denied|forbidden|not allowlisted|vertex_credentials_unavailable/i.test(
+    reason,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -526,7 +886,7 @@ interface LiveServerMessage {
 // ---------------------------------------------------------------------------
 
 export class CoachLiveClient {
-  private session: Session | null = null;
+  private session: CoachSession | null = null;
   private connected = false;
   /** True while a connect() awaits ai.live.connect (StrictMode / re-entrancy guard). */
   private connecting = false;
@@ -657,32 +1017,47 @@ export class CoachLiveClient {
     // React StrictMode's mount→cleanup→mount double-invoke leaking a session.
     if (!isReconnect && (this.connected || this.connecting)) return;
 
-    // Acquire a Live token. Priority: token pasted in Settings > backend
-    // token-minting endpoint (production, refetched every connect so a court
-    // session never hits the ~30-min expiry) > build-time env (local dev).
-    let token = this.store().authToken || '';
-    if (!token) {
-      const endpoint = import.meta.env.VITE_TOKEN_ENDPOINT;
-      if (endpoint) {
-        try {
-          const r = await fetch(endpoint, { cache: 'no-store' });
-          if (!r.ok) throw new Error('token endpoint ' + r.status);
-          token = (await r.json())?.token || '';
-        } catch (e) {
-          this.store().setSessionError('error.tokenMissing.body');
-          throw new Error('token fetch failed: ' + ((e as Error)?.message ?? String(e)));
+    // Transport select (SIT migration): 'relay' → same-origin server WS relay
+    // (Vertex, server-side ADC — NO token ever reaches the browser); anything
+    // else keeps the exact AI-Studio ephemeral-token (AQ.) behavior so
+    // main-branch semantics survive a merge untouched.
+    const useRelay = isRelayTransport();
+
+    // Acquire a Live token — AI-Studio transport ONLY. Priority: token pasted
+    // in Settings > backend token-minting endpoint (production, refetched every
+    // connect so a court session never hits the ~30-min expiry) > build-time
+    // env (local dev). The relay transport skips this entirely.
+    let token = '';
+    if (!useRelay) {
+      token = this.store().authToken || '';
+      if (!token) {
+        const endpoint = import.meta.env.VITE_TOKEN_ENDPOINT;
+        if (endpoint) {
+          try {
+            const r = await fetch(endpoint, { cache: 'no-store' });
+            if (!r.ok) throw new Error('token endpoint ' + r.status);
+            token = (await r.json())?.token || '';
+          } catch (e) {
+            this.store().setSessionError('error.tokenMissing.body');
+            throw new Error('token fetch failed: ' + ((e as Error)?.message ?? String(e)));
+          }
+        } else {
+          token = import.meta.env.VITE_GEMINI_TOKEN || '';
         }
-      } else {
-        token = import.meta.env.VITE_GEMINI_TOKEN || '';
+      }
+      // Ephemeral tokens minted with the OLD AIza keys are "AQ.…"; tokens
+      // minted with Google's 2026 Auth keys come back as "auth_tokens/…".
+      // Both connect fine (verified live) — accept either.
+      if (!token.startsWith('AQ.') && !token.startsWith('auth_tokens/')) {
+        // Store error slot takes an i18n KEY (UI translates); keep the internal
+        // Error message plain for callers/console.
+        this.store().setSessionError('error.tokenMissing.body');
+        throw new Error('token missing');
       }
     }
-    if (!token.startsWith('AQ.')) {
-      // Store error slot takes an i18n KEY (UI translates); keep the internal
-      // Error message plain for callers/console.
-      this.store().setSessionError('error.tokenMissing.body');
-      throw new Error('token missing');
-    }
-    const model = import.meta.env.VITE_GEMINI_LIVE_MODEL || DEFAULT_MODEL;
+    const model = useRelay
+      ? envVar('VITE_GEMINI_LIVE_MODEL') || RELAY_DEFAULT_MODEL
+      : import.meta.env.VITE_GEMINI_LIVE_MODEL || DEFAULT_MODEL;
 
     this.manualClose = false;
     this.connecting = true;
@@ -690,32 +1065,41 @@ export class CoachLiveClient {
     const myEpoch = this.epoch;
     this.store().setConnection('connecting');
 
-    const ai = new GoogleGenAI({
-      apiKey: token,
-      httpOptions: { apiVersion: 'v1beta' },
-    });
+    // Coach persona + player name — sent as systemInstruction on BOTH transports
+    // (the relay server does NOT rebuild it, so the browser owns it).
+    const systemInstruction = buildCoachSystemPrompt(this.store().settings.userName);
+    // Shared callbacks — identical wiring for both transports; everything
+    // downstream (turn/pacing/cost/audio) is transport-agnostic.
+    const callbacks = {
+      onopen: () => {
+        // Session not ready to send here (SDK); liveness only.
+      },
+      onmessage: (msg: unknown) => this.handleMessage(msg as LiveServerMessage),
+      onerror: (e: unknown) => this.handleClose('error', e),
+      onclose: (e: unknown) => this.handleClose('disconnected', e),
+    };
 
     try {
-      // CRITICAL: assign this.session from the AWAITED promise. Never send
-      // inside onopen — the session object is not ready there.
-      const session = await ai.live.connect({
-        model,
-        config: {
-          responseModalities: [Modality.AUDIO],
-          outputAudioTranscription: {},
-          // v0.6: no inputAudioTranscription — the mic is never opened, so
-          // there is no user audio to transcribe.
-          systemInstruction: buildCoachSystemPrompt(this.store().settings.userName),
-        },
-        callbacks: {
-          onopen: () => {
-            // Session not ready to send here; just note liveness.
-          },
-          onmessage: (msg: unknown) => this.handleMessage(msg as LiveServerMessage),
-          onerror: (e: unknown) => this.handleClose('error', e),
-          onclose: (e: unknown) => this.handleClose('disconnected', e),
-        },
-      });
+      // CRITICAL (SDK path): assign this.session from the AWAITED promise; never
+      // send inside the SDK's onopen — the SDK session object is not ready
+      // there. (The relay path sends its setup frame in the RAW WS onopen, which
+      // IS correct for a raw socket — see RelayLiveSession.)
+      const session: CoachSession = useRelay
+        ? await connectRelay({ model, systemInstruction, callbacks })
+        : await new GoogleGenAI({
+            apiKey: token,
+            httpOptions: { apiVersion: 'v1beta' },
+          }).live.connect({
+            model,
+            config: {
+              responseModalities: [Modality.AUDIO],
+              outputAudioTranscription: {},
+              // v0.6: no inputAudioTranscription — the mic is never opened, so
+              // there is no user audio to transcribe.
+              systemInstruction,
+            },
+            callbacks,
+          });
       this.connecting = false;
 
       // A disconnect() may have landed while we were awaiting the socket (it
@@ -923,27 +1307,47 @@ export class CoachLiveClient {
     // Open the cost attribution window for this shot.
     state.beginShotCost(shot.id);
 
+    // TRANSPORT SPLIT for image delivery (SIT migration — empirically required):
+    //   • RELAY / Vertex: the swing frames MUST ride INSIDE the clientContent turn
+    //     as inlineData parts. Vertex half-cascade gemini-live-2.5-flash IGNORES
+    //     images sent via sendRealtimeInput({video}) now that the mic is cut (v0.6)
+    //     — realtimeInput is the streaming/VAD channel and, with no audio stream to
+    //     anchor a frame to, the model literally never sees the swing (proven E2E
+    //     through /api/live: it replies "NO IMAGE RECEIVED" and prompt tokens stay
+    //     TEXT-only). Sent inline, the model reads every frame and Vertex bills the
+    //     IMAGE-modality tokens (~93% of the prompt) that costMonitor folds into
+    //     the VIDEO bucket.
+    //   • AI-Studio (native-audio, main-branch): UNCHANGED — frames still go via
+    //     sendRealtimeInput({video}) exactly as before, so a merge to main keeps
+    //     its verified behavior. (If AI-Studio ever shows the same blindness it
+    //     needs the same inline treatment — retest that path independently.)
+    const useRelay = isRelayTransport();
+
     try {
-      // Send every captured frame FIRST, in phase order (if enabled). Fall back
-      // to the legacy single contact-frame blob only when NOTHING was captured.
+      // Send every captured frame in phase order (if enabled). Fall back to the
+      // legacy single contact-frame blob only when NOTHING was captured.
       let framesSent = 0;
+      const imageParts: Array<{ inlineData: { mimeType: string; data: string } }> = [];
+      const addFrame = (data: string): void => {
+        if (useRelay) {
+          // Buffer for the inline clientContent turn (order preserved).
+          imageParts.push({ inlineData: { mimeType: 'image/jpeg', data } });
+        } else {
+          session.sendRealtimeInput({ video: { data, mimeType: 'image/jpeg' } });
+        }
+        framesSent += 1;
+      };
       if (state.settings.sendContactFrame) {
         if (ordered.length > 0) {
           for (const cap of ordered) {
             if (!cap.jpegBase64) continue;
-            session.sendRealtimeInput({
-              video: { data: cap.jpegBase64, mimeType: 'image/jpeg' },
-            });
-            framesSent += 1;
+            addFrame(cap.jpegBase64);
           }
           // Attach the coach's critique to the contact frame (falls back to the
           // first sent frame if this swing had no dedicated contact capture).
           this.pendingContactCaptureId = contactCapture?.id ?? ordered[0]?.id ?? null;
         } else if (shot.contactFrameJpegBase64) {
-          session.sendRealtimeInput({
-            video: { data: shot.contactFrameJpegBase64, mimeType: 'image/jpeg' },
-          });
-          framesSent += 1;
+          addFrame(shot.contactFrameJpegBase64);
           // Legacy fallback has no capture id, so no critique is pinned to it.
         }
       }
@@ -970,7 +1374,20 @@ export class CoachLiveClient {
         turns +=
           '\nThe still frames of this swing are attached in the order listed above — read them as one motion and ground your correction in what you see.';
       }
-      session.sendClientContent({ turns, turnComplete: true });
+
+      if (useRelay && imageParts.length > 0) {
+        // Relay: images ride INSIDE the turn as inlineData parts (phase order),
+        // text LAST so it lines up with the "Frame N = <phase>" mapping in `turns`.
+        // This is the exact wire frame proven end-to-end through /api/live (model
+        // reads the swing; IMAGE tokens billed). normalizeTurns passes this Content
+        // object through unchanged → { clientContent: { turns: [Content], … } }.
+        session.sendClientContent({
+          turns: { role: 'user', parts: [...imageParts, { text: turns }] },
+          turnComplete: true,
+        });
+      } else {
+        session.sendClientContent({ turns, turnComplete: true });
+      }
     } catch (e) {
       // Sending failed (socket died between checks) — release attribution and
       // requeue so the next (re)connect can retry the latest shot.
@@ -1067,6 +1484,18 @@ export class CoachLiveClient {
     // Auto-reconnect only while the session is meant to be live. Keyed on our
     // own intent flag, NOT store.session.status (a failed reconnect corrupts it).
     if (!this.sessionLive) return;
+
+    // Relay transport: a server-side PERMISSION denial (bad ADC, SA not
+    // allowlisted for Live) is permanent — retrying the same creds can never
+    // succeed, so stop the backoff and surface a distinct bilingual notice
+    // instead of looping "reconnecting…". Detected on the close reason only,
+    // so it never false-positives on a transient AQ-path close worth retrying.
+    if (isPermissionDeniedClose(err)) {
+      this.sessionLive = false;
+      this.store().setSessionError('coach.relayDenied');
+      return;
+    }
+
     this.scheduleReconnect();
   }
 

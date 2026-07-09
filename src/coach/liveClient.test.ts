@@ -14,13 +14,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildCoachSystemPrompt,
+  buildRelaySetupFrame,
   buildShotPrompt,
   COACH_SYSTEM_PROMPT,
   COACHING_STYLES,
   CoachLiveClient,
   orderedCaptures,
   selectCoachingStyle,
+  serializeClientContent,
+  serializeRealtimeInput,
   shotOpener,
+  thaiNumberWords,
 } from './liveClient';
 import { audioPlayer } from './audioPlayer';
 import { coachAudioTap } from './coachAudioTap';
@@ -708,5 +712,302 @@ describe('coachAudioTap wiring', () => {
     const client = readyClient();
     client.disconnect();
     expect(coachAudioTap.discard).toHaveBeenCalled();
+  });
+});
+
+// --- Vertex server-relay transport (SIT migration) --------------------------
+//
+// The relay wrapper speaks the Gemini Live BidiGenerateContent JSON protocol
+// directly to a same-origin server WS. These cover the load-bearing pieces:
+//   • frame serialization is BYTE-EXACT to what the @google/genai SDK emits for
+//     Vertex (setup / clientContent / realtimeInput)
+//   • relay-mode connect() SKIPS token fetch entirely (no AQ., no fetch)
+//   • the default (no env) path is UNCHANGED — relay is strictly opt-in
+
+describe('relay frame serialization (mirrors the SDK Vertex wire format)', () => {
+  it('buildRelaySetupFrame pins responseModalities/outputAudioTranscription + carries systemInstruction', () => {
+    const frame = buildRelaySetupFrame('gemini-live-2.5-flash', 'COACH PERSONA TEXT');
+    expect(frame.setup.model).toBe('gemini-live-2.5-flash');
+    expect(frame.setup.generationConfig).toEqual({ responseModalities: ['AUDIO'] });
+    // outputAudioTranscription MUST be present (empty object) to get transcript back.
+    expect(frame.setup.outputAudioTranscription).toEqual({});
+    // systemInstruction shaped exactly as contentToVertex(tContent(string)).
+    expect(frame.setup.systemInstruction).toEqual({
+      role: 'user',
+      parts: [{ text: 'COACH PERSONA TEXT' }],
+    });
+  });
+
+  it('serializeClientContent normalizes a string turn to Vertex Content[]', () => {
+    const f = serializeClientContent({ turns: 'Comment on this forehand.', turnComplete: true });
+    expect(f).toEqual({
+      clientContent: {
+        turns: [{ role: 'user', parts: [{ text: 'Comment on this forehand.' }] }],
+        turnComplete: true,
+      },
+    });
+  });
+
+  it('serializeClientContent passes through an already-structured turns array', () => {
+    const turns = [{ role: 'user', parts: [{ text: 'a' }] }];
+    const f = serializeClientContent({ turns, turnComplete: false });
+    expect(f.clientContent.turns).toEqual(turns);
+    expect(f.clientContent.turnComplete).toBe(false);
+  });
+
+  it('serializeClientContent WRAPS a bare Content object (the inline-image dispatch path)', () => {
+    // dispatchShot (relay) sends a single Content object { role, parts:[…images, {text}] };
+    // normalizeTurns must wrap it as [obj] so the wire frame matches the proven
+    // E2E frame { clientContent: { turns: [Content] } }. This is the exact hop the
+    // inline-image fix depends on.
+    const turn = {
+      role: 'user',
+      parts: [{ inlineData: { mimeType: 'image/jpeg', data: 'IMG' } }, { text: 'coach text' }],
+    };
+    const f = serializeClientContent({ turns: turn, turnComplete: true });
+    expect(f.clientContent.turns).toEqual([turn]);
+    expect(f.clientContent.turnComplete).toBe(true);
+  });
+
+  it('serializeRealtimeInput wraps a video JPEG blob under realtimeInput.video', () => {
+    const f = serializeRealtimeInput({ video: { data: 'BASE64', mimeType: 'image/jpeg' } });
+    expect(f).toEqual({
+      realtimeInput: { video: { mimeType: 'image/jpeg', data: 'BASE64' } },
+    });
+  });
+});
+
+describe('relay-mode connect()', () => {
+  // Minimal fake WebSocket (node test env has no WebSocket). Opens on a
+  // microtask so RelayLiveSession has wired its handlers first.
+  class FakeWS {
+    static OPEN = 1;
+    static instances: FakeWS[] = [];
+    readyState = 0;
+    url: string;
+    sent: string[] = [];
+    onopen: (() => void) | null = null;
+    onmessage: ((ev: { data: unknown }) => void) | null = null;
+    onerror: ((ev: unknown) => void) | null = null;
+    onclose: ((ev: unknown) => void) | null = null;
+    constructor(url: string) {
+      this.url = url;
+      FakeWS.instances.push(this);
+      queueMicrotask(() => {
+        this.readyState = 1;
+        this.onopen?.();
+      });
+    }
+    send(s: string): void {
+      this.sent.push(s);
+    }
+    close(): void {
+      this.readyState = 3;
+      this.onclose?.({ code: 1000, reason: '' });
+    }
+  }
+
+  // envVar() falls back to process.env (browser-guarded), which is exactly what
+  // vi.stubEnv patches in this vitest setup — so the source module sees it.
+  beforeEach(() => {
+    FakeWS.instances = [];
+    // Clean, tokenless store so any AQ. token path would be forced to fail —
+    // proving the relay path genuinely skips it.
+    appStore.getState().setAuthToken('');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    audioPlayer.onPlaybackDone = null;
+  });
+
+  it('skips token fetch, opens the same-origin relay WS, and sends the setup frame first', async () => {
+    vi.stubEnv('VITE_LIVE_TRANSPORT', 'relay');
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    vi.stubGlobal('WebSocket', FakeWS);
+
+    const client = new CoachLiveClient();
+    await client.connect();
+
+    // Token fetch NEVER happens on the relay transport.
+    expect(fetchSpy).not.toHaveBeenCalled();
+    // Exactly one relay socket, to the default same-origin /api/live path.
+    expect(FakeWS.instances).toHaveLength(1);
+    expect(FakeWS.instances[0].url).toContain('/api/live');
+    expect(client.isConnected()).toBe(true);
+
+    // The FIRST frame on the wire is the setup frame: pins the response
+    // modality + transcription and carries the coach persona. `model` is a
+    // non-empty advisory id (the relay SERVER pins the real global path); its
+    // exact value is env/deploy-dependent, so we only assert it's present.
+    const first = JSON.parse(FakeWS.instances[0].sent[0]);
+    expect(typeof first.setup.model).toBe('string');
+    expect(first.setup.model.length).toBeGreaterThan(0);
+    expect(first.setup.generationConfig.responseModalities).toEqual(['AUDIO']);
+    expect(first.setup.outputAudioTranscription).toEqual({});
+    expect(first.setup.systemInstruction.parts[0].text).toContain('โค้ช ADGE');
+
+    client.disconnect();
+  });
+
+  it('buffers client frames until setupComplete, then flushes them in order', async () => {
+    vi.stubEnv('VITE_LIVE_TRANSPORT', 'relay');
+    vi.stubGlobal('fetch', vi.fn());
+    vi.stubGlobal('WebSocket', FakeWS);
+
+    const client = new CoachLiveClient();
+    await client.connect();
+    const ws = FakeWS.instances[0];
+    // Only the setup frame is on the wire so far (setupComplete not yet acked).
+    expect(ws.sent).toHaveLength(1);
+    expect(JSON.parse(ws.sent[0]).setup).toBeDefined();
+
+    // Reach the underlying relay session and send two client frames pre-ack —
+    // they must be HELD, not written, and not throw.
+    const session = (client as unknown as { session: { sendRealtimeInput: (p: unknown) => void; sendClientContent: (p: unknown) => void } }).session;
+    session.sendRealtimeInput({ video: { data: 'IMG', mimeType: 'image/jpeg' } });
+    session.sendClientContent({ turns: 'hello', turnComplete: true });
+    expect(ws.sent).toHaveLength(1); // still only the setup frame
+
+    // Server acks setup → buffered frames flush in order.
+    ws.onmessage?.({ data: JSON.stringify({ setupComplete: {} }) });
+    expect(ws.sent).toHaveLength(3);
+    expect(JSON.parse(ws.sent[1]).realtimeInput.video.data).toBe('IMG');
+    expect(JSON.parse(ws.sent[2]).clientContent.turnComplete).toBe(true);
+
+    // A frame sent AFTER the ack goes straight to the wire.
+    session.sendClientContent({ turns: 'again', turnComplete: true });
+    expect(ws.sent).toHaveLength(4);
+
+    client.disconnect();
+  });
+
+  it('is strictly opt-in: without VITE_LIVE_TRANSPORT it uses the token path and never opens a relay WS', async () => {
+    // No relay env, no token → the AQ. path must reject and NO WebSocket opens.
+    vi.stubEnv('VITE_GEMINI_TOKEN', '');
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    vi.stubGlobal('WebSocket', FakeWS);
+
+    const client = new CoachLiveClient();
+    await expect(client.connect()).rejects.toThrow(/token missing/);
+    expect(FakeWS.instances).toHaveLength(0);
+
+    client.disconnect();
+  });
+});
+
+// --- dispatchShot image delivery per transport (integrator fix) -------------
+//
+// Empirically proven E2E through /api/live: Vertex half-cascade
+// gemini-live-2.5-flash IGNORES images sent via sendRealtimeInput({video}) once
+// the mic is cut (v0.6) — the model replies "NO IMAGE RECEIVED" and prompt
+// tokens stay TEXT-only. The frames MUST ride INSIDE the clientContent turn as
+// inlineData parts (images in phase order, text last), which makes the model
+// read the swing and Vertex bill the IMAGE-modality tokens. The AI-Studio path
+// keeps its verified realtimeInput behavior so a merge to main is unaffected.
+
+describe('dispatchShot image delivery per transport', () => {
+  function connectedClient() {
+    const client = new CoachLiveClient();
+    (client as unknown as { connected: boolean }).connected = true;
+    const session = {
+      sendRealtimeInput: vi.fn(),
+      sendClientContent: vi.fn(),
+      close: vi.fn(),
+    };
+    (client as unknown as { session: unknown }).session = session;
+    return { client, session };
+  }
+
+  beforeEach(() => {
+    // dispatchShot only sends frames when this setting is on (default), be explicit.
+    appStore.setState((s) => ({ settings: { ...s.settings, sendContactFrame: true } }));
+    vi.spyOn(audioPlayer, 'isSpeaking').mockReturnValue(false);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    audioPlayer.onPlaybackDone = null;
+  });
+
+  it('RELAY: sends frames INLINE in one clientContent turn (never realtimeInput), images in phase order then text last', () => {
+    vi.stubEnv('VITE_LIVE_TRANSPORT', 'relay');
+    const { client, session } = connectedClient();
+    const s = shot({
+      captures: [
+        capture('follow-through', 300),
+        capture('backswing', 100),
+        capture('contact', 200),
+      ],
+    });
+    client.sendShotForCoaching(s);
+
+    // No streaming realtimeInput frames on the relay path — the bug being fixed.
+    expect(session.sendRealtimeInput).not.toHaveBeenCalled();
+    // Exactly one turn, carrying the images inline + the text.
+    expect(session.sendClientContent).toHaveBeenCalledTimes(1);
+    const arg = session.sendClientContent.mock.calls[0][0] as {
+      turns: { role: string; parts: Array<{ inlineData?: { data: string }; text?: string }> };
+      turnComplete: boolean;
+    };
+    expect(arg.turnComplete).toBe(true);
+    expect(arg.turns.role).toBe('user');
+    const parts = arg.turns.parts;
+    expect(parts).toHaveLength(4); // 3 images + 1 text
+    // Images in canonical phase order.
+    expect(parts.slice(0, 3).map((p) => p.inlineData?.data)).toEqual([
+      'jpeg-backswing',
+      'jpeg-contact',
+      'jpeg-follow-through',
+    ]);
+    // Text part is LAST and its Frame-N mapping matches the image order.
+    const text = parts[3].text ?? '';
+    expect(text).toContain('Frame 1 = backswing');
+    expect(text.indexOf('Frame 2 = ball contact')).toBeGreaterThan(text.indexOf('Frame 1 = backswing'));
+    // Critique attribution still pins to the contact capture.
+    expect(
+      (client as unknown as { pendingContactCaptureId: string | null }).pendingContactCaptureId,
+    ).toBe('cap-contact-200');
+  });
+
+  it('AI-STUDIO (no relay env): frames go via realtimeInput + a plain string turn (main-branch behavior unchanged)', () => {
+    const { client, session } = connectedClient();
+    const s = shot({
+      captures: [capture('backswing', 100), capture('contact', 200)],
+    });
+    client.sendShotForCoaching(s);
+
+    expect(session.sendRealtimeInput).toHaveBeenCalledTimes(2);
+    expect((session.sendRealtimeInput.mock.calls[0][0] as { video: { data: string } }).video.data).toBe(
+      'jpeg-backswing',
+    );
+    expect(session.sendClientContent).toHaveBeenCalledTimes(1);
+    const arg = session.sendClientContent.mock.calls[0][0] as { turns: unknown };
+    // A plain STRING turn on the AI-Studio path, not an inline Content object.
+    expect(typeof arg.turns).toBe('string');
+    expect(arg.turns as string).toContain('Frame 1 = backswing');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v1.1: Thai spoken numbers for the half-cascade (relay) voice.
+// ---------------------------------------------------------------------------
+describe('thaiNumberWords', () => {
+  it('spells 0-999 correctly incl. Thai irregulars (เอ็ด/ยี่สิบ)', () => {
+    expect(thaiNumberWords(5)).toBe('ห้า');
+    expect(thaiNumberWords(11)).toBe('สิบเอ็ด');
+    expect(thaiNumberWords(15)).toBe('สิบห้า');
+    expect(thaiNumberWords(21)).toBe('ยี่สิบเอ็ด');
+    expect(thaiNumberWords(82)).toBe('แปดสิบสอง');
+    expect(thaiNumberWords(101)).toBe('หนึ่งร้อยเอ็ด');
+    expect(thaiNumberWords(115)).toBe('หนึ่งร้อยสิบห้า');
+  });
+  it('falls back to digits outside 0-999', () => {
+    expect(thaiNumberWords(1000)).toBe('1000');
+    expect(thaiNumberWords(-1)).toBe('-1');
   });
 });

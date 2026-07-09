@@ -24,13 +24,36 @@ export interface RawUsageMetadata {
   thoughtsTokenCount?: number;
   promptTokensDetails?: ModalityDetail[];
   responseTokensDetails?: ModalityDetail[];
+  /**
+   * RAW WIRE NAMES (Vertex relay path): the Live wire calls the response side
+   * `candidatesTokenCount`/`candidatesTokensDetails`; the SDK renames it to
+   * `response*` client-side — but the relay feeds raw wire JSON straight into
+   * costMonitor, bypassing the SDK. Without these fallbacks every coach reply's
+   * AUDIO-out tokens ($12/1M — the most expensive modality) go unbilled.
+   */
+  candidatesTokenCount?: number;
+  candidatesTokensDetails?: ModalityDetail[];
 }
 
 const MODALITIES: TokenModality[] = ['TEXT', 'AUDIO', 'VIDEO'];
 
+/**
+ * Map a raw usageMetadata modality string to one of our billing buckets.
+ *
+ * VERTEX QUIRK (empirically verified, see CLAUDE.md): the Vertex Live API
+ * reports still-image frames sent via sendRealtimeInput({video}) under the
+ * modality string **"IMAGE"** (they are ~93% of prompt tokens on a per-shot
+ * turn that sends several JPEGs). Image input is priced identically to video
+ * input ($3 / 1M tokens), so we fold IMAGE into the VIDEO ("visual input")
+ * bucket rather than adding a first-class modality — this keeps a single
+ * $3/1M visual bucket in the THB breakdown UI (token.videoIn) and, critically,
+ * stops silently DROPPING the dominant cost on every coached shot. (The old
+ * code kept only TEXT/AUDIO/VIDEO, so IMAGE was discarded → THB under-count.)
+ */
 function normalizeModality(m: string | undefined): TokenModality | null {
   if (!m) return null;
   const upper = m.toUpperCase();
+  if (upper === 'IMAGE') return 'VIDEO';
   return (MODALITIES as string[]).includes(upper) ? (upper as TokenModality) : null;
 }
 
@@ -70,7 +93,9 @@ export function parseUsage(raw: unknown, atMs: number = Date.now()): UsageDelta 
   const r = raw as RawUsageMetadata;
 
   let promptTokens = foldDetails(r.promptTokensDetails);
-  let responseTokens = foldDetails(r.responseTokensDetails);
+  // SDK name first, raw wire name (relay path) second — never both populated
+  // for one payload, so there is no double-count path.
+  let responseTokens = foldDetails(r.responseTokensDetails ?? r.candidatesTokensDetails);
 
   const hasPromptDetail = Object.keys(promptTokens).length > 0;
   const hasResponseDetail = Object.keys(responseTokens).length > 0;
@@ -80,8 +105,9 @@ export function parseUsage(raw: unknown, atMs: number = Date.now()): UsageDelta 
   if (!hasPromptDetail && r.promptTokenCount) {
     promptTokens = { TEXT: r.promptTokenCount };
   }
-  if (!hasResponseDetail && r.responseTokenCount) {
-    responseTokens = { TEXT: r.responseTokenCount };
+  const flatResponse = r.responseTokenCount ?? r.candidatesTokenCount;
+  if (!hasResponseDetail && flatResponse) {
+    responseTokens = { TEXT: flatResponse };
   }
 
   const thoughtsTokens = r.thoughtsTokenCount ?? 0;

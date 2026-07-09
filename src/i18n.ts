@@ -162,6 +162,12 @@ const DICT = {
     th: 'เชื่อมต่อโค้ชไม่สำเร็จ การวิเคราะห์ท่ายังทำงานต่อ',
     en: 'Could not reach the coach — pose analysis keeps working.',
   },
+  // Relay transport (Vertex): the server refused the Live session (permission /
+  // credentials). Permanent — no auto-retry. Pose analysis is unaffected.
+  'coach.relayDenied': {
+    th: 'เชื่อมต่อโค้ชไม่ได้ (เซิร์ฟเวอร์ปฏิเสธสิทธิ์) การวิเคราะห์ท่ายังทำงานต่อ',
+    en: 'Coach unavailable — server denied the voice session. Pose analysis keeps working.',
+  },
   'coach.error': { th: 'โค้ชขัดข้อง', en: 'Coach error' },
   'coach.persona': {
     th: 'โค้ช ADGE: พูดสั้น กระชับ ให้กำลังใจ',

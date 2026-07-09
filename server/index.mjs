@@ -9,11 +9,13 @@
 // continuously without the ~30-min token expiry cutting it off.
 // -----------------------------------------------------------------------------
 import express from 'express';
+import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GoogleGenAI } from '@google/genai';
 import { mountCloudRoutes } from './routes.mjs';
 import { initDb } from './db.mjs';
+import { mountLiveRelay } from './liveRelay.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -70,6 +72,12 @@ const dist = path.join(__dirname, '..', 'dist');
 app.use(express.static(dist));
 app.get('*', (_req, res) => res.sendFile(path.join(dist, 'index.html')));
 
-app.listen(PORT, () => {
+// Explicit http.Server so the Vertex Live relay can attach to the WS upgrade
+// event. The relay opens the real Vertex session server-side with ADC and pipes
+// BidiGenerateContent frames both ways (see liveRelay.mjs).
+const server = http.createServer(app);
+mountLiveRelay(server);
+
+server.listen(PORT, () => {
   console.log(`ADGE Tennis server on :${PORT} (token minting: ${minter ? 'on' : 'OFF'})`);
 });
