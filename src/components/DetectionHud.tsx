@@ -66,6 +66,32 @@ export default function DetectionHud() {
     });
   }, []);
 
+  // --- measured pose-loop fps (camera-vs-inference tuning instrument) ---
+  // Counts store pose-frame commits over a 1s window via the same
+  // store.subscribe pattern as wristSpeed (never a per-frame selector).
+  // This is the ONE number that says whether a quality regression comes from
+  // the camera (low fps everywhere) or inference load (fps sags on device).
+  const [fps, setFps] = useState(0);
+  useEffect(() => {
+    let frames = 0;
+    let windowStart =
+      typeof performance !== 'undefined' ? performance.now() : Date.now();
+    let lastFrame: unknown = null;
+    return useAppStore.subscribe((state) => {
+      if (state.pose.frame === lastFrame) return;
+      lastFrame = state.pose.frame;
+      frames += 1;
+      const now =
+        typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const elapsed = now - windowStart;
+      if (elapsed >= 1000) {
+        setFps(Math.round((frames * 1000) / elapsed));
+        frames = 0;
+        windowStart = now;
+      }
+    });
+  }, []);
+
   // --- contact segment flashes green for ~600ms when reached ---
   const [contactFlash, setContactFlash] = useState(false);
   useEffect(() => {
@@ -161,10 +187,13 @@ export default function DetectionHud() {
           </span>
         </div>
 
-        {/* (c) SHOT COUNTER (+ dim discarded) */}
+        {/* (c) SHOT COUNTER (+ dim discarded) + measured pose fps */}
         <div className="dhud-count num">
           <span className="dhud-count-shots">
             {t('hud.shots')} {shotsCompleted}
+          </span>
+          <span className="dim" title={t('hud.fps')}>
+            {fps} {t('hud.fps')}
           </span>
           {swingsDiscarded > 0 && (
             <span className="dhud-count-skip dim">
