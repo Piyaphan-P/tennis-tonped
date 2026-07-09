@@ -12,6 +12,8 @@
 // ============================================================================
 
 import pg from 'pg';
+import { randomUUID } from 'node:crypto';
+import { sessionRowToJson, shotRowToJson } from './lib.mjs';
 
 const { Pool } = pg;
 
@@ -156,3 +158,151 @@ export function initDb() {
   }, SIX_HOURS_MS);
   timer.unref?.();
 }
+
+// ============================================================================
+// Route-facing interface (pgBackend)
+//
+// The operation surface routes.mjs needs, wrapping the EXACT SQL that used to
+// live inline in the routes — behavior is byte-identical to before this
+// extraction (prod runs this path; DB_BACKEND=postgres is the default). Nothing
+// above this line changed. store.mjs selects between this and firestoreBackend.
+// ============================================================================
+export const pgBackend = {
+  name: 'postgres',
+  ready: () => dbReady(),
+  init: () => initDb(),
+
+  async createSession({ userName, startedAt }) {
+    const id = randomUUID();
+    await query(`INSERT INTO sessions (id, user_name, started_at) VALUES ($1, $2, $3)`, [
+      id,
+      userName,
+      startedAt.toISOString(),
+    ]);
+    return { id };
+  },
+
+  async patchSession(id, { endedAt, avgScore, shotCount, summary }) {
+    await query(
+      `UPDATE sessions
+          SET ended_at = $2, avg_score = $3, shot_count = $4, summary = $5
+        WHERE id = $1`,
+      [
+        id,
+        endedAt ? new Date(endedAt).toISOString() : null,
+        Number(avgScore) || 0,
+        Number(shotCount) || 0,
+        summary != null ? JSON.stringify(summary) : null,
+      ],
+    );
+    // Leaderboard (v1.0): sessions/shots purge after 3 days, so the finished
+    // session's name + scores are ALSO recorded on the durable board (never
+    // purged; the ranking site reads only this table). Idempotent by PK;
+    // best-effort — a board failure must not fail the session PATCH.
+    if ((Number(shotCount) || 0) > 0) {
+      try {
+        await query(
+          `INSERT INTO leaderboard_records
+             (session_id, user_name, avg_score, max_score, shot_count, played_at)
+           SELECT s.id, s.user_name, $2,
+                  COALESCE((SELECT max(score) FROM shots WHERE session_id = s.id), 0),
+                  $3, s.started_at
+             FROM sessions s WHERE s.id = $1
+           ON CONFLICT (session_id) DO UPDATE SET
+             user_name = EXCLUDED.user_name,
+             avg_score = EXCLUDED.avg_score,
+             max_score = EXCLUDED.max_score,
+             shot_count = EXCLUDED.shot_count`,
+          [id, Number(avgScore) || 0, Number(shotCount) || 0],
+        );
+      } catch (err) {
+        console.error('[routes] leaderboard record (non-fatal):', err?.message || err);
+      }
+    }
+  },
+
+  async createShot(sessionId, meta) {
+    const id = randomUUID();
+    await query(
+      `INSERT INTO shots
+         (id, session_id, idx, type, score, angles, statuses, issues, peak_wrist_speed)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        id,
+        sessionId,
+        meta.idx,
+        meta.type,
+        meta.score,
+        JSON.stringify(meta.angles),
+        JSON.stringify(meta.statuses),
+        JSON.stringify(meta.issues),
+        meta.peakWristSpeed,
+      ],
+    );
+    return { id };
+  },
+
+  async getShotSession(shotId) {
+    const found = await query(`SELECT session_id FROM shots WHERE id = $1`, [shotId]);
+    if (found.rowCount === 0) return null;
+    return found.rows[0].session_id;
+  },
+
+  async setShotClip(shotId, path, mime) {
+    await query(`UPDATE shots SET clip_path = $2, clip_mime = $3 WHERE id = $1`, [
+      shotId,
+      path,
+      mime,
+    ]);
+  },
+
+  async setShotAudio(shotId, path, mime) {
+    await query(`UPDATE shots SET audio_path = $2, audio_mime = $3 WHERE id = $1`, [
+      shotId,
+      path,
+      mime,
+    ]);
+  },
+
+  async getShotClipRef(shotId) {
+    const { rows, rowCount } = await query(
+      `SELECT clip_path, clip_mime FROM shots WHERE id = $1`,
+      [shotId],
+    );
+    if (rowCount === 0 || !rows[0].clip_path) return null;
+    return { clipPath: rows[0].clip_path, clipMime: rows[0].clip_mime };
+  },
+
+  async getShotAudioRef(shotId) {
+    const { rows, rowCount } = await query(
+      `SELECT audio_path, audio_mime FROM shots WHERE id = $1`,
+      [shotId],
+    );
+    if (rowCount === 0 || !rows[0].audio_path) return null;
+    return { audioPath: rows[0].audio_path, audioMime: rows[0].audio_mime };
+  },
+
+  async listHistory(days) {
+    const { rows } = await query(
+      `SELECT * FROM sessions
+        WHERE started_at >= now() - ($1 || ' days')::interval
+        ORDER BY started_at DESC`,
+      [String(days)],
+    );
+    return rows.map(sessionRowToJson);
+  },
+
+  async getSessionDetail(id) {
+    const sRes = await query(`SELECT * FROM sessions WHERE id = $1`, [id]);
+    if (sRes.rowCount === 0) return null;
+    const shRes = await query(`SELECT * FROM shots WHERE session_id = $1 ORDER BY idx ASC`, [id]);
+    return {
+      ...sessionRowToJson(sRes.rows[0]),
+      shots: shRes.rows.map(shotRowToJson),
+    };
+  },
+
+  async deleteSession(id) {
+    await query(`DELETE FROM sessions WHERE id = $1`, [id]);
+  },
+};

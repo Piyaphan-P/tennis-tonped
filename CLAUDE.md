@@ -16,7 +16,26 @@ Brand name (this branch) is **"ADGE Tennis"** and the coach persona is **"โค
 - **Brand:** UI, `<title>`/meta, story/swing export canvases, and download filenames (`adge-*`) all read **ADGE Tennis**. Coach persona = **โค้ช ADGE**.
 - **DB isolation (shared Supabase Postgres):** env **`DB_SCHEMA=sit`**. `server/db.mjs` sanitizes the value (`/^[a-z_][a-z0-9_]*$/`, else `public`), and when it is non-default pins `SET search_path TO <schema>` on every pooled connection (Supabase pooler :5432 is SESSION mode) and runs `CREATE SCHEMA IF NOT EXISTS <schema>` before the `CREATE TABLE`s. All SQL stays unqualified — the search_path does the isolation. `DB_SCHEMA=public` (default) is byte-identical to prod (no hook, no CREATE SCHEMA).
 - **Cloud Run service (SIT):** `adge-tennis-sit` · clips/audio bucket `adge-tennis-sit-clips` (set via `GCS_BUCKET`). Image path / Artifact Registry (`ton-team/ton-phet/...`) and the git remote are shared infra — unchanged.
-- **Deploy env vars (SIT):** `GCS_BUCKET=adge-tennis-sit-clips`, `DATABASE_URL=<shared>`, `DB_SCHEMA=sit`.
+- **Deploy env vars (SIT):** `GCS_BUCKET=adge-tennis-sit-clips`, `DATABASE_URL=<shared>`, `DB_SCHEMA=sit` (Postgres path); OR `DB_BACKEND=firestore` (Firestore path, below).
+
+### Metadata backend selector (`DB_BACKEND`)
+
+The HTTP API + response JSON is identical regardless of backend — only the metadata store changes. `server/store.mjs` reads `DB_BACKEND` and exports one implementation of the route-facing interface; `server/routes.mjs` holds NO SQL/Firestore code and calls `backend.*`. Both backends keep their client lazy, so selecting one costs nothing for the other.
+
+| `DB_BACKEND` | Store | Module | Purge | Notes |
+|---|---|---|---|---|
+| `postgres` (default) | Supabase Postgres | `db.mjs` (`pgBackend`) | server-side (boot + 6h) | byte-identical to prod; honors `DB_SCHEMA` |
+| `firestore` | Firestore native, DB `nonprd` | `dbFirestore.mjs` (`firestoreBackend`) | **platform TTL — no server job** | SIT migration target |
+
+**Firestore path (`DB_BACKEND=firestore`):**
+- **Env:** `FIRESTORE_DATABASE=nonprd` (default), `GOOGLE_CLOUD_PROJECT=ton-team` (default). Auth = `GOOGLE_APPLICATION_CREDENTIALS=<ton-team SA json>` locally / Cloud Run runtime SA with `roles/datastore.user`. Client: `new Firestore({ projectId, databaseId, ignoreUndefinedProperties:true })`.
+- **TTL:** enabled at the platform level on field **`expireAt`** for collection groups `sessions` and `shots`. The server writes `expireAt` (session = `startedAt + 3d`, shot = `createdAt + 3d`) as a Firestore `Timestamp` and Firestore auto-deletes — **there is NO purge job on this path** (contrast `db.mjs`'s boot+6h purge). Do NOT add one.
+- **Frozen data contract (both repos):**
+  - `sessions/{sessionId}` — `{ userName, startedAt:Ts, endedAt:Ts|null, avgScore, shotCount, summary:obj|null, expireAt:Ts }`. `sessionId` = the same server-generated uuid as today.
+  - `sessions/{sessionId}/shots/{shotId}` — `{ id, sessionId, idx, type, score, angles, statuses, issues, peakWristSpeed, clipPath:str|null, clipMime:str|null, audioPath:str|null, audioMime:str|null, createdAt:Ts, expireAt:Ts }`. `id`+`sessionId` are stored in-doc so a bare shot-id resolves via `collectionGroup('shots').where('id','==',…)` — the `/api/shots/:id/clip|audio` routes carry no sessionId and `shotId` is a frozen uuid, so this lookup is unavoidable.
+  - `leaderboard_records/{sessionId}` — `{ userName, avgScore, maxScore, shotCount, playedAt:Ts }`, **NO `expireAt`** (durable forever). Idempotent upsert via `set()`; `maxScore` = max over the session's shots; `playedAt` = session `startedAt`. `deleteSession` deletes the session doc + its shots subcollection (in ≤400-doc batches) but **never** the leaderboard record or GCS objects.
+- **Wire mappers:** `lib.mjs` has `sessionDocToJson`/`shotDocToJson` (Firestore-doc → same JSON as the pg `*RowToJson`). `lib.mjs` stays **import-free** (root vitest has no server deps) — Timestamps are duck-typed via `.toDate()`, never `import`ed.
+- **⚠️ REQUIRED index (manual, one-time) — `shots.id` at COLLECTION_GROUP scope.** The task assumed "single-field on `id` is automatic"; that is **false** for collection-group queries — Firestore auto-indexes single fields only at COLLECTION scope. Without it, the shot-by-id lookup throws `FAILED_PRECONDITION` and the **clip/audio metadata routes 503** (session/shot/history/detail/delete are unaffected — verified live). Creating it needs `datastore.indexAdmin`/owner (the runtime `datastore.user` SA can only *use* it, no role needed to query once READY). `gcloud firestore indexes fields update` cannot set collection-group scope; create via the console link in the FAILED_PRECONDITION error, or PATCH `…/collectionGroups/shots/fields/id?updateMask.fieldPaths=indexConfig` with `indexConfig.indexes` including `{ queryScope:'COLLECTION_GROUP', fields:[{ order:'ASCENDING' }] }`. **Status: NOT yet created** on `nonprd` (attempt was blocked as an unauthorized shared-infra change — needs the user to create it or grant permission). This index is additive shared infra on `nonprd` — it also benefits the sibling repo.
 
 ## Stack
 

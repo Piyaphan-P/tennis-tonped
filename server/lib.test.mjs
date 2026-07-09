@@ -10,9 +10,15 @@ import {
   clipObjectPath,
   sessionRowToJson,
   shotRowToJson,
+  sessionDocToJson,
+  shotDocToJson,
   validateShotMeta,
   unavailableBody,
 } from './lib.mjs';
+
+// A fake Firestore Timestamp: duck-typed via toDate() exactly like the real one,
+// so we exercise lib.mjs's import-free timestamp handling without the SDK.
+const ts = (iso) => ({ toDate: () => new Date(iso) });
 
 describe('extFromMime', () => {
   it('returns mp4 for video/mp4 families', () => {
@@ -107,6 +113,104 @@ describe('shotRowToJson', () => {
     expect(noClip.hasClip).toBe(false);
     expect(noClip.clipMime).toBeNull();
     expect(noClip.issues).toEqual([]);
+  });
+});
+
+describe('sessionDocToJson (Firestore)', () => {
+  it('maps a Firestore doc to the SAME wire shape as sessionRowToJson', () => {
+    const pg = sessionRowToJson({
+      id: 'a',
+      user_name: 'Ton',
+      started_at: new Date('2026-07-05T10:00:00.000Z'),
+      ended_at: new Date('2026-07-05T11:00:00.000Z'),
+      avg_score: 82.5,
+      shot_count: 12,
+      summary: { goodFormPct: 50 },
+    });
+    const fs = sessionDocToJson('a', {
+      userName: 'Ton',
+      startedAt: ts('2026-07-05T10:00:00.000Z'),
+      endedAt: ts('2026-07-05T11:00:00.000Z'),
+      avgScore: 82.5,
+      shotCount: 12,
+      summary: { goodFormPct: 50 },
+      expireAt: ts('2026-07-08T10:00:00.000Z'), // ignored by the mapper
+    });
+    expect(fs).toEqual(pg);
+  });
+  it('tolerates null endedAt/summary and missing userName', () => {
+    const out = sessionDocToJson('b', {
+      startedAt: ts('2026-07-05T10:00:00.000Z'),
+      endedAt: null,
+      avgScore: 0,
+      shotCount: 0,
+      summary: null,
+    });
+    expect(out.endedAt).toBeNull();
+    expect(out.summary).toBeNull();
+    expect(out.userName).toBe('');
+    expect(out.startedAt).toBe('2026-07-05T10:00:00.000Z');
+  });
+});
+
+describe('shotDocToJson (Firestore)', () => {
+  it('matches shotRowToJson byte-for-byte (with/without clip+audio)', () => {
+    const pg = shotRowToJson({
+      id: 's1',
+      session_id: 'sess',
+      idx: 3,
+      type: 'forehand',
+      score: 77,
+      angles: { a: 1 },
+      statuses: { domElbow: 'good' },
+      issues: [{ key: 'x' }],
+      peak_wrist_speed: 1.4,
+      clip_path: 'sess/s1.mp4',
+      clip_mime: 'video/mp4',
+      audio_path: 'audio/sess/s1.wav',
+      created_at: '2026-07-05T10:00:00.000Z',
+    });
+    const fs = shotDocToJson('s1', {
+      id: 's1',
+      sessionId: 'sess',
+      idx: 3,
+      type: 'forehand',
+      score: 77,
+      angles: { a: 1 },
+      statuses: { domElbow: 'good' },
+      issues: [{ key: 'x' }],
+      peakWristSpeed: 1.4,
+      clipPath: 'sess/s1.mp4',
+      clipMime: 'video/mp4',
+      audioPath: 'audio/sess/s1.wav',
+      audioMime: 'audio/wav',
+      createdAt: ts('2026-07-05T10:00:00.000Z'),
+      expireAt: ts('2026-07-08T10:00:00.000Z'),
+    });
+    expect(fs).toEqual(pg);
+    expect(fs.hasClip).toBe(true);
+    expect(fs.hasAudio).toBe(true);
+
+    const noBlobs = shotDocToJson('s2', {
+      id: 's2',
+      sessionId: 'sess',
+      idx: 4,
+      type: 'backhand',
+      score: 50,
+      angles: null,
+      statuses: null,
+      issues: null,
+      peakWristSpeed: 0,
+      clipPath: null,
+      clipMime: null,
+      audioPath: null,
+      audioMime: null,
+      createdAt: ts('2026-07-05T10:00:00.000Z'),
+    });
+    expect(noBlobs.hasClip).toBe(false);
+    expect(noBlobs.hasAudio).toBe(false);
+    expect(noBlobs.clipMime).toBeNull();
+    expect(noBlobs.issues).toEqual([]);
   });
 });
 

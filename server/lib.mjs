@@ -26,11 +26,19 @@ export function audioObjectPath(sessionId, shotId) {
   return `audio/${sessionId}/${shotId}.wav`;
 }
 
-/** ISO string from a pg timestamptz value (Date | string | null) → string|null. */
+/**
+ * ISO string from a timestamp-ish value → string|null. Accepts pg timestamptz
+ * (Date | ISO string) AND a Firestore Timestamp (duck-typed via `.toDate()` so
+ * this file stays import-free — a raw Firestore Timestamp fed to `new Date()`
+ * would otherwise yield Invalid Date).
+ */
 function isoOrNull(v) {
   if (v == null) return null;
   try {
-    const d = v instanceof Date ? v : new Date(v);
+    let d;
+    if (v instanceof Date) d = v;
+    else if (typeof v?.toDate === 'function') d = v.toDate();
+    else d = new Date(v);
     return Number.isNaN(d.getTime()) ? null : d.toISOString();
   } catch {
     return null;
@@ -66,6 +74,48 @@ export function shotRowToJson(row) {
     clipMime: row.clip_mime ?? null,
     hasAudio: row.audio_path != null,
     createdAt: isoOrNull(row.created_at),
+  };
+}
+
+/**
+ * Firestore `sessions/{id}` doc → the SAME CloudSessionSummary wire shape as
+ * sessionRowToJson. `data` holds the contract camelCase fields (userName,
+ * startedAt, endedAt, avgScore, shotCount, summary); Timestamps are handled by
+ * isoOrNull's duck-typed toDate branch. Byte-compatible with the Postgres path.
+ */
+export function sessionDocToJson(id, data) {
+  const d = data ?? {};
+  return {
+    id,
+    userName: d.userName ?? '',
+    startedAt: isoOrNull(d.startedAt),
+    endedAt: isoOrNull(d.endedAt),
+    avgScore: Number(d.avgScore) || 0,
+    shotCount: Number(d.shotCount) || 0,
+    summary: d.summary ?? null,
+  };
+}
+
+/**
+ * Firestore `sessions/{id}/shots/{id}` doc → the SAME CloudShot wire shape as
+ * shotRowToJson. hasClip/hasAudio derive from clipPath/audioPath being set.
+ */
+export function shotDocToJson(id, data) {
+  const d = data ?? {};
+  return {
+    id,
+    sessionId: d.sessionId,
+    idx: Number(d.idx) || 0,
+    type: d.type,
+    score: Number(d.score) || 0,
+    angles: d.angles ?? null,
+    statuses: d.statuses ?? null,
+    issues: d.issues ?? [],
+    peakWristSpeed: Number(d.peakWristSpeed) || 0,
+    hasClip: d.clipPath != null,
+    clipMime: d.clipMime ?? null,
+    hasAudio: d.audioPath != null,
+    createdAt: isoOrNull(d.createdAt),
   };
 }
 

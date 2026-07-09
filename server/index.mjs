@@ -14,7 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GoogleGenAI } from '@google/genai';
 import { mountCloudRoutes } from './routes.mjs';
-import { initDb } from './db.mjs';
+import { initDb } from './store.mjs';
 import { mountLiveRelay } from './liveRelay.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
