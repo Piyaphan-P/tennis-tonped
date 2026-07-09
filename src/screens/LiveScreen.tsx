@@ -44,6 +44,13 @@ export default function LiveScreen() {
   const endSession = useAppStore((s) => s.endSession);
   const connection = useAppStore((s) => s.connection);
   const coachError = useAppStore((s) => s.coach.error);
+  // Coach gave up connecting (missing token + /api/token 503, or retries
+  // exhausted). setSessionError is the ONE signal every give-up path sets —
+  // and the 503/no-token path throws BEFORE connection flips to 'error', so
+  // keying off connection alone would miss the primary case. Cleared on a
+  // successful (re)connect (markSessionLive) and on startSession. Purely
+  // informational: pose, scoring, captures, clips, cloud sync all keep working.
+  const coachOffline = useAppStore((s) => s.session.status === 'error');
   const poseInitError = useAppStore((s) => s.pose.initError);
   const cameraFacing = useAppStore((s) => s.settings.cameraFacing);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -266,6 +273,24 @@ export default function LiveScreen() {
 
           {coachError && (
             <span className="chip live-coach-err">{translateError(coachError, lang)}</span>
+          )}
+
+          {/* Non-blocking reassurance: the coach couldn't connect, but the whole
+              local pipeline (pose · scoring · captures · clips · cloud sync)
+              keeps running. NEVER a blocking scrim — just a small chip. */}
+          {coachOffline && !coachError && (
+            <span
+              className="chip"
+              role="status"
+              style={{
+                background: 'rgba(245, 179, 66, 0.16)',
+                borderColor: 'var(--warn)',
+                color: 'var(--warn)',
+                fontSize: '0.8rem',
+              }}
+            >
+              {t('live.coachOffline')}
+            </span>
           )}
         </div>
 

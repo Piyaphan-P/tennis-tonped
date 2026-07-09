@@ -2,6 +2,20 @@ import { useAppStore } from '../store';
 import { useT } from '../i18n';
 import type { PricingRates } from '../types';
 
+/**
+ * True when the backend provisions the coach automatically (prod/SIT):
+ * `/api/token` mint endpoint baked in, or same-origin relay. Then the pasted
+ * token is a dev/fallback only — never required.
+ */
+function coachAutoProvisioned(): boolean {
+  try {
+    const env = (import.meta as unknown as { env?: Record<string, string> }).env;
+    return !!env?.VITE_TOKEN_ENDPOINT || env?.VITE_LIVE_TRANSPORT === 'relay';
+  } catch {
+    return false;
+  }
+}
+
 /** Bottom-sheet settings: pricing rates, session prefs, and coach token. */
 export default function SettingsSheet() {
   const open = useAppStore((s) => s.settingsOpen);
@@ -30,7 +44,10 @@ export default function SettingsSheet() {
     </label>
   );
 
-  const tokenValid = authToken.startsWith('AQ.');
+  // Both ephemeral-token formats liveClient accepts (AQ. = 2026 Auth keys /
+  // classic minted tokens; auth_tokens/… = tokens minted from an AQ. key).
+  const tokenValid = authToken.startsWith('AQ.') || authToken.startsWith('auth_tokens/');
+  const autoCoach = coachAutoProvisioned();
 
   return (
     <div className="sheet-backdrop" onClick={() => setOpen(false)}>
@@ -48,12 +65,29 @@ export default function SettingsSheet() {
           <div className="row" style={{ justifyContent: 'space-between' }}>
             <span className="dim" style={{ fontSize: '0.85rem' }}>
               {t('settings.token')}
+              {autoCoach && !tokenValid && (
+                <span className="faint" style={{ fontSize: '0.75rem' }}>
+                  {' '}
+                  {t('settings.tokenOptional')}
+                </span>
+              )}
             </span>
             <span
               className="faint"
-              style={{ fontSize: '0.75rem', color: tokenValid ? 'var(--good)' : 'var(--warn)' }}
+              style={{
+                fontSize: '0.75rem',
+                color: tokenValid
+                  ? 'var(--good)'
+                  : autoCoach
+                    ? 'var(--good)'
+                    : 'var(--warn)',
+              }}
             >
-              {tokenValid ? t('settings.tokenSet') : t('settings.tokenNone')}
+              {tokenValid
+                ? t('settings.tokenSet')
+                : autoCoach
+                  ? t('settings.tokenAuto')
+                  : t('settings.tokenNone')}
             </span>
           </div>
           <input
@@ -65,7 +99,7 @@ export default function SettingsSheet() {
             onChange={(e) => setAuthToken(e.target.value)}
           />
           <span className="faint" style={{ fontSize: '0.75rem' }}>
-            {t('settings.tokenHint')}
+            {autoCoach && !tokenValid ? t('settings.tokenAutoHint') : t('settings.tokenHint')}
           </span>
         </label>
 

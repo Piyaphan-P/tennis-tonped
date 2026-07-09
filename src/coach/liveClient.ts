@@ -662,7 +662,12 @@ export function buildRelaySetupFrame(model: string, systemInstruction: string): 
   return {
     setup: {
       model,
-      generationConfig: { responseModalities: ['AUDIO'] },
+      generationConfig: {
+        responseModalities: ['AUDIO'],
+        // Pin the coach voice (user-chosen 2026-07-10). Without this the
+        // default voice drifts between sessions — even switching gender.
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Charon' } } },
+      },
       systemInstruction: { role: 'user', parts: [{ text: systemInstruction }] },
       outputAudioTranscription: {},
     },
@@ -920,22 +925,24 @@ export class CoachLiveClient {
   private requestedLang: Lang = 'th';
 
   /**
-   * Single-slot queue: the newest completed shot waiting for the pacing gate to
-   * open (v0.7). A shot may only be dispatched when NO coaching turn is in
-   * flight AND the coach's audio has fully FINISHED SPEAKING the previous
-   * critique — otherwise critiques rattle out too fast to follow. While blocked
-   * we hold AT MOST one shot; a newer swing replaces the older queued one so the
-   * freshest advice always wins.
+   * FIFO queue of ALL completed shots waiting for the pacing gate to open
+   * (v1.2, replacing v0.7's single-slot freshest-wins). A shot may only be
+   * dispatched when NO coaching turn is in flight AND the coach's audio has
+   * fully FINISHED SPEAKING the previous critique — otherwise critiques rattle
+   * out too fast to follow. Unlike v0.7, NOTHING is dropped while blocked: every
+   * completed shot is coached, in index order, one at a time as the gate reopens
+   * (on-court request "ให้โค้ชทุกๆครั้ง … เหมือนสมัยก่อน"). The pacing gate is
+   * unchanged — only the "which shot next" policy changed from freshest-wins to
+   * strict FIFO.
    */
-  private queuedShot: Shot | null = null;
-  /** How many queued shots have been dropped by a newer one (freshest-wins). Diagnostics only. */
-  private queuedReplaced = 0;
+  private queue: Shot[] = [];
   /**
-   * Highest shot.index ever handed to dispatchShot this session — flushQueue
-   * drops a queued shot strictly older than this so an error-path requeue can
-   * never replay out of order after a newer shot was critiqued.
+   * Soft memory cap: never let the queue grow without bound if the coach falls
+   * pathologically far behind (e.g. a long dead-socket stall). At the cap the
+   * OLDEST waiting shot is dropped so the freshest advice still lands; under
+   * normal play the queue drains long before this. Diagnostics only.
    */
-  private lastDispatchedIndex = 0;
+  private droppedForCap = 0;
 
   /**
    * v1.0 variety fix: the last few coaching style ids actually SPOKEN (oldest
@@ -1093,6 +1100,9 @@ export class CoachLiveClient {
             model,
             config: {
               responseModalities: [Modality.AUDIO],
+              // Pin the coach voice (user-chosen 2026-07-10) — the default
+              // voice is NOT stable per session and even drifts gender.
+              speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Charon' } } },
               outputAudioTranscription: {},
               // v0.6: no inputAudioTranscription — the mic is never opened, so
               // there is no user audio to transcribe.
@@ -1256,38 +1266,48 @@ export class CoachLiveClient {
   // -------------------------------------------------------------------------
 
   sendShotForCoaching(shot: Shot): void {
-    // Pacing gate (v0.7): a shot may dispatch ONLY when we're connected, no turn
-    // is in flight, AND the coach is not still SPEAKING the previous critique.
-    // Otherwise hold the newest shot in the 1-slot queue (dropping any older one
-    // — freshest advice wins) and let flushQueue send it once the gate opens.
-    if (!this.isConnected() || this.pendingShotId !== null || audioPlayer.isSpeaking()) {
-      this.enqueueLatest(shot);
-      return;
-    }
-    this.dispatchShot(shot);
+    // v1.2: every completed shot is coached, in order. Always append to the FIFO
+    // queue, then try to drain it. The pacing gate (connected + no turn in flight
+    // + coach finished speaking) lives in flushQueue, so a gate-open idle client
+    // dispatches this shot immediately (it's alone at the front) while a busy
+    // client simply leaves it queued behind the shots already waiting — nothing
+    // is dropped and order is preserved.
+    this.enqueue(shot);
+    this.flushQueue();
   }
 
   /**
-   * Hold `shot` in the single slot, replacing (and counting) any older waiting
-   * shot so the coach always critiques the freshest swing when the gate opens.
+   * Append `shot` to the FIFO queue. Idempotent per shot id: a shot already
+   * queued OR currently in flight is ignored, so a stray double-send (or an
+   * error-path requeue racing a fresh completion) can never enqueue the same
+   * swing twice. A soft cap bounds memory if the coach falls pathologically far
+   * behind — the OLDEST waiting shot is dropped so the freshest advice survives.
    */
-  private enqueueLatest(shot: Shot): void {
-    if (this.queuedShot && this.queuedShot.id !== shot.id) {
-      this.queuedReplaced += 1;
+  private enqueue(shot: Shot): void {
+    if (shot.id === this.pendingShotId) return; // already being coached
+    if (this.queue.some((s) => s.id === shot.id)) return; // already waiting
+    this.queue.push(shot);
+    const QUEUE_CAP = 30;
+    if (this.queue.length > QUEUE_CAP) {
+      const dropped = this.queue.shift();
+      this.droppedForCap += 1;
       console.debug(
-        `[coach] pacing: replaced queued shot #${this.queuedShot.index} with newer #${shot.index} (freshest-wins, replaced=${this.queuedReplaced})`,
+        `[coach] pacing: queue exceeded cap ${QUEUE_CAP} — dropped oldest shot #${dropped?.index} (droppedForCap=${this.droppedForCap})`,
       );
     }
-    this.queuedShot = shot;
   }
 
   private dispatchShot(shot: Shot): void {
     const session = this.session;
     if (!session) {
-      this.enqueueLatest(shot);
+      // No socket — put it back at the FRONT so it stays ahead of anything that
+      // queued behind it, preserving index order for the next (re)connect flush.
+      this.requeueFront(shot);
       return;
     }
-    this.lastDispatchedIndex = Math.max(this.lastDispatchedIndex, shot.index);
+    // Duplicate-dispatch guard: never open a second turn for a shot already in
+    // flight (a re-entrant flush or a racing requeue must not double-coach it).
+    if (shot.id === this.pendingShotId) return;
 
     const state = this.store();
     this.requestedLang = state.lang;
@@ -1395,32 +1415,35 @@ export class CoachLiveClient {
       this.pendingShotId = null;
       this.pendingContactCaptureId = null;
       this.pendingStyleId = null; // pick was never spoken — don't count it
-      // Guarded requeue: never let a failed OLD shot clobber a newer queued one
-      // (freshest-wins even on the error path).
-      if (!this.queuedShot || this.queuedShot.index <= shot.index) {
-        this.queuedShot = shot;
-      }
+      // Send failed (socket died between checks) — put this shot back at the
+      // FRONT of the FIFO so it is retried BEFORE any shot that queued behind
+      // it, keeping strict index order across a reconnect. No drop.
+      this.requeueFront(shot);
       console.warn('[coach] send failed:', errMsg(e, 'send failed'));
       this.store().setCoachError('coach.reconnecting');
     }
   }
 
+  /**
+   * Put a shot back at the FRONT of the FIFO (error-path / no-socket requeue),
+   * ahead of anything that queued behind it, so retries never reorder the rally.
+   * Deduped so a requeue can't create a second copy of a shot already waiting.
+   */
+  private requeueFront(shot: Shot): void {
+    if (this.queue.some((s) => s.id === shot.id)) return;
+    this.queue.unshift(shot);
+  }
+
   private flushQueue(): void {
-    if (!this.queuedShot) return;
-    // Same pacing gate as sendShotForCoaching: connected, no turn in flight, and
-    // the coach has finished speaking. If still speaking, stay queued — the
-    // audioPlayer.onPlaybackDone hook will re-drive flushQueue when audio drains.
+    if (this.queue.length === 0) return;
+    // Pacing gate (unchanged): connected, no turn in flight, and the coach has
+    // finished speaking. If still speaking, stay queued — audioPlayer's
+    // onPlaybackDone hook re-drives flushQueue when the audio drains, so the
+    // NEXT shot in FIFO order dispatches then. One shot per gate-open keeps
+    // critiques from overlapping while still coaching every shot in turn.
     if (!this.isConnected() || this.pendingShotId !== null || audioPlayer.isSpeaking()) return;
-    const next = this.queuedShot;
-    this.queuedShot = null;
-    // Stale guard (strictly older only): a shot requeued by the error path can
-    // be older than one that has since dispatched directly — the coach must
-    // never announce "ช็อตที่ 3" after already critiquing shot 4. Equal index
-    // stays allowed: that's the legitimate retry of a failed send.
-    if (next.index < this.lastDispatchedIndex) {
-      console.debug(`[coach] pacing: dropped stale queued shot #${next.index}`);
-      return;
-    }
+    const next = this.queue.shift();
+    if (!next) return;
     this.dispatchShot(next);
   }
 
@@ -1465,10 +1488,17 @@ export class CoachLiveClient {
     // A turn that was in flight died with the socket: its turnComplete will
     // never arrive. Close the cost-attribution window and clear the pending
     // state, otherwise dispatch stays wedged (queue never flushes) and later
-    // usage is misattributed to the dead shot. The interrupted shot's coaching
-    // is dropped (consistent with the "skip stale shots" rule).
+    // usage is misattributed to the dead shot. If the coach had not spoken a
+    // word yet (no transcription received), requeue the shot at the FRONT so
+    // it is coached after reconnect — "coach EVERY shot" must survive a socket
+    // blip. If it was mid-sentence, drop it: repeating a half-heard critique
+    // is worse than moving on.
     if (this.pendingShotId) {
       this.store().endShotCost(this.pendingShotId);
+      if (this.turnText === '') {
+        const deadShot = this.store().shots.find((s) => s.id === this.pendingShotId);
+        if (deadShot) this.requeueFront(deadShot);
+      }
       this.pendingShotId = null;
     }
     this.pendingContactCaptureId = null;
@@ -1492,6 +1522,10 @@ export class CoachLiveClient {
     // so it never false-positives on a transient AQ-path close worth retrying.
     if (isPermissionDeniedClose(err)) {
       this.sessionLive = false;
+      // Clear any stale "reconnecting…" notice — while coach.error is set the
+      // LiveScreen coach-offline chip is suppressed, so the terminal state
+      // would otherwise never surface.
+      this.store().setCoachError(null);
       this.store().setSessionError('coach.relayDenied');
       return;
     }
@@ -1505,6 +1539,9 @@ export class CoachLiveClient {
       // Exhausted all retries — surface a bilingual "connection lost" state.
       // Non-blocking for pose: setSessionError doesn't tear down the pose loop.
       this.sessionLive = false;
+      // Stale 'coach.reconnecting' would otherwise stick forever AND suppress
+      // the coach-offline chip (LiveScreen shows it only while !coach.error).
+      this.store().setCoachError(null);
       this.store().setSessionError('coach.connectionLost');
       return;
     }
@@ -1544,9 +1581,8 @@ export class CoachLiveClient {
     }
     this.reconnecting = false;
     this.reconnectAttempts = 0;
-    this.queuedShot = null;
-    this.queuedReplaced = 0;
-    this.lastDispatchedIndex = 0;
+    this.queue = [];
+    this.droppedForCap = 0;
     this.pendingShotId = null;
     this.pendingContactCaptureId = null;
     this.pendingStyleId = null;

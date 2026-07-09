@@ -16,6 +16,7 @@ import { GoogleGenAI } from '@google/genai';
 import { mountCloudRoutes } from './routes.mjs';
 import { initDb } from './store.mjs';
 import { mountLiveRelay } from './liveRelay.mjs';
+import { mountAuthGate } from './authGate.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -29,6 +30,12 @@ const TOKEN_USES = Number(process.env.TOKEN_USES || 10);
 const minter = API_KEY
   ? new GoogleGenAI({ apiKey: API_KEY, httpOptions: { apiVersion: 'v1alpha' } })
   : null;
+
+// Credential gate: POST /api/login sets the cookie; every /api/* route below
+// (and the /api/live WS upgrade in liveRelay.mjs) requires it. Static assets
+// stay public — the frontend shows a login screen on 401. MUST be mounted
+// before any /api routes so the guard middleware runs first.
+mountAuthGate(app);
 
 app.get('/healthz', (_req, res) => {
   res.json({ ok: true, minter: Boolean(minter), ttlMin: TOKEN_TTL_MIN });

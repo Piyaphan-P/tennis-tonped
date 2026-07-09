@@ -34,6 +34,16 @@ const DICT = {
   'common.loading': { th: 'กำลังโหลด…', en: 'Loading…' },
   'common.times': { th: 'ครั้ง', en: 'x' },
 
+  // --- login gate ---
+  'login.title': { th: 'เข้าสู่ระบบ', en: 'Sign in' },
+  'login.subtitle': { th: 'กรอกชื่อผู้ใช้และรหัสผ่านเพื่อเริ่มใช้งาน', en: 'Enter username and password to continue' },
+  'login.user': { th: 'ชื่อผู้ใช้', en: 'Username' },
+  'login.pass': { th: 'รหัสผ่าน', en: 'Password' },
+  'login.submit': { th: 'เข้าสู่ระบบ', en: 'Sign in' },
+  'login.checking': { th: 'กำลังตรวจสอบ…', en: 'Checking…' },
+  'login.wrong': { th: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง', en: 'Wrong username or password' },
+  'login.error': { th: 'เชื่อมต่อไม่ได้ ลองใหม่อีกครั้ง', en: 'Connection failed — try again' },
+
   // --- language toggle ---
   'lang.th': { th: 'ไทย', en: 'Thai' },
   'lang.en': { th: 'อังกฤษ', en: 'English' },
@@ -125,6 +135,12 @@ const DICT = {
   'live.connecting': { th: 'กำลังเชื่อมต่อโค้ช…', en: 'Connecting to coach…' },
   'live.connected': { th: 'เชื่อมต่อแล้ว', en: 'Connected' },
   'live.disconnected': { th: 'ยังไม่เชื่อมต่อ', en: 'Disconnected' },
+  // Non-blocking reassurance when the coach cannot connect at all — everything
+  // local (pose, scoring, captures, clips, cloud sync, history) keeps working.
+  'live.coachOffline': {
+    th: 'โค้ชออฟไลน์ — เก็บคลิป/คะแนนตามปกติ',
+    en: 'Coach offline — clips & scores still recording.',
+  },
   'live.end': { th: 'จบการฝึก', en: 'End Session' },
   'live.listening': { th: 'กำลังฟัง…', en: 'Listening…' },
   'live.shots': { th: 'จำนวนช็อต', en: 'Shots' },
@@ -361,6 +377,14 @@ const DICT = {
   },
   'settings.tokenSet': { th: 'ตั้งค่าโทเคนแล้ว', en: 'Token set' },
   'settings.tokenNone': { th: 'ยังไม่มีโทเคน', en: 'No token' },
+  // Shown when the coach is auto-provisioned (token endpoint / relay transport):
+  // the pasted-token field is an OPTIONAL dev/fallback, never required.
+  'settings.tokenOptional': { th: '(ไม่บังคับ)', en: '(optional)' },
+  'settings.tokenAuto': { th: 'ต่อโค้ชอัตโนมัติ', en: 'Auto-connects' },
+  'settings.tokenAutoHint': {
+    th: 'ไม่ต้องใส่ — ระบบต่อโค้ชให้อัตโนมัติ วางโทเคนเองเฉพาะตอนทดสอบหรือใช้สำรองเท่านั้น',
+    en: 'No need to enter one — the coach connects automatically. Paste a token only for testing or as a fallback.',
+  },
 
   // --- dev plan screen ---
   'devplan.title': { th: 'แผนพัฒนา', en: 'Development Plan' },

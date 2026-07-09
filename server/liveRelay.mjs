@@ -26,6 +26,7 @@
 // -----------------------------------------------------------------------------
 import { WebSocketServer, WebSocket } from 'ws';
 import { GoogleAuth } from 'google-auth-library';
+import { isGateAuthorized } from './authGate.mjs';
 
 // --- Pinned server-side (the client is NOT trusted for these) -----------------
 const PROJECT = process.env.GOOGLE_CLOUD_PROJECT || 'ton-team';
@@ -105,6 +106,14 @@ export function mountLiveRelay(server) {
     // Origin (server-to-server tools, our own Node test client) is allowed.
     if (!originAllowed(req)) {
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
+    // Same gate as the HTTP /api/* routes: no valid login cookie → no relay.
+    // (Origin alone is spoofable from non-browser callers; the cookie is not.)
+    if (!isGateAuthorized(req)) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;
     }

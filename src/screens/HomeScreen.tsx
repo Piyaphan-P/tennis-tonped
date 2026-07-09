@@ -15,6 +15,21 @@ const FOCUS_OPTIONS: Array<{ value: FocusShot; labelKey: I18nKey }> = [
   { value: 'both', labelKey: 'home.both' },
 ];
 
+/**
+ * True when the backend provisions the coach automatically (prod/SIT): the
+ * `/api/token` mint endpoint is baked in, or the app talks to the same-origin
+ * relay. In that case the pasted-token field is a dev/fallback only — the start
+ * flow must never gate on it and we suppress the "token missing" alarm.
+ */
+export function coachAutoProvisioned(): boolean {
+  try {
+    const env = (import.meta as unknown as { env?: Record<string, string> }).env;
+    return !!env?.VITE_TOKEN_ENDPOINT || env?.VITE_LIVE_TRANSPORT === 'relay';
+  } catch {
+    return false;
+  }
+}
+
 /** Landing screen: brand, session setup, start CTA, stats + history. */
 export default function HomeScreen() {
   const t = useT();
@@ -27,7 +42,10 @@ export default function HomeScreen() {
   const authToken = useAppStore((s) => s.authToken);
 
   const [tokenBannerDismissed, setTokenBannerDismissed] = useState(false);
-  const showTokenBanner = !authToken && !tokenBannerDismissed;
+  // Only nag about a missing token when the coach is NOT auto-provisioned
+  // (pure local dev with no /api/token endpoint and no relay). On prod/SIT the
+  // backend mints the token, so a missing pasted token is a non-issue.
+  const showTokenBanner = !authToken && !coachAutoProvisioned() && !tokenBannerDismissed;
 
   const start = () => {
     // Unlock the AudioContext INSIDE this tap gesture so iOS Safari will play

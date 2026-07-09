@@ -492,52 +492,252 @@ describe('CoachLiveClient pacing gate / queue', () => {
     expect(dispatch.mock.calls[0][0].id).toBe('a');
   });
 
+  /** The FIFO queue contents (ids), oldest first. */
+  function queueIds(client: CoachLiveClient): string[] {
+    return (client as unknown as { queue: Shot[] }).queue.map((s) => s.id);
+  }
+
   it('queues (does not dispatch) while the coach is still speaking', () => {
     const { client, dispatch } = connectedClient();
     vi.spyOn(audioPlayer, 'isSpeaking').mockReturnValue(true);
     client.sendShotForCoaching(shot({ id: 'a', index: 1 }));
     expect(dispatch).not.toHaveBeenCalled();
-    expect((client as unknown as { queuedShot: Shot | null }).queuedShot?.id).toBe('a');
+    expect(queueIds(client)).toEqual(['a']);
   });
 
-  it('keeps only the latest queued shot while blocked (freshest-wins)', () => {
+  it('keeps EVERY queued shot in FIFO order while blocked (no drops — coach every shot)', () => {
     const { client, dispatch } = connectedClient();
     vi.spyOn(audioPlayer, 'isSpeaking').mockReturnValue(true);
     client.sendShotForCoaching(shot({ id: 'a', index: 1 }));
     client.sendShotForCoaching(shot({ id: 'b', index: 2 }));
     client.sendShotForCoaching(shot({ id: 'c', index: 3 }));
     expect(dispatch).not.toHaveBeenCalled();
-    expect((client as unknown as { queuedShot: Shot | null }).queuedShot?.id).toBe('c');
-    expect((client as unknown as { queuedReplaced: number }).queuedReplaced).toBe(2);
+    // All three retained, oldest first — nothing dropped (v0.7 freshest-wins gone).
+    expect(queueIds(client)).toEqual(['a', 'b', 'c']);
   });
 
-  it('flushes the queued shot when playback finishes (onPlaybackDone)', () => {
+  it('ignores a duplicate send of a shot already waiting in the queue', () => {
+    const { client } = connectedClient();
+    vi.spyOn(audioPlayer, 'isSpeaking').mockReturnValue(true);
+    client.sendShotForCoaching(shot({ id: 'a', index: 1 }));
+    client.sendShotForCoaching(shot({ id: 'a', index: 1 })); // same id again
+    expect(queueIds(client)).toEqual(['a']);
+  });
+
+  it('flushes the queue in FIFO order, ONE shot per playback-done (coach every shot, in turn)', () => {
     const { client, dispatch } = connectedClient();
     const speaking = vi.spyOn(audioPlayer, 'isSpeaking').mockReturnValue(true);
     client.sendShotForCoaching(shot({ id: 'a', index: 1 }));
     client.sendShotForCoaching(shot({ id: 'b', index: 2 }));
+    client.sendShotForCoaching(shot({ id: 'c', index: 3 }));
     expect(dispatch).not.toHaveBeenCalled();
-    // Coach finished speaking → gate opens → the freshest queued shot dispatches.
+
+    // Gate opens: the OLDEST queued shot dispatches first (FIFO, not freshest).
     speaking.mockReturnValue(false);
     audioPlayer.onPlaybackDone?.();
     expect(dispatch).toHaveBeenCalledTimes(1);
-    expect(dispatch.mock.calls[0][0].id).toBe('b');
-    expect((client as unknown as { queuedShot: Shot | null }).queuedShot).toBeNull();
+    expect(dispatch.mock.calls[0][0].id).toBe('a');
+    expect(queueIds(client)).toEqual(['b', 'c']);
+
+    // Each subsequent playback-done drains the next in order — nothing skipped.
+    audioPlayer.onPlaybackDone?.();
+    expect(dispatch.mock.calls[1][0].id).toBe('b');
+    audioPlayer.onPlaybackDone?.();
+    expect(dispatch.mock.calls[2][0].id).toBe('c');
+    expect(queueIds(client)).toEqual([]);
+  });
+
+  it('dispatches at most one shot per gate-open (pacing gate intact)', () => {
+    const { client, dispatch } = connectedClient();
+    // isSpeaking stays false, but a turn is already in flight (pendingShotId set):
+    // the gate must still hold every queued shot until the turn finalizes.
+    vi.spyOn(audioPlayer, 'isSpeaking').mockReturnValue(false);
+    (client as unknown as { pendingShotId: string | null }).pendingShotId = 'in-flight';
+    client.sendShotForCoaching(shot({ id: 'a', index: 1 }));
+    client.sendShotForCoaching(shot({ id: 'b', index: 2 }));
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(queueIds(client)).toEqual(['a', 'b']);
+  });
+
+  it('bounds memory with a soft cap of 30, dropping the OLDEST when the coach falls far behind', () => {
+    const { client } = connectedClient();
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+    vi.spyOn(audioPlayer, 'isSpeaking').mockReturnValue(true);
+    for (let i = 1; i <= 32; i += 1) {
+      client.sendShotForCoaching(shot({ id: `s${i}`, index: i }));
+    }
+    const ids = queueIds(client);
+    expect(ids).toHaveLength(30);
+    // The two OLDEST (s1, s2) were dropped; the freshest 30 survive, in order.
+    expect(ids[0]).toBe('s3');
+    expect(ids[29]).toBe('s32');
+    expect(debug).toHaveBeenCalled();
+    expect((client as unknown as { droppedForCap: number }).droppedForCap).toBe(2);
   });
 
   it('clears the queue on disconnect and never dispatches it afterward', () => {
     const { client, dispatch } = connectedClient();
     vi.spyOn(audioPlayer, 'isSpeaking').mockReturnValue(true);
     client.sendShotForCoaching(shot({ id: 'a', index: 1 }));
-    expect((client as unknown as { queuedShot: Shot | null }).queuedShot?.id).toBe('a');
+    client.sendShotForCoaching(shot({ id: 'b', index: 2 }));
+    expect(queueIds(client)).toEqual(['a', 'b']);
 
     client.disconnect();
-    expect((client as unknown as { queuedShot: Shot | null }).queuedShot).toBeNull();
-    expect((client as unknown as { queuedReplaced: number }).queuedReplaced).toBe(0);
+    expect(queueIds(client)).toEqual([]);
+    expect((client as unknown as { droppedForCap: number }).droppedForCap).toBe(0);
 
     // A late playback-done signal must not resurrect a dead/stale shot.
     audioPlayer.onPlaybackDone?.();
     expect(dispatch).not.toHaveBeenCalled();
+  });
+});
+
+// --- connect flush: the FIRST shot (bug B) ----------------------------------
+//
+// The first completed swing almost always finishes while connect() is still in
+// flight (token fetch / socket open), so it is enqueued BEFORE the client is
+// connected. It must NOT be lost: it sits in the FIFO and flushes the instant
+// the session goes live. (Under v0.7 freshest-wins a second early swing would
+// replace and DROP the first — that was bug B: "ช็อตแรกไม่อ่านเลย".)
+
+describe('CoachLiveClient connect flush (first shot is never dropped)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    audioPlayer.onPlaybackDone = null;
+  });
+
+  it('a shot enqueued while DISCONNECTED dispatches once the relay session goes live', async () => {
+    vi.stubEnv('VITE_LIVE_TRANSPORT', 'relay');
+    vi.spyOn(audioPlayer, 'isSpeaking').mockReturnValue(false);
+
+    // Minimal fake relay WS that opens + acks setup on a microtask.
+    class FakeWS {
+      static OPEN = 1;
+      static instances: FakeWS[] = [];
+      readyState = 0;
+      url: string;
+      sent: string[] = [];
+      onopen: (() => void) | null = null;
+      onmessage: ((ev: { data: unknown }) => void) | null = null;
+      onerror: ((ev: unknown) => void) | null = null;
+      onclose: ((ev: unknown) => void) | null = null;
+      constructor(url: string) {
+        this.url = url;
+        FakeWS.instances.push(this);
+        queueMicrotask(() => {
+          this.readyState = 1;
+          this.onopen?.();
+        });
+      }
+      send(s: string): void {
+        this.sent.push(s);
+      }
+      close(): void {
+        this.readyState = 3;
+        this.onclose?.({ code: 1000, reason: '' });
+      }
+    }
+    vi.stubGlobal('WebSocket', FakeWS);
+    vi.stubGlobal('fetch', vi.fn());
+
+    const client = new CoachLiveClient();
+    const dispatch = vi.fn();
+    (client as unknown as { dispatchShot: (s: Shot) => void }).dispatchShot = dispatch;
+
+    // First swing completes BEFORE connect — not connected yet, so it queues.
+    client.sendShotForCoaching(shot({ id: 'first', index: 1 }));
+    expect(dispatch).not.toHaveBeenCalled();
+    expect((client as unknown as { queue: Shot[] }).queue.map((s) => s.id)).toEqual(['first']);
+
+    // Now connect: the awaited session goes live and connect() flushes the queue.
+    await client.connect();
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch.mock.calls[0][0].id).toBe('first');
+
+    client.disconnect();
+  });
+});
+
+// --- end-to-end shot numbering (TASK 4) -------------------------------------
+//
+// Bug A on court: card labeled "ช็อต N" showed a critique whose spoken opener
+// said "ช็อตที่ N-1". This walk proves the numbering is self-consistent inside
+// liveClient: for every shot, the OPENER in the dispatched prompt names that
+// shot's own index AND the finalized critique attaches to that same shot's id +
+// its contact capture — no shift. It is the positive regression guard the FIFO
+// refactor must not break (attribution code is untouched by that refactor).
+
+describe('end-to-end shot numbering (each critique lands on its OWN shot)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+    audioPlayer.onPlaybackDone = null;
+    appStore.setState(() => ({ shots: [] }));
+  });
+
+  function connectedClient() {
+    const client = new CoachLiveClient();
+    (client as unknown as { connected: boolean }).connected = true;
+    const sent: string[] = [];
+    const session = {
+      sendRealtimeInput: vi.fn(),
+      sendClientContent: vi.fn((p: { turns: unknown }) => {
+        sent.push(typeof p.turns === 'string' ? p.turns : JSON.stringify(p.turns));
+      }),
+      close: vi.fn(),
+    };
+    (client as unknown as { session: unknown }).session = session;
+    return { client, session, sent };
+  }
+
+  /** Simulate one clean coach turn: streamed transcript then turnComplete. */
+  function feedTurn(client: CoachLiveClient, transcript: string) {
+    const hm = (
+      client as unknown as { handleMessage: (m: unknown) => void }
+    ).handleMessage.bind(client);
+    hm({ serverContent: { outputTranscription: { text: transcript } } });
+    hm({ serverContent: { turnComplete: true } });
+  }
+
+  it('walks 3 sequential shots: each prompt opener names its own index, each critique attaches to its own shot + contact capture', () => {
+    vi.spyOn(audioPlayer, 'isSpeaking').mockReturnValue(false);
+    appStore.setState((s) => ({
+      settings: { ...s.settings, sendContactFrame: true },
+      lang: 'th',
+    }));
+
+    const shots = [1, 2, 3].map((n) =>
+      shot({
+        id: `shot-${n}`,
+        index: n,
+        type: 'forehand',
+        captures: [capture('contact', 200, { id: `cap-contact-${n}`, shotId: `shot-${n}` })],
+      }),
+    );
+    // Seed the store so attachCoaching / attachCaptureCritique have real targets.
+    appStore.setState(() => ({ shots }));
+
+    const { client, sent } = connectedClient();
+
+    shots.forEach((s, i) => {
+      client.sendShotForCoaching(s);
+      // The prompt dispatched THIS turn opens by naming THIS shot's index.
+      expect(sent[i]).toContain(`ช็อตที่ ${s.index}`);
+      // Coach speaks a shot-specific line, then the turn completes.
+      feedTurn(client, `ช็อตที่ ${s.index} โฟร์แฮนด์ ดีมาก`);
+    });
+
+    // Exactly three turns dispatched, in order — nothing dropped, nothing shifted.
+    expect(sent).toHaveLength(3);
+
+    for (const s of appStore.getState().shots) {
+      const expected = `ช็อตที่ ${s.index} โฟร์แฮนด์ ดีมาก`;
+      expect(s.coaching?.text).toBe(expected);
+      const contact = s.captures.find((c) => c.phase === 'contact');
+      expect(contact?.critique).toBe(expected);
+    }
   });
 });
 
@@ -728,7 +928,11 @@ describe('relay frame serialization (mirrors the SDK Vertex wire format)', () =>
   it('buildRelaySetupFrame pins responseModalities/outputAudioTranscription + carries systemInstruction', () => {
     const frame = buildRelaySetupFrame('gemini-live-2.5-flash', 'COACH PERSONA TEXT');
     expect(frame.setup.model).toBe('gemini-live-2.5-flash');
-    expect(frame.setup.generationConfig).toEqual({ responseModalities: ['AUDIO'] });
+    expect(frame.setup.generationConfig).toEqual({
+      responseModalities: ['AUDIO'],
+      // Voice pinned to Charon (user-chosen 2026-07-10) — default voice drifts.
+      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Charon' } } },
+    });
     // outputAudioTranscription MUST be present (empty object) to get transcript back.
     expect(frame.setup.outputAudioTranscription).toEqual({});
     // systemInstruction shaped exactly as contentToVertex(tContent(string)).
