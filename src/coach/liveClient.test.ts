@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — coach prompt builder tests (v0.6 whole-swing reading)
+// ADGE Tennis — coach prompt builder tests (v0.6 whole-swing reading)
 //
 // Pure-function coverage for the per-swing coaching payload:
 //   • orderedCaptures    — canonical phase ordering, stable within a phase

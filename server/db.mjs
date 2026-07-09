@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — Postgres access (metadata only; NO blobs).
+// ADGE Tennis — Postgres access (metadata only; NO blobs).
 //
 // Lazy singleton pg Pool, created ONLY when DATABASE_URL is set. Neon/Supabase
 // serverless free tier: TLS required, tiny pool, cold-disconnect tolerant. Any
@@ -16,6 +16,21 @@ import pg from 'pg';
 const { Pool } = pg;
 
 const CONN = process.env.DATABASE_URL || '';
+
+/**
+ * DB schema isolation (env DB_SCHEMA). 'public' (default) = production behavior,
+ * byte-identical to before this env existed: no connect hook, no CREATE SCHEMA.
+ * SIT sets DB_SCHEMA=sit so its rows live in a separate Postgres schema on the
+ * SAME database. The value is string-interpolated into SQL (identifiers cannot
+ * be parameterized), so it is sanitized to a strict identifier here — that
+ * regex IS the injection guard. Anything invalid falls back to 'public'.
+ */
+const DB_SCHEMA = (() => {
+  const raw = (process.env.DB_SCHEMA || 'public').trim();
+  if (/^[a-z_][a-z0-9_]*$/.test(raw)) return raw;
+  console.warn(`[db] invalid DB_SCHEMA "${raw}" — falling back to "public"`);
+  return 'public';
+})();
 
 /** Lazy singleton — undefined until first use, null when no DATABASE_URL. */
 let pool;
@@ -42,6 +57,17 @@ function getPool() {
   pool.on('error', (err) => {
     console.error('[db] idle client error (ignored):', err?.message || err);
   });
+  // Non-default schema (e.g. SIT 'sit'): pin every new connection's search_path
+  // so all unqualified queries resolve into that schema. The Supabase pooler on
+  // :5432 is SESSION mode, so SET persists for the life of the pooled client.
+  // Public = prod: no hook at all (byte-identical to prior behavior).
+  if (DB_SCHEMA !== 'public') {
+    pool.on('connect', (client) => {
+      client.query(`SET search_path TO ${DB_SCHEMA}`).catch((err) => {
+        console.error('[db] failed to set search_path:', err?.message || err);
+      });
+    });
+  }
   return pool;
 }
 
@@ -95,6 +121,12 @@ CREATE TABLE IF NOT EXISTS leaderboard_records (
 /** Create tables/index if absent. No-op (resolves) when DB not configured. */
 export async function migrate() {
   if (!dbReady()) return;
+  // For a non-default schema (SIT), create it first; the search_path hook then
+  // lands the unqualified CREATE TABLE statements inside it. Public = prod: skip
+  // (the schema always exists), keeping migration byte-identical to before.
+  if (DB_SCHEMA !== 'public') {
+    await query(`CREATE SCHEMA IF NOT EXISTS ${DB_SCHEMA}`);
+  }
   await query(MIGRATE_SQL);
 }
 
@@ -117,7 +149,7 @@ export function initDb() {
   }
   migrate()
     .then(() => purgeOld())
-    .then(() => console.log('[db] migrated + purged; cloud history ON'))
+    .then(() => console.log(`[db] migrated + purged; cloud history ON (schema: ${DB_SCHEMA})`))
     .catch((err) => console.error('[db] boot init failed (non-fatal):', err?.message || err));
   const timer = setInterval(() => {
     purgeOld().catch((err) => console.error('[db] periodic purge failed:', err?.message || err));

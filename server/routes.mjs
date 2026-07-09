@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — cloud persistence routes (Postgres + GCS).
+// ADGE Tennis — cloud persistence routes (Postgres + GCS).
 //
 // mountCloudRoutes(app) wires POST/PATCH/GET/DELETE for sessions, shots, clips
 // and history. Body parsers are scoped PER ROUTE (never global) so the raw

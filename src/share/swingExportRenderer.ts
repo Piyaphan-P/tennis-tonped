@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — swing EXPORT renderer (v1.0 history share-a-swing)
+// ADGE Tennis — swing EXPORT renderer (v1.0 history share-a-swing)
 //
 // Renders one history swing into a share-worthy 9:16 (1080×1920) VIDEO that
 // plays the swing clip WITH the coach's recorded voice, laid out like the
@@ -50,10 +50,10 @@ export const EXPORT_FPS = 30;
 export const EXPORT_VIDEO_BITS_PER_SECOND = 2_500_000;
 
 /** Public brand handle shown in the footer (mirrors storyRenderer). */
-export const EXPORT_APP_URL = 'tonphet.tennis';
+export const EXPORT_APP_URL = 'adge.tennis';
 
 /** Brand header — the ONE canonical spelling. Never "ต้นเป็ด" / "TonPed". */
-const BRAND = 'ต้นและเพชร Tennis Club';
+const BRAND = 'ADGE Tennis';
 
 const SIDE_PAD = 72;
 const CONTENT_W = EXPORT_W - SIDE_PAD * 2;
@@ -222,7 +222,7 @@ export function pickExportMimeType(
 
 /** Share/save filename for an exported swing, derived from the blob mimeType. */
 export function exportFilename(shotIndex: number, mimeType: string): string {
-  return storyFilename(`tonphet-swing-${shotIndex}`, mimeType);
+  return storyFilename(`adge-swing-${shotIndex}`, mimeType);
 }
 
 // ===========================================================================
@@ -477,7 +477,7 @@ function drawFooter(ctx: CanvasRenderingContext2D, lang: Lang): void {
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = C_DIM;
   ctx.font = `500 28px ${FONT_STACK}`;
-  const tag = lang === 'th' ? 'ฝึกกับโค้ชต้นและเพชร' : 'Coached by Ton & Phet';
+  const tag = lang === 'th' ? 'ฝึกกับโค้ช ADGE' : 'Coached by ADGE';
   ctx.fillText(`${tag}  ·  ${EXPORT_APP_URL}`, EXPORT_W / 2, EXPORT_H - 64);
 }
 

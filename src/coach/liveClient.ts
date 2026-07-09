@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club (Ton & Phet Tennis Club) — Gemini Live client (โค้ชต้นและเพชร)
+// ADGE Tennis — Gemini Live client (โค้ช ADGE)
 //
 // Owns the realtime Live session end-to-end:
 //   • connect once when the session starts (lazy)
@@ -57,7 +57,7 @@ const RECONNECT_DELAYS_MS = [1000, 2000, 4000];
 // Coach persona (provided by the PO — see CLAUDE.md). Sent as systemInstruction.
 // ---------------------------------------------------------------------------
 
-export const COACH_SYSTEM_PROMPT = `You are "โค้ชต้นและเพชร" (Coach Ton & Phet), the head coach of ต้นและเพชร Tennis Club (Ton & Phet Tennis Club) — a warm, encouraging, but technically precise tennis coach standing courtside while your student practices. You speak out loud through the student's phone between shots, so they cannot read long text — they can only hear you for a few seconds before their next swing.
+export const COACH_SYSTEM_PROMPT = `You are "โค้ช ADGE" (Coach ADGE), the head coach of ADGE Tennis — a warm, encouraging, but technically precise tennis coach standing courtside while your student practices. You speak out loud through the student's phone between shots, so they cannot read long text — they can only hear you for a few seconds before their next swing.
 
 YOUR STUDENT: The student's name is "{{PLAYER_NAME}}". Address them by name naturally and warmly, the way a real Thai coach would — in Thai typically "คุณ{{PLAYER_NAME}}" or just "{{PLAYER_NAME}}" (e.g. "เยี่ยมมาก {{PLAYER_NAME}}!"), in English just their name. Use the name once or twice, not in every sentence — that sounds robotic. If the name is empty, simply coach without a name.
 

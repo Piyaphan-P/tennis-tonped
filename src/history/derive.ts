@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — History screen pure derivations (unit-testable).
+// ADGE Tennis — History screen pure derivations (unit-testable).
 //
 // No React, no store, no I/O. Turns cloud shot metadata into the shapes the
 // radar/bar charts and the end-of-session summary render. Target ranges mirror

@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — shotDetector v0.9 tests
+// ADGE Tennis — shotDetector v0.9 tests
 //
 // Covers the v0.9 detector-correctness work (companion to the capture
 // regression suite in shotDetector.capture.test.ts):

@@ -1,12 +1,22 @@
-# CLAUDE.md
+# CLAUDE.md — ADGE Tennis (SIT)
 
 Guidance for Claude Code working in this repo. These instructions override default behavior.
 
+> **This is the `SIT` branch = non-production ("ADGE Tennis").** The `main` branch is production (**ต้นและเพชร Tennis Club** / Ton & Phet). See the "SIT environment" section below for what differs.
+
 ## Project
 
-**ต้นและเพชร Tennis Club** — a mobile-first web app that coaches tennis in realtime. Open the phone camera → local MediaPipe pose overlay (skeleton + joint angles) → per-shot score → a spoken **Gemini Live** coach that says the one thing to fix after each swing → per-session cost tracking in **THB**. Language TH/EN switchable (TH primary). Phase 1 = playing against a ball machine (no machine connectivity this phase).
+**ADGE Tennis** — a mobile-first web app that coaches tennis in realtime. Open the phone camera → local MediaPipe pose overlay (skeleton + joint angles) → per-shot score → a spoken **Gemini Live** coach that says the one thing to fix after each swing → per-session cost tracking in **THB**. Language TH/EN switchable (TH primary). Phase 1 = playing against a ball machine (no machine connectivity this phase).
 
-Brand name is **"ต้นและเพชร Tennis Club"** (Ton & Phet). Never write "ต้นเป็ด" / "TonPed" in UI copy — that was an early mistake.
+Brand name (this branch) is **"ADGE Tennis"** and the coach persona is **"โค้ช ADGE" (Coach ADGE)**. All user-visible copy, HTML title/meta, canvas-rendered brand text, and download filenames use ADGE. Never write "ต้นเป็ด" / "TonPed".
+
+## SIT environment
+
+- **Branch/purpose:** `SIT` = non-production. `main` = production (**ต้นและเพชร Tennis Club**, coach "โค้ชต้นและเพชร"). Do not merge brand strings across branches.
+- **Brand:** UI, `<title>`/meta, story/swing export canvases, and download filenames (`adge-*`) all read **ADGE Tennis**. Coach persona = **โค้ช ADGE**.
+- **DB isolation (shared Supabase Postgres):** env **`DB_SCHEMA=sit`**. `server/db.mjs` sanitizes the value (`/^[a-z_][a-z0-9_]*$/`, else `public`), and when it is non-default pins `SET search_path TO <schema>` on every pooled connection (Supabase pooler :5432 is SESSION mode) and runs `CREATE SCHEMA IF NOT EXISTS <schema>` before the `CREATE TABLE`s. All SQL stays unqualified — the search_path does the isolation. `DB_SCHEMA=public` (default) is byte-identical to prod (no hook, no CREATE SCHEMA).
+- **Cloud Run service (SIT):** `adge-tennis-sit` · clips/audio bucket `adge-tennis-sit-clips` (set via `GCS_BUCKET`). Image path / Artifact Registry (`ton-team/ton-phet/...`) and the git remote are shared infra — unchanged.
+- **Deploy env vars (SIT):** `GCS_BUCKET=adge-tennis-sit-clips`, `DATABASE_URL=<shared>`, `DB_SCHEMA=sit`.
 
 ## Stack
 

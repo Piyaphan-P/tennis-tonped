@@ -1,4 +1,4 @@
-// ต้นและเพชร Tennis Club — token-minting backend + static server
+// ADGE Tennis — token-minting backend + static server
 // -----------------------------------------------------------------------------
 // Serves the built frontend (../dist) AND exposes GET /api/token which mints a
 // short-lived Gemini Live *ephemeral* token (AQ...) from a long-lived API key
@@ -71,5 +71,5 @@ app.use(express.static(dist));
 app.get('*', (_req, res) => res.sendFile(path.join(dist, 'index.html')));
 
 app.listen(PORT, () => {
-  console.log(`ต้นและเพชร Tennis Club server on :${PORT} (token minting: ${minter ? 'on' : 'OFF'})`);
+  console.log(`ADGE Tennis server on :${PORT} (token minting: ${minter ? 'on' : 'OFF'})`);
 });

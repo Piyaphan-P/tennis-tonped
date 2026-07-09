@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — Your Stats card
+// ADGE Tennis — Your Stats card
 //
 // Cross-session aggregate stats (avg score, shot count, % good form, best
 // speed) shown on Home. Data comes from selectUserStats, derived from the

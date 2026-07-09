@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — Session history list
+// ADGE Tennis — Session history list
 //
 // Lists finished sessions persisted to localStorage (StoredSession[]), which
 // auto-expire after 3 days (HISTORY_TTL_MS, pruned in the store on load and

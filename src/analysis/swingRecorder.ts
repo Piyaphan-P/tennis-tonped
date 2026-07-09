@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — swing-clip recorder (composite video: camera +
+// ADGE Tennis — swing-clip recorder (composite video: camera +
 // burned-in colored skeleton)
 //
 // No React. Imperative module in the style of poseLandmarker.ts. One instance

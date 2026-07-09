@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — on-court DETECTION HUD
+// ADGE Tennis — on-court DETECTION HUD
 //
 // THE on-court answer to "did it detect my swing, and if not, why not?". A
 // compact translucent strip (same chip family as TelemetryStrip) mounted in

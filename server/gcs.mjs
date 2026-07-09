@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — GCS clip storage (ADC; bucket "ton-phet-clips").
+// ADGE Tennis — GCS clip storage (ADC; bucket "ton-phet-clips").
 //
 // The bucket has a 3-day lifecycle rule (auto-delete) configured at the bucket
 // level — the server NEVER deletes GCS objects. We only save() and stream().

@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club (Ton & Phet Tennis Club) — cost monitor
+// ADGE Tennis — cost monitor
 // Bridges raw Gemini Live usageMetadata into the store's cost accounting.
 // SOURCE OF TRUTH for cost (see CLAUDE.md): every usageMetadata message that
 // arrives on the Live session is parsed here and folded into cumulative

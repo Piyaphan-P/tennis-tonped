@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — shot detector (phase state machine + shot builder)
+// ADGE Tennis — shot detector (phase state machine + shot builder)
 //
 // No React. Fed one (frame, angles) per pose tick via onFrame(). Runs a
 // dominant-wrist-speed state machine locally (free, instant):

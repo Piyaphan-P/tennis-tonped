@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club (Ton & Phet Tennis Club) — shared type contracts
+// ADGE Tennis — shared type contracts
 // Every module codes against these types. Do not import app code here.
 // ============================================================================
 
@@ -489,7 +489,7 @@ export interface Settings {
   rates: PricingRates;
   /**
    * Player's name, captured on Home. Threaded into the coach systemInstruction
-   * so โค้ชต้นและเพชร addresses the player by name. Persisted to localStorage.
+   * so โค้ช ADGE addresses the player by name. Persisted to localStorage.
    */
   userName: string;
   /** Send 1 JPEG contact frame with each shot's coaching request. */

@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — cloud sync HTTP client (FROZEN CONTRACT).
+// ADGE Tennis — cloud sync HTTP client (FROZEN CONTRACT).
 //
 // Same-origin /api/* calls (dev proxies to :8080 via vite.config). NONE of
 // these functions throw: any network error or a 503 flips a module-level

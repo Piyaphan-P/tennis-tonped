@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — PURE server helpers (cloud persistence).
+// ADGE Tennis — PURE server helpers (cloud persistence).
 //
 // ZERO imports of pg / @google-cloud/storage / express so vitest at the repo
 // root (where server deps are NOT installed) can unit-test this file cleanly.

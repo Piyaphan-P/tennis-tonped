@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club (Ton & Phet Tennis Club) — pricing utilities
+// ADGE Tennis — pricing utilities
 // (pure, standalone)
 //
 // SOURCE OF TRUTH for the billing math (computeBreakdown / deltaTHB) is

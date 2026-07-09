@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — shotDetector capture regression tests
+// ADGE Tennis — shotDetector capture regression tests
 //
 // PERMANENT proof that swing captures are REAL, not just "code exists":
 //   (a) a full synthetic swing with a working getJpeg produces captures for

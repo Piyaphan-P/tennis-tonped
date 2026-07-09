@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — Development Plan (v0.8)
+// ADGE Tennis — Development Plan (v0.8)
 //
 // A player-friendly, shareable review of the latest session:
 //   1. "จุดที่พลาด" — the lowest-scoring shots that have a swing clip (worst
@@ -254,7 +254,7 @@ export default function DevPlanScreen() {
                           hand={hand}
                           data={buildStory(shot, 'miss')}
                           clip={shot.clip}
-                          filenameBase={`ton-phet-shot-${shot.index}`}
+                          filenameBase={`adge-shot-${shot.index}`}
                           label={t('devplan.shareStory')}
                         />
                       }
@@ -299,7 +299,7 @@ export default function DevPlanScreen() {
                 hand={hand}
                 data={buildStory(bestShot, 'best')}
                 clip={bestShot.clip}
-                filenameBase={`ton-phet-highlight-shot-${bestShot.index}`}
+                filenameBase={`adge-highlight-shot-${bestShot.index}`}
                 label={t('devplan.shareSummary')}
                 variant="primary"
               />

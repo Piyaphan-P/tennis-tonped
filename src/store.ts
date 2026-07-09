@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — Zustand store (THE integration hub)
+// ADGE Tennis — Zustand store (THE integration hub)
 //
 // Data flow:
 //   pose loop        -> pushPoseFrame(frame, angles), setPhase, setPoseFps,

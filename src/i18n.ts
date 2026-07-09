@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — i18n (TH primary, EN switchable)
+// ADGE Tennis — i18n (TH primary, EN switchable)
 //
 // Usage in components:
 //   const t = useT();
@@ -22,8 +22,8 @@ import type { Lang } from './types';
 
 const DICT = {
   // --- brand / common ---
-  'brand.name': { th: 'ต้นและเพชร เทนนิส คลับ', en: 'Ton & Phet Tennis Club' },
-  'brand.coach': { th: 'โค้ชต้นและเพชร', en: 'Coach Ton & Phet' },
+  'brand.name': { th: 'ADGE Tennis', en: 'ADGE Tennis' },
+  'brand.coach': { th: 'โค้ช ADGE', en: 'Coach ADGE' },
   'common.close': { th: 'ปิด', en: 'Close' },
   'common.back': { th: 'ย้อนกลับ', en: 'Back' },
   'common.save': { th: 'บันทึก', en: 'Save' },
@@ -39,7 +39,7 @@ const DICT = {
   'lang.en': { th: 'อังกฤษ', en: 'English' },
 
   // --- home screen ---
-  'home.title': { th: 'ต้นและเพชร เทนนิส คลับ', en: 'Ton & Phet Tennis Club' },
+  'home.title': { th: 'ADGE Tennis', en: 'ADGE Tennis' },
   'home.tagline': {
     th: 'โค้ชเทนนิสส่วนตัว วิเคราะห์ฟอร์มเรียลไทม์ข้างคอร์ต',
     en: 'Your personal courtside coach — realtime form analysis',
@@ -164,8 +164,8 @@ const DICT = {
   },
   'coach.error': { th: 'โค้ชขัดข้อง', en: 'Coach error' },
   'coach.persona': {
-    th: 'โค้ชต้นและเพชร: พูดสั้น กระชับ ให้กำลังใจ',
-    en: 'Coach Ton & Phet: short, punchy, encouraging',
+    th: 'โค้ช ADGE: พูดสั้น กระชับ ให้กำลังใจ',
+    en: 'Coach ADGE: short, punchy, encouraging',
   },
 
   // --- capture gallery / critique ---

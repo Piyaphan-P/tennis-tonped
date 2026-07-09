@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — MediaPipe PoseLandmarker bootstrap + pose loop
+// ADGE Tennis — MediaPipe PoseLandmarker bootstrap + pose loop
 //
 // Owns the singleton PoseLandmarker (VIDEO mode) and the per-frame detection
 // loop that feeds the Zustand store. Verified init pattern lives in CLAUDE.md.

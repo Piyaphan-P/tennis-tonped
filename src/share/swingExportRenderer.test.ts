@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — swingExportRenderer pure-helper tests.
+// ADGE Tennis — swingExportRenderer pure-helper tests.
 // Covers the layout / radar geometry / duration+loop / mime / filename logic.
 // The DOM export path (exportSwingVideo) is NOT exercised here — node has no
 // MediaRecorder/canvas.captureStream, so it must return null without throwing.
@@ -159,8 +159,8 @@ describe('pickExportMimeType', () => {
 
 describe('exportFilename', () => {
   it('derives the extension from the mimeType and namespaces by shot index', () => {
-    expect(exportFilename(3, 'video/mp4')).toBe('tonphet-swing-3.mp4');
-    expect(exportFilename(12, 'video/webm;codecs=vp9')).toBe('tonphet-swing-12.webm');
+    expect(exportFilename(3, 'video/mp4')).toBe('adge-swing-3.mp4');
+    expect(exportFilename(12, 'video/webm;codecs=vp9')).toBe('adge-swing-12.webm');
   });
 });
 

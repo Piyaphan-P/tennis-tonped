@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — History screen.
+// ADGE Tennis — History screen.
 // LIST: cloud 3-day session list (offline → localStorage stats-only fallback).
 // DETAIL (cloud only): end-of-session summary (top faults + trend + bar chart)
 // then per-shot clip cards (video + radar + improvement lines + compare).

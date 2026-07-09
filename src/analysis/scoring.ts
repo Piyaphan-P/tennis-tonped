@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club (Ton & Phet Tennis Club) — local rule-based shot
+// ADGE Tennis — local rule-based shot
 // scoring (pure, unit-testable)
 //
 // Turns one contact-frame angle snapshot + peak wrist speed into a 0–100

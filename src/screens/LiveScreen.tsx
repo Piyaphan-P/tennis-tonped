@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — Live screen (COACH IS THE HERO)
+// ADGE Tennis — Live screen (COACH IS THE HERO)
 //
 // Full-bleed 100dvh, no page scroll: the camera <video> sits behind everything
 // with the skeleton overlay on top, and all controls are overlaid with

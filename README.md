@@ -1,4 +1,6 @@
-# 🎾 ต้นและเพชร Tennis Club — AI Realtime Tennis Coach
+# 🎾 ADGE Tennis (SIT) — AI Realtime Tennis Coach
+
+> **SIT (non-production) build.** Brand: **ADGE Tennis**, coach **โค้ช ADGE**, DB isolation via `DB_SCHEMA=sit`. The `main` branch is production (**ต้นและเพชร Tennis Club**).
 
 แอปวิเคราะห์การตีเทนนิสแบบ **realtime** ด้วยกล้องมือถือ: จับโครงกระดูก (pose) วาดเส้นวิเคราะห์ลงบนตัวผู้เล่น วัดมุมแขน–ขา–ลำตัว ให้คะแนนรายช็อต และมี **โค้ช AI (Gemini Live) พูดโต้ตอบเป็นเสียง** คอยบอกว่าควรปรับอะไรหลังตีจบแต่ละวง พร้อม **มอนิเตอร์ค่าใช้จ่าย token เป็นเงินบาท** ต่อเซสชัน
 

@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — pure WAV (PCM16) encoder for coach audio capture.
+// ADGE Tennis — pure WAV (PCM16) encoder for coach audio capture.
 //
 // The Gemini Live coach streams native-audio PCM we already pay for. Instead of
 // re-synthesizing or re-requesting anything, we simply concatenate the raw PCM

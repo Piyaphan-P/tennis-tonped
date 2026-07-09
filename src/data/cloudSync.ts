@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — cloud sync orchestrator (fire-and-forget).
+// ADGE Tennis — cloud sync orchestrator (fire-and-forget).
 //
 // Sits between the Live pose loop and api.ts. NEVER blocks the pose loop or
 // coaching, NEVER rejects into callers (every path is .catch(()=>{})). If the

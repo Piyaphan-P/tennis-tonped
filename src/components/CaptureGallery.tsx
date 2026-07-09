@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — swing-capture gallery (Live overlay strip)
+// ADGE Tennis — swing-capture gallery (Live overlay strip)
 //
 // A horizontally-swipeable strip of LARGE captured swing keyframes, newest
 // first, each with the colored skeleton drawn over the image (via

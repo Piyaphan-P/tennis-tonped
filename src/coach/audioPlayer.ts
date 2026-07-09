@@ -1,7 +1,7 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club (Ton & Phet Tennis Club) — coach audio player
+// ADGE Tennis — coach audio player
 //
-// Gapless PCM playback queue for โค้ชต้นและเพชร's spoken replies.
+// Gapless PCM playback queue for โค้ช ADGE's spoken replies.
 // Input format (from Gemini native-audio Live): PCM 24000 Hz, 16-bit LE, mono,
 // base64-encoded (no data: prefix).
 //

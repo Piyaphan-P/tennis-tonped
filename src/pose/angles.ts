@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — joint angle computation (pure, local, free)
+// ADGE Tennis — joint angle computation (pure, local, free)
 //
 // Consumes a PoseFrame, produces JointAngles in degrees. Real 2D vector math,
 // no side effects, unit-testable. Safe to call ~30x/s. The shot detector reuses

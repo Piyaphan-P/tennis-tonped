@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "version": "0.1.0",
-  "description": "Token-minting + static server for ต้นและเพชร Tennis Club",
+  "description": "Token-minting + static server for ADGE Tennis (SIT)",
   "scripts": {
     "start": "node index.mjs"
   },
