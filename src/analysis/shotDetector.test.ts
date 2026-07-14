@@ -249,6 +249,64 @@ describe('shotDetector post-shot cooldown (v0.9 — stop capturing รัว)', 
 });
 
 // ---------------------------------------------------------------------------
+// 2b. SPEAK-TO-COMPLETION CAPTURE GATE (holdArm, v1.2)
+// ---------------------------------------------------------------------------
+
+describe('shotDetector holdArm gate (v1.2 — no new capture while the coach is speaking)', () => {
+  beforeEach(() => {
+    appStore.getState().startSession();
+  });
+
+  it('a swing while holdArm=true never arms, surfaces ONE coach-speaking discard, and arms again once released', () => {
+    let hold = true;
+    let completed = 0;
+    let swingStarted = 0;
+    const detector = new ShotDetector({
+      onShotCompleted: () => { completed += 1; },
+      onSwingStarted: () => { swingStarted += 1; },
+      holdArm: () => hold,
+    });
+    detector.reset();
+
+    // Two full swings while the coach is "speaking": nothing arms/completes,
+    // exactly ONE HUD event per hold window (latched, not spammed).
+    const afterFirst = feed(detector, FULL_SWING, 0);
+    const afterSecond = feed(detector, FULL_SWING, afterFirst + SHOT_THRESHOLDS.cooldownMs + 4000);
+    expect(completed).toBe(0);
+    expect(swingStarted).toBe(0);
+    const det = appStore.getState().detection;
+    expect(det.swingsDiscarded).toBe(1);
+    expect(det.lastEvent?.reason).toBe('coach-speaking');
+
+    // Coach finished — the very next swing arms and completes normally.
+    hold = false;
+    feed(detector, FULL_SWING, afterSecond + SHOT_THRESHOLDS.cooldownMs + 4000);
+    expect(swingStarted).toBe(1);
+    expect(completed).toBe(1);
+    expect(appStore.getState().detection.lastEvent?.kind).toBe('shot-completed');
+  });
+
+  it('holdArm turning true MID-swing does not abort the swing in flight (checked only at the idle gate)', () => {
+    let hold = false;
+    let completed = 0;
+    const detector = new ShotDetector({
+      onShotCompleted: () => { completed += 1; },
+      holdArm: () => hold,
+    });
+    detector.reset();
+
+    // Arm the swing with the first few frames, then flip the hold on while the
+    // FSM is mid-phase — the swing must still complete.
+    const armFrames = FULL_SWING.slice(0, SHOT_THRESHOLDS.prepEnterFrames + 2);
+    const rest = FULL_SWING.slice(SHOT_THRESHOLDS.prepEnterFrames + 2);
+    const mid = feed(detector, armFrames, 0);
+    hold = true;
+    feed(detector, rest, mid);
+    expect(completed).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 3. FULL-SWING-ONLY completion
 // ---------------------------------------------------------------------------
 

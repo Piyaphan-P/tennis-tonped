@@ -237,6 +237,10 @@ const DICT = {
     th: 'พักระหว่างช็อต (คูลดาวน์)',
     en: 'resting between shots (cooldown)',
   },
+  'hud.discard.coachSpeaking': {
+    th: 'รอโค้ชพูดจบก่อน…',
+    en: 'waiting for the coach to finish…',
+  },
 
   // --- cost (demoted: corner ฿ button + testing panel) ---
   'cost.button': { th: 'ดูค่าใช้จ่าย', en: 'View cost' },

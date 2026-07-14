@@ -576,9 +576,17 @@ export interface CostState {
  * Why the detector discarded a swing ('' when the swing completed as a shot).
  * 'cooldown' = a would-be swing was suppressed because it started inside the
  * post-shot cooldown window (see SHOT_THRESHOLDS.cooldownMs); it never armed a
- * recording and nothing was sent to the coach.
+ * recording and nothing was sent to the coach. 'coach-speaking' = suppressed
+ * because the coach was still speaking the previous critique (speak-to-
+ * completion capture gate, v1.2).
  */
-export type SwingDiscardReason = '' | 'no-contact' | 'too-short' | 'too-long' | 'cooldown';
+export type SwingDiscardReason =
+  | ''
+  | 'no-contact'
+  | 'too-short'
+  | 'too-long'
+  | 'cooldown'
+  | 'coach-speaking';
 
 /** One detector outcome, pushed by ShotDetector.finalize() for the on-court detection HUD. */
 export interface DetectionEvent {

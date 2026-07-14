@@ -321,6 +321,15 @@ export interface ShotDetectorOptions {
    * (LiveScreen handles that via SwingRecorder.dispose()). Absence is a no-op.
    */
   onSwingFinalized?: (completedShotId: string | null) => void;
+  /**
+   * SPEAK-TO-COMPLETION CAPTURE GATE (v1.2, user request): while this returns
+   * true, idle→preparation is blocked — no new swing arms, records, or
+   * captures until the coach finishes the previous critique. Checked only at
+   * the idle gate, so a swing already in flight always completes normally.
+   * A blocked real swing surfaces once on the HUD as 'coach-speaking'.
+   * Absence (or coach offline) = never hold — existing callers unaffected.
+   */
+  holdArm?: () => boolean;
 }
 
 /**
@@ -360,6 +369,12 @@ export class ShotDetector {
   private cooldownPrepStreak = 0;
   private cooldownEventFired = false;
 
+  // holdArm (coach speaking) gate: same streak+latch pattern as cooldown so a
+  // real swing suppressed by the gate is surfaced on the HUD exactly once per
+  // hold window.
+  private holdPrepStreak = 0;
+  private holdEventFired = false;
+
   // FULL-CYCLE guard: a swing only completes (→ coach dispatch) if the FSM
   // actually traversed through follow-through. Set true on entering
   // 'follow-through'; a swing that stalls mid-phase leaves it false and is
@@ -396,6 +411,8 @@ export class ShotDetector {
     this.cooldownUntilMs = 0;
     this.cooldownPrepStreak = 0;
     this.cooldownEventFired = false;
+    this.holdPrepStreak = 0;
+    this.holdEventFired = false;
     this.followThroughReached = false;
     this.clearAccumulated();
     appStore.getState().setPhase('idle');
@@ -484,6 +501,35 @@ export class ShotDetector {
       // Window just elapsed — clear the suppression latch for next time.
       this.cooldownPrepStreak = 0;
       this.cooldownEventFired = false;
+
+      // Coach still speaking the previous critique: hold arming (user request
+      // v1.2 — the machine feeds faster than the coach can talk, so new shots
+      // wait their turn instead of piling up an unreadable backlog). Surfaced
+      // once per hold window so the player sees WHY nothing armed.
+      if (this.opts.holdArm?.()) {
+        if (speed > this.th.prepEnterSpeed) {
+          this.holdPrepStreak += 1;
+          if (this.holdPrepStreak >= this.th.prepEnterFrames && !this.holdEventFired) {
+            this.holdEventFired = true;
+            appStore.getState().pushDetectionEvent({
+              atMs: ts,
+              kind: 'swing-discarded',
+              reason: 'coach-speaking',
+              peakWristSpeed: speed,
+              durationMs: 0,
+              captureCount: 0,
+              shotIndex: 0,
+            });
+          }
+        } else {
+          this.holdPrepStreak = 0;
+        }
+        this.prepStreak = 0;
+        return;
+      }
+      // Hold released — clear the latch for the next hold window.
+      this.holdPrepStreak = 0;
+      this.holdEventFired = false;
 
       if (speed > this.th.prepEnterSpeed) {
         if (this.prepStreak === 0) this.prepStreakStartMs = ts;

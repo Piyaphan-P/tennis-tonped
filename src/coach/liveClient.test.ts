@@ -930,8 +930,8 @@ describe('relay frame serialization (mirrors the SDK Vertex wire format)', () =>
     expect(frame.setup.model).toBe('gemini-live-2.5-flash');
     expect(frame.setup.generationConfig).toEqual({
       responseModalities: ['AUDIO'],
-      // Voice pinned to Charon (user-chosen 2026-07-10) — default voice drifts.
-      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Charon' } } },
+      // Voice pinned to Aoede (user switched to female, 2026-07-14) — default drifts.
+      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } },
     });
     // outputAudioTranscription MUST be present (empty object) to get transcript back.
     expect(frame.setup.outputAudioTranscription).toEqual({});

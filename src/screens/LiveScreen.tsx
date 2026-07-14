@@ -145,6 +145,11 @@ export default function LiveScreen() {
         // Fire-and-forget cloud persistence (metadata now, clip after finish).
         cloudSync.syncShotCompleted(shot);
       },
+      // Speak-to-completion capture gate (v1.2): don't arm a NEW swing while
+      // the coach is still speaking/queued — the ball machine feeds faster
+      // than a critique, and piled-up shots were unreadable on court. Coach
+      // offline → never holds (isBusyCoaching is false when disconnected).
+      holdArm: () => coachLive.isBusyCoaching(),
       // idle→preparation: arm a fresh clip recording.
       onSwingStarted: () => recorder?.startSwing(),
       // finalize(): completed → finish + attach the clip; discarded → drop it.

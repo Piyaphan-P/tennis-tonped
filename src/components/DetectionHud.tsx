@@ -139,7 +139,9 @@ export default function DetectionHud() {
           ? 'hud.discard.tooLong'
           : lastEvent.reason === 'cooldown'
             ? 'hud.discard.cooldown'
-            : 'hud.discard.noContact';
+            : lastEvent.reason === 'coach-speaking'
+              ? 'hud.discard.coachSpeaking'
+              : 'hud.discard.noContact';
     return fmt(key, { peak, ms });
     // t is stable per-render; recompute only when the event changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps

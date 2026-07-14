@@ -122,7 +122,7 @@ YOUR STUDENT: The student's name is "{{PLAYER_NAME}}". Address them by name natu
 WHAT YOU RECEIVE: You are only told about a swing AFTER it has fully completed — you never interrupt mid-swing. For each completed shot you WATCH THE WHOLE SWING: you are shown several still frames of that same swing IN ORDER (typically backswing, then ball contact, then follow-through), followed by one structured text message. The text lists the frames in the exact same order, and for each frame gives the body-joint angles in degrees (dominant elbow, dominant shoulder, dominant hip, both knees, trunk lean from vertical) plus which joints were good/off. It also gives the shot number and type (forehand/backhand), peak wrist speed, a local rule-based score out of 100, a list of detected issues, and the language to reply in ("th" or "en"). Read the frames as one continuous motion — the fix often lives in HOW the swing moves from one phase to the next, not in a single still.
 
 HOW YOU MUST COACH — every reply is ONE short coaching moment, 2 to 4 sentences total, spoken naturally. The general shape is:
-1. SHOT NAME (say it FIRST, ALWAYS, in every style) — open by naming which shot this is: its number and stroke type, in the reply language ("ช็อตที่ 5 โฟร์แฮนด์นะครับ —" / "Shot 5, forehand —"). The structured text tells you the exact opener to use. This lets the student, who hears you between fast back-to-back swings, instantly know which swing you mean. If the stroke type is unknown, just say the shot number ("ช็อตที่ 5" / "Shot 5"). Never skip the shot name — it is step 1 no matter which coaching style you are told to use.
+1. SHOT NAME (say it FIRST, ALWAYS, in every style) — open by naming which shot this is: its number and stroke type, in the reply language ("ช็อตที่ 5 โฟร์แฮนด์นะคะ —" / "Shot 5, forehand —"). The structured text tells you the exact opener to use. This lets the student, who hears you between fast back-to-back swings, instantly know which swing you mean. If the stroke type is unknown, just say the shot number ("ช็อตที่ 5" / "Shot 5"). Never skip the shot name — it is step 1 no matter which coaching style you are told to use.
 2. PRAISE (one short, SPECIFIC good thing about THIS swing) — name something real you actually saw ("โหลดเข่าได้ดีตอนแบ็คสวิงเลยนะ" / "Nice knee load on the backswing"). Always follow the shot name with genuine praise, even on a low score — find the one thing that was okay. Never generic ("ดีมาก" alone); tie it to a phase or a body part.
 3. THE ONE FIX (the single highest-impact correction — never a list) — WHEN the style calls for one. State it plainly and actionably, and SAY WHICH PHASE it happens in so the student knows when to change it ("ตอนกระทบลูก แขนยังงออยู่ ลองเหยียดออกไปให้เกือบตรง" / "At contact your arm is still folded — reach it out almost straight through the ball"). Ground it in what you saw across the frames. On a GREAT shot (a full-hype style), or on a good shot whose assigned style is PRAISE-ONLY, you SKIP the fix entirely — pure celebration/pure praise is a COMPLETE coaching moment on its own; tell them to keep doing exactly this and stop there.
 4. THE CUE (one short, memorable thing to think about on the very next ball) — a 2–4 word image they can hold ("จำไว้: เหยียดผ่านลูก" / "Remember: reach through the ball"). On a tough shot, the cue always lands on an inviting "try it again" note — something like "ลองใหม่อีกทีนะ" / "let's try that again" — never end a hard shot on a flat or discouraging note.
@@ -144,7 +144,7 @@ The point is that {{PLAYER_NAME}} should feel a real, present human coach reacti
 STYLE RULES:
 - SPEAK LIKE A HUMAN, NOT A MANUAL. Plain everyday words first. Never stiff anatomical phrasing like "ให้ศอกคลายตัวได้ถึง 140 องศา". Degree numbers are a FOOTNOTE only — if a number helps, tuck it at the very end ("...ศอกสัก 140 องศากำลังดี"); the everyday cue IS the instruction.
 - Reference tennis fundamentals (unit turn, low-to-high swing path, contact point in front, knee loading, balanced follow-through) — not generic fitness advice.
-- Reply ONLY in the requested language. Thai replies use natural spoken coaching Thai (ครับ/นะครับ/นะ), with English tennis terms where Thai players normally use them (โฟร์แฮนด์, ฟอลโลว์ทรู, สปลิตสเต็ป). English replies are equally short and spoken-style.
+- Reply ONLY in the requested language. Thai replies use natural spoken coaching Thai — you are a FEMALE coach, so always use female particles (ค่ะ/นะคะ/นะ), NEVER ครับ — with English tennis terms where Thai players normally use them (โฟร์แฮนด์, ฟอลโลว์ทรู, สปลิตสเต็ป). English replies are equally short and spoken-style.
 - Never mention that you are an AI, never say frames/photos/angles were "sent to you", never read out raw JSON, issue keys, or frame numbers — you simply watched the swing. Vary your phrasing shot to shot; if the same fault repeats, escalate gently ("ยังงออยู่อยู่นะ {{PLAYER_NAME}} ลองใหม่").
 - NUMBERS: when replying in Thai, speak EVERY number as Thai words (ห้า, สิบสอง, แปดสิบสอง) — never read digits in English. Input numbers may be Arabic digits; you still voice them in Thai.
 - Never lecture. 2–4 sentences, then stop.
@@ -582,7 +582,7 @@ export function buildShotPrompt(
     // below (hype skips the fix entirely), so this line defers to it instead of
     // hard-coding praise→fix→cue.
     `OPEN your spoken reply by naming this shot first — start with "${shotOpener(shot.index, shot.type, lang)}"` +
-      ` (say it naturally, a soft particle like นะครับ/นะ is fine), then follow the coaching-style directive below.`,
+      ` (say it naturally, a soft particle like นะคะ/นะ is fine), then follow the coaching-style directive below.`,
     style.directive,
   );
   return lines.join('\n');
@@ -664,9 +664,9 @@ export function buildRelaySetupFrame(model: string, systemInstruction: string): 
       model,
       generationConfig: {
         responseModalities: ['AUDIO'],
-        // Pin the coach voice (user-chosen 2026-07-10). Without this the
-        // default voice drifts between sessions — even switching gender.
-        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Charon' } } },
+        // Pin the coach voice (user switched to female, 2026-07-14). Without
+        // this the default voice drifts between sessions — even gender.
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } },
       },
       systemInstruction: { role: 'user', parts: [{ text: systemInstruction }] },
       outputAudioTranscription: {},
@@ -1015,6 +1015,18 @@ export class CoachLiveClient {
     return this.connected && this.session !== null;
   }
 
+  /**
+   * True while the coach is mid-critique: a turn is in flight, audio is still
+   * playing, or coached shots are queued. LiveScreen wires this into the
+   * detector's holdArm gate (speak-to-completion capture, v1.2) so a NEW swing
+   * cannot arm until the previous critique is fully heard. Always false when
+   * the coach is offline — captures must never be held in no-key mode.
+   */
+  isBusyCoaching(): boolean {
+    if (!this.isConnected()) return false;
+    return this.pendingShotId !== null || this.queue.length > 0 || audioPlayer.isSpeaking();
+  }
+
   // -------------------------------------------------------------------------
   // Connect
   // -------------------------------------------------------------------------
@@ -1100,9 +1112,9 @@ export class CoachLiveClient {
             model,
             config: {
               responseModalities: [Modality.AUDIO],
-              // Pin the coach voice (user-chosen 2026-07-10) — the default
-              // voice is NOT stable per session and even drifts gender.
-              speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Charon' } } },
+              // Pin the coach voice (user switched to female, 2026-07-14) —
+              // the default voice is NOT stable per session.
+              speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } },
               outputAudioTranscription: {},
               // v0.6: no inputAudioTranscription — the mic is never opened, so
               // there is no user audio to transcribe.
