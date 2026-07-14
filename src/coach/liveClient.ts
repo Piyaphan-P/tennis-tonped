@@ -662,12 +662,9 @@ export function buildRelaySetupFrame(model: string, systemInstruction: string): 
   return {
     setup: {
       model,
-      generationConfig: {
-        responseModalities: ['AUDIO'],
-        // Pin the coach voice (user switched to female, 2026-07-14). Without
-        // this the default voice drifts between sessions — even gender.
-        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } },
-      },
+      // NO voice pin (v1.3.1, user request): prod pins nothing and its default
+      // voice is the female one the user wants — match prod byte-for-byte.
+      generationConfig: { responseModalities: ['AUDIO'] },
       systemInstruction: { role: 'user', parts: [{ text: systemInstruction }] },
       outputAudioTranscription: {},
     },
@@ -1112,9 +1109,8 @@ export class CoachLiveClient {
             model,
             config: {
               responseModalities: [Modality.AUDIO],
-              // Pin the coach voice (user switched to female, 2026-07-14) —
-              // the default voice is NOT stable per session.
-              speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } },
+              // NO voice pin (v1.3.1): prod pins nothing and its default voice
+              // is the female one the user wants — keep SIT identical to prod.
               outputAudioTranscription: {},
               // v0.6: no inputAudioTranscription — the mic is never opened, so
               // there is no user audio to transcribe.
@@ -1228,7 +1224,52 @@ export class CoachLiveClient {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // TURN WATCHDOG (v1.3.1 — root cause of the on-court total freeze).
+  // If the model NEVER answers a dispatched turn (half-dead session, dropped
+  // reply), turnComplete never arrives → pendingShotId stays set forever →
+  // flushQueue is gated shut AND (v1.2+) the capture holdArm gate stays closed:
+  // no coaching, no new captures — the whole pipeline wedges silently. This
+  // timer bounds every in-flight turn: on expiry the turn is declared dead,
+  // attribution/cost are released, an un-spoken shot is requeued at the FRONT,
+  // and the queue re-drains. Armed in dispatchShot, cleared on finalizeTurn /
+  // close / disconnect.
+  // ---------------------------------------------------------------------------
+  private turnWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private clearTurnWatchdog(): void {
+    if (this.turnWatchdogTimer) {
+      clearTimeout(this.turnWatchdogTimer);
+      this.turnWatchdogTimer = null;
+    }
+  }
+
+  private armTurnWatchdog(shotId: string): void {
+    this.clearTurnWatchdog();
+    const TURN_TIMEOUT_MS = 20_000;
+    this.turnWatchdogTimer = setTimeout(() => {
+      this.turnWatchdogTimer = null;
+      if (this.pendingShotId !== shotId) return; // turn finished after all
+      console.warn('[coach] turn watchdog: no reply in 20s — releasing wedged turn');
+      const deadShot = this.store().shots.find((s) => s.id === shotId);
+      this.store().endShotCost(shotId);
+      this.pendingShotId = null;
+      this.pendingContactCaptureId = null;
+      this.pendingStyleId = null;
+      coachAudioTap.discard();
+      // Nothing was spoken → the shot still deserves its critique; retry it
+      // ahead of everything queued behind it. If some text DID stream (model
+      // answered but never sent turnComplete), treat it as spoken-enough and
+      // move on rather than repeating a half-heard critique.
+      if (this.turnText === '' && deadShot) this.requeueFront(deadShot);
+      this.turnText = '';
+      this.turnInterrupted = false;
+      this.flushQueue();
+    }, TURN_TIMEOUT_MS);
+  }
+
   private finalizeTurn(): void {
+    this.clearTurnWatchdog();
     const text = this.turnText;
     const lang = this.requestedLang;
     if (this.pendingShotId) {
@@ -1420,6 +1461,9 @@ export class CoachLiveClient {
       } else {
         session.sendClientContent({ turns, turnComplete: true });
       }
+      // Bound this turn: if the model never replies, the watchdog un-wedges
+      // the pipeline (see armTurnWatchdog).
+      this.armTurnWatchdog(shot.id);
     } catch (e) {
       // Sending failed (socket died between checks) — release attribution and
       // requeue so the next (re)connect can retry the latest shot.
@@ -1490,6 +1534,9 @@ export class CoachLiveClient {
   private handleClose(state: 'error' | 'disconnected', err?: unknown): void {
     this.connected = false;
     this.session = null;
+    // The socket owns the in-flight turn — its watchdog dies with it (the
+    // pendingShotId cleanup below handles the same wedge synchronously).
+    this.clearTurnWatchdog();
     this.store().setConnection(state === 'error' ? 'error' : 'disconnected');
     if (err) {
       // Diagnostics only — the user-facing bilingual message is set by the
@@ -1587,6 +1634,7 @@ export class CoachLiveClient {
     this.sessionLive = false;
     // Invalidate any connect() still awaiting its socket so it self-closes.
     this.epoch += 1;
+    this.clearTurnWatchdog();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;

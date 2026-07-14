@@ -928,11 +928,9 @@ describe('relay frame serialization (mirrors the SDK Vertex wire format)', () =>
   it('buildRelaySetupFrame pins responseModalities/outputAudioTranscription + carries systemInstruction', () => {
     const frame = buildRelaySetupFrame('gemini-live-2.5-flash', 'COACH PERSONA TEXT');
     expect(frame.setup.model).toBe('gemini-live-2.5-flash');
-    expect(frame.setup.generationConfig).toEqual({
-      responseModalities: ['AUDIO'],
-      // Voice pinned to Aoede (user switched to female, 2026-07-14) — default drifts.
-      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } } },
-    });
+    // NO speechConfig: prod pins no voice and its default female voice is the
+    // one the user wants — SIT must stay identical (v1.3.1).
+    expect(frame.setup.generationConfig).toEqual({ responseModalities: ['AUDIO'] });
     // outputAudioTranscription MUST be present (empty object) to get transcript back.
     expect(frame.setup.outputAudioTranscription).toEqual({});
     // systemInstruction shaped exactly as contentToVertex(tContent(string)).
@@ -1213,5 +1211,84 @@ describe('thaiNumberWords', () => {
   it('falls back to digits outside 0-999', () => {
     expect(thaiNumberWords(1000)).toBe('1000');
     expect(thaiNumberWords(-1)).toBe('-1');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v1.3.1: TURN WATCHDOG — a model that never answers can never wedge the
+// pipeline (on court this froze coaching AND, via the holdArm capture gate,
+// all new captures — "ค้างไปเลย").
+// ---------------------------------------------------------------------------
+describe('turn watchdog (silent model can never wedge the pipeline)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    audioPlayer.onPlaybackDone = null;
+    appStore.setState(() => ({ shots: [] }));
+  });
+
+  it('no reply within 20s → pending turn released, un-spoken shot requeued at the front and redispatched', () => {
+    vi.useFakeTimers();
+    vi.spyOn(audioPlayer, 'isSpeaking').mockReturnValue(false);
+
+    const client = new CoachLiveClient();
+    (client as unknown as { connected: boolean }).connected = true;
+    const session = {
+      sendRealtimeInput: vi.fn(),
+      sendClientContent: vi.fn(),
+      close: vi.fn(),
+    };
+    (client as unknown as { session: unknown }).session = session;
+
+    const s1 = shot({ id: 'wedge-1', index: 1 });
+    appStore.setState(() => ({ shots: [s1] }));
+
+    client.sendShotForCoaching(s1);
+    const internals = client as unknown as { pendingShotId: string | null; queue: Shot[] };
+    expect(internals.pendingShotId).toBe('wedge-1');
+    expect(session.sendClientContent).toHaveBeenCalledTimes(1);
+
+    // Model stays silent past the watchdog deadline: the dead turn is released
+    // and the SAME shot (nothing was spoken) is retried — isBusyCoaching (and
+    // with it the capture holdArm gate) can therefore never stick closed.
+    vi.advanceTimersByTime(20_001);
+    expect(session.sendClientContent).toHaveBeenCalledTimes(2);
+    expect(internals.pendingShotId).toBe('wedge-1'); // the retry is in flight
+
+    client.disconnect();
+    expect(internals.pendingShotId).toBeNull();
+  });
+
+  it('a turn that DID stream text before going silent is not repeated — released and the next shot proceeds', () => {
+    vi.useFakeTimers();
+    vi.spyOn(audioPlayer, 'isSpeaking').mockReturnValue(false);
+
+    const client = new CoachLiveClient();
+    (client as unknown as { connected: boolean }).connected = true;
+    const session = {
+      sendRealtimeInput: vi.fn(),
+      sendClientContent: vi.fn(),
+      close: vi.fn(),
+    };
+    (client as unknown as { session: unknown }).session = session;
+
+    const s1 = shot({ id: 'spoke-1', index: 1 });
+    const s2 = shot({ id: 'next-2', index: 2 });
+    appStore.setState(() => ({ shots: [s1, s2] }));
+
+    client.sendShotForCoaching(s1);
+    // Partial transcript streams, then the model dies before turnComplete.
+    (client as unknown as { handleMessage: (m: unknown) => void }).handleMessage({
+      serverContent: { outputTranscription: { text: 'ช็อตที่หนึ่ง สวยมากค่ะ' } },
+    });
+    client.sendShotForCoaching(s2); // waits behind the pending turn
+
+    vi.advanceTimersByTime(20_001);
+    // The half-spoken shot is NOT retried (no repeat of a half-heard critique);
+    // the queue moves on to shot 2.
+    const internals = client as unknown as { pendingShotId: string | null };
+    expect(internals.pendingShotId).toBe('next-2');
+
+    client.disconnect();
   });
 });

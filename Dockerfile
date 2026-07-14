@@ -14,7 +14,11 @@ ENV VITE_TOKEN_ENDPOINT=/api/token
 #   docker buildx build --build-arg LIVE_TRANSPORT=relay \
 #     --build-arg LIVE_MODEL=gemini-live-2.5-flash …
 ARG LIVE_TRANSPORT=""
-ARG LIVE_MODEL=gemini-2.5-flash-native-audio-preview-09-2025
+# SIT default (v1.3.1): Gemini Live 3. Verified 2026-07-14 by spike: Thai female
+# default voice + reads swing JPEGs on the SAME sendRealtimeInput channel the
+# app already uses (IMAGE tokens billed). Prod (main) stays on the 2.5 native-
+# audio preview. Rollback = --build-arg LIVE_MODEL=gemini-2.5-flash-native-audio-preview-09-2025
+ARG LIVE_MODEL=gemini-3.1-flash-live-preview
 ENV VITE_LIVE_TRANSPORT=$LIVE_TRANSPORT
 ENV VITE_GEMINI_LIVE_MODEL=$LIVE_MODEL
 ENV VITE_USD_TO_THB=36.5
