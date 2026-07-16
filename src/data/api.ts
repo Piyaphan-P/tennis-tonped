@@ -133,6 +133,12 @@ export async function uploadShotMeta(
     statuses,
     issues: shot.issues,
     peakWristSpeed: shot.peakWristSpeed,
+    // Purely additive optional field. NOTE: BOTH server backends pick explicit
+    // fields and currently DROP this (dbFirestore.mjs too — it is NOT stored
+    // as-is), so there is no cloud round-trip; History shows speed via the
+    // same-session localMatch fallback only. Kept on the wire so a future
+    // server mapper change is frontend-free.
+    speedKmh: shot.speedKmh,
   };
   const res = await safeFetch(
     `/api/sessions/${encodeURIComponent(sessionId)}/shots`,

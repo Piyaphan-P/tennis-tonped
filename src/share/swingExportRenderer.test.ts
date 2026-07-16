@@ -47,6 +47,15 @@ describe('exportLayout', () => {
     expect(l.fixStartY).toBeLessThan(EXPORT_H);
   });
 
+  it('places the speed line between the shot line and the video box', () => {
+    const l = exportLayout();
+    // below the shot line (larger baseline y = lower on the card)
+    expect(l.speedLineY).toBeGreaterThan(l.headerRowY);
+    // its baseline clears the video box top so the 32px line never overlaps it
+    expect(l.speedLineY).toBeLessThan(l.video.y);
+    expect(l.video.y - l.speedLineY).toBeGreaterThanOrEqual(12);
+  });
+
   it('keeps the radar clear of the video box and gives the fix bullets a wide gap (v1.0.3)', () => {
     const l = exportLayout();
     const videoBottom = l.video.y + l.video.h;

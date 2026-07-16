@@ -122,6 +122,32 @@ export default function SettingsSheet() {
           </div>
         </label>
 
+        {/* --- player height (calibrates swing speed → km/h) --- */}
+        <label className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
+          <span>{t('settings.playerHeight')}</span>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={100}
+            max={230}
+            step={1}
+            style={{ width: 92, textAlign: 'right' }}
+            value={settings.playerHeightCm}
+            onChange={(e) => {
+              // Loose while typing (don't fight intermediate values like "1"→"17");
+              // the hard 100–230 clamp lands on blur (and estimateSpeedKmh + the
+              // store default both re-clamp as a safety net).
+              const n = Math.round(Number(e.target.value));
+              if (Number.isFinite(n) && n > 0) updateSettings({ playerHeightCm: n });
+            }}
+            onBlur={() =>
+              updateSettings({
+                playerHeightCm: Math.min(230, Math.max(100, settings.playerHeightCm)),
+              })
+            }
+          />
+        </label>
+
         {/* --- camera --- */}
         <label className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
           <span>{t('settings.camera')}</span>

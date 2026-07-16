@@ -96,6 +96,9 @@ export interface SwingExportOpts {
   fixLines: string[];
   playerName?: string;
   lang: Lang;
+  /** APPROXIMATE swing speed (km/h). Rendered as a small "≈ N km/h" line under
+   *  the shot line. Omitted/undefined → no line drawn. NOT ball speed. */
+  speedKmh?: number;
   /**
    * Known clip length in ms when available (same-session ShotClip.durationMs).
    * MediaRecorder-produced WebM omits duration from its header, so a played
@@ -133,6 +136,8 @@ export interface ExportLayout {
   radar: RadarLayout;
   /** Baseline y where the header row (index/type + score) sits. */
   headerRowY: number;
+  /** Baseline y of the small "≈ N km/h" line under the shot line (above video). */
+  speedLineY: number;
   /** Baseline y where the fix-bullet block starts. */
   fixStartY: number;
 }
@@ -148,6 +153,8 @@ export function exportLayout(): ExportLayout {
     video: { x: SIDE_PAD, y: 372, w: CONTENT_W, h: 680 },
     radar: { cx: EXPORT_W / 2, cy: 1268, r: 118, labelFactor: 1.34 },
     headerRowY: 318,
+    // Small speed line sits between the shot line (318) and the video box (372).
+    speedLineY: 358,
     fixStartY: 1560,
   };
 }
@@ -327,6 +334,25 @@ function drawTitleRow(
   ctx.fillText(fitText(ctx, shotLine, leftMaxW), SIDE_PAD, rowY);
 }
 
+/**
+ * Small "≈ N km/h" line under the shot line. Approximate HAND speed (not ball
+ * speed) — always prefixed "≈". No-ops when speed is absent/non-finite.
+ */
+function drawSpeedLine(
+  ctx: CanvasRenderingContext2D,
+  speedKmh: number | undefined,
+  y: number,
+  lang: Lang,
+): void {
+  if (speedKmh === undefined || !Number.isFinite(speedKmh) || speedKmh <= 0) return;
+  const unit = lang === 'th' ? 'กม./ชม.' : 'km/h';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = C_ACCENT;
+  ctx.font = `700 32px ${FONT_STACK}`;
+  ctx.fillText(fitText(ctx, `≈ ${Math.round(speedKmh)} ${unit}`, CONTENT_W), SIDE_PAD, y);
+}
+
 function drawFrameBorder(ctx: CanvasRenderingContext2D, box: StoryRect): void {
   roundRectPath(ctx, box.x, box.y, box.w, box.h, FRAME_RADIUS);
   ctx.strokeStyle = C_BLUE;
@@ -493,6 +519,7 @@ function drawChrome(ctx: CanvasRenderingContext2D, opts: SwingExportOpts, layout
     opts.playerName,
     opts.lang,
   );
+  drawSpeedLine(ctx, opts.speedKmh, layout.speedLineY, opts.lang);
   drawRadar(ctx, opts.radar, opts.lang, layout.radar);
   drawFixLines(ctx, opts.fixLines, layout.fixStartY);
   drawFooter(ctx, opts.lang);

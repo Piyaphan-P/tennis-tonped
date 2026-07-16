@@ -17,12 +17,15 @@ import { useT } from '../i18n';
 import type { I18nKey } from '../i18n';
 import type { DominantHand, ShotClip, SwingCapture } from '../types';
 import { renderCaptureToDataUrl, colorForStatus } from '../analysis/captureRenderer';
+import { formatSpeedKmh } from '../analysis/swingSpeed';
 import CaptureLightbox from './CaptureLightbox';
 
 interface GalleryItem {
   capture: SwingCapture;
   shotIndex: number;
   clip?: ShotClip;
+  /** Shown once per shot (on the contact capture) — approximate km/h. */
+  speedKmh?: number;
 }
 
 interface CaptureGalleryProps {
@@ -55,12 +58,15 @@ export default function CaptureGallery({ variant = 'strip' }: CaptureGalleryProp
         const capture =
           shot.captures.find((c) => c.phase === 'contact') ?? shot.captures[0];
         if (capture) {
-          out.push({ capture, shotIndex: shot.index, clip: shot.clip });
+          out.push({ capture, shotIndex: shot.index, clip: shot.clip, speedKmh: shot.speedKmh });
         }
         continue;
       }
       for (const capture of shot.captures) {
-        out.push({ capture, shotIndex: shot.index });
+        // Show the speed chip once per shot — on the contact keyframe only, so
+        // a clip-less multi-capture shot doesn't repeat it on every frame.
+        const speedKmh = capture.phase === 'contact' ? shot.speedKmh : undefined;
+        out.push({ capture, shotIndex: shot.index, speedKmh });
       }
     }
     return out.reverse();
@@ -99,6 +105,7 @@ export default function CaptureGallery({ variant = 'strip' }: CaptureGalleryProp
             capture={it.capture}
             shotIndex={it.shotIndex}
             clip={it.clip}
+            speedKmh={it.speedKmh}
             isNewest={it.capture.id === newestId}
             dominantHand={dominantHand}
             compact={rail}
@@ -124,6 +131,8 @@ interface CaptureCardProps {
   capture: SwingCapture;
   shotIndex: number;
   clip?: ShotClip;
+  /** Approximate km/h swing speed (undefined = not shown for this card). */
+  speedKmh?: number;
   /** Only the newest clip card autoplays — one active decoder at a time. */
   isNewest?: boolean;
   dominantHand: DominantHand;
@@ -136,12 +145,15 @@ const CaptureCard = memo(function CaptureCard({
   capture,
   shotIndex,
   clip,
+  speedKmh,
   isNewest = false,
   dominantHand,
   compact = false,
   onOpen,
 }: CaptureCardProps) {
   const t = useT();
+  const lang = useAppStore((s) => s.lang);
+  const speedText = formatSpeedKmh(speedKmh, lang);
   const [url, setUrl] = useState<string | null>(null);
   // Clip failed to decode (codec quirk / revoked URL) → show the rendered
   // still instead of a black <video> box. Mirrors CaptureLightbox's fallback.
@@ -263,6 +275,11 @@ const CaptureCard = memo(function CaptureCard({
         <span className="capture-chip num" style={{ color: colorForStatus(s.trunk) }}>
           <em>trunk</em> {trunk}°
         </span>
+        {speedText && (
+          <span className="capture-chip num" style={{ color: 'var(--accent)' }}>
+            <em>{t('speed.label')}</em> {speedText}
+          </span>
+        )}
       </div>
       <figcaption className={`capture-critique${critiquePending ? ' capture-pulse' : ''}`}>
         {critique}

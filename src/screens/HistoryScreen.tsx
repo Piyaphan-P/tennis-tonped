@@ -17,6 +17,7 @@ import {
   overallSummary,
   formatSessionDate,
 } from '../history/derive';
+import { formatSpeedKmh } from '../analysis/swingSpeed';
 import RadarChart from '../components/charts/RadarChart';
 import BarChart from '../components/charts/BarChart';
 import SwingExportButton from '../components/SwingExportButton';
@@ -348,12 +349,19 @@ function DetailView({ id, onBack }: { id: string; onBack: () => void }) {
           const typeLabel = shot.type === 'unknown' ? '' : t(`shot.${shot.type}` as I18nKey);
           const radar = radarData(shot.angles, shot.peakWristSpeed, dominantHand);
           const localMatch = localShotFor(shot);
+          // Cloud round-trip may not carry speed → prefer the same-session local
+          // shot; either may be undefined (out-of-frame body) → chip hidden.
+          const speedText = formatSpeedKmh(localMatch?.speedKmh ?? shot.speedKmh, lang);
           return (
             <div key={shot.id} className="clip-card">
               <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
                 <span className="dim" style={{ fontSize: '0.85rem' }}>
                   #{shot.idx}
                   {typeLabel ? ` · ${typeLabel}` : ''}
+                  {speedText ? ` · ` : ''}
+                  {speedText && (
+                    <span style={{ color: 'var(--accent)' }}>{speedText}</span>
+                  )}
                 </span>
                 <ScoreBadge score={shot.score} />
               </div>
@@ -415,6 +423,7 @@ function DetailView({ id, onBack }: { id: string; onBack: () => void }) {
                     fixLines: lines,
                     playerName: detail.userName,
                     lang,
+                    speedKmh: localMatch?.speedKmh ?? shot.speedKmh,
                     clipDurationMs: localMatch?.clip?.durationMs,
                   }}
                 />

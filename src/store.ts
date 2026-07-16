@@ -24,6 +24,7 @@
 
 import { create } from 'zustand';
 import { HISTORY_TTL_MS } from './types';
+import { clampHeightCm } from './analysis/swingSpeed';
 import type {
   AngleStatuses,
   CompareClipRef,
@@ -62,6 +63,7 @@ import type {
 
 const LS_LANG = 'tp.lang';
 const LS_USER_NAME = 'tp.userName';
+const LS_PLAYER_HEIGHT = 'tp.playerHeightCm';
 const LS_HISTORY = 'tp.history';
 
 function lsGet(key: string): string | null {
@@ -282,6 +284,9 @@ const DEFAULT_SETTINGS: Settings = {
   sendContactFrame: true,
   coachVoiceOn: true,
   dominantHand: 'right',
+  playerHeightCm: clampHeightCm(
+    lsGet(LS_PLAYER_HEIGHT) != null ? Number(lsGet(LS_PLAYER_HEIGHT)) : undefined,
+  ),
   cameraFacing: 'user',
   focusShot: 'forehand',
 };
@@ -602,8 +607,14 @@ export const useAppStore = create<AppState>()((set) => ({
   },
   setScreen: (screen) => set({ screen }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
-  updateSettings: (patch) =>
-    set((s) => ({ settings: { ...s.settings, ...patch } })),
+  updateSettings: (patch) => {
+    // Persist the (stable, physical) player height so km/h calibration survives
+    // reloads — the only session-pref that outlives the session besides userName.
+    if (patch.playerHeightCm != null) {
+      lsSet(LS_PLAYER_HEIGHT, String(patch.playerHeightCm));
+    }
+    set((s) => ({ settings: { ...s.settings, ...patch } }));
+  },
   updateRates: (patch) =>
     set((s) => {
       const rates = { ...s.settings.rates, ...patch };

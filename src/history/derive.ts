@@ -15,6 +15,7 @@ import type {
   SessionImprovement,
   ShotIssue,
 } from '../types';
+import { SPEED_GOOD } from '../analysis/scoring';
 
 // ---------------------------------------------------------------------------
 // Target ranges (mirror scoring.ts rules / evaluateAngleStatuses)
@@ -26,8 +27,13 @@ const SHOULDER = { lo: 60, hi: 110, falloff: 60 } as const;
 const KNEE = { lo: 125, hi: 160, falloff: 60 } as const;
 /** Trunk lean is one-sided: 0° (upright) is ideal, ≤15° still good. */
 const TRUNK = { lo: 0, hi: 15, falloff: 30 } as const;
-/** Peak wrist-speed reference = the scorer's "good" threshold (≥2.5 units/s). */
-const SPEED_TARGET = 2.5;
+/**
+ * Peak wrist-speed reference = the scorer's "good" threshold, imported so the
+ * radar axis can never drift stale from the scorer again. Retuned from the old
+ * hard-coded 2.5 (which pre-dated v0.3 on-court measurement and made every real
+ * swing's speed axis read ~0.5) to SPEED_GOOD (1.1 = the detector contact gate).
+ */
+const SPEED_TARGET = SPEED_GOOD;
 
 function clamp01(n: number): number {
   return n < 0 ? 0 : n > 1 ? 1 : n;

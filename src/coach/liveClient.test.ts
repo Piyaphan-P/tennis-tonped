@@ -225,12 +225,14 @@ describe('buildShotPrompt', () => {
   });
 });
 
-// --- selectCoachingStyle (v0.9 communication variety) -----------------------
+// --- selectCoachingStyle (v0.9 communication variety, widened v3) -----------
 //
-// Pure style picker keyed on (score band × rotation). Four bands, two tonal
-// variants each = ≥8 distinct voices. The load-bearing guarantee: two
-// CONSECUTIVE shots never share a style — tested at a CONSTANT score (the only
-// case a naive design could repeat), where the rotation must still alternate.
+// Pure style picker keyed on (score band × rotation). Four bands, 7–8 tonal
+// variants each = ≥30 distinct voices (v3 widening — a 1-hour session's
+// ~150–200 critiques concentrate 60–70% in one band, so even 3–4 variants/band
+// repeated too often). The load-bearing guarantee: two CONSECUTIVE shots never
+// share a style — tested at a CONSTANT score (the only case a naive design
+// could repeat), where the rotation must still alternate.
 
 describe('selectCoachingStyle', () => {
   it('maps score to the right band', () => {
@@ -244,21 +246,29 @@ describe('selectCoachingStyle', () => {
     expect(selectCoachingStyle(0, 0).band).toBe('encourage');
   });
 
-  it('great shots (hype band) carry NO fix directive', () => {
-    const s = selectCoachingStyle(90, 0);
-    expect(s.band).toBe('hype');
-    expect(s.directive).toMatch(/NO correction|do NOT give any correction/);
+  it('every hype variant carries NO fix directive (not just the first)', () => {
+    for (const s of COACHING_STYLES.hype) {
+      expect(s.directive).toMatch(/NO correction|do NOT give any correction/i);
+    }
   });
 
-  it('the palette exposes at least 14 distinct style voices (variety v2)', () => {
+  it('the palette exposes at least 30 distinct style voices (variety v3)', () => {
     const all = Object.values(COACHING_STYLES).flat();
     const ids = all.map((v) => v.id);
-    expect(ids.length).toBeGreaterThanOrEqual(14);
+    expect(ids.length).toBeGreaterThanOrEqual(30);
     expect(new Set(ids).size).toBe(ids.length); // all unique
-    // every band holds ≥3 tonal variants (so same-band rotation can alternate
-    // AND the stateful recentIds window of 3 never starves a band)
+    // every band holds ≥7 tonal variants (so same-band rotation can alternate
+    // AND the stateful recentIds window of 5 never starves a band)
     for (const variants of Object.values(COACHING_STYLES)) {
-      expect(variants.length).toBeGreaterThanOrEqual(3);
+      expect(variants.length).toBeGreaterThanOrEqual(7);
+    }
+  });
+
+  it('every style directive pins spoken length to the 2–4-sentence / ~4–9s band', () => {
+    const all = Object.values(COACHING_STYLES).flat();
+    for (const s of all) {
+      expect(s.directive).toMatch(/2 to 4 short sentences/);
+      expect(s.directive).toMatch(/4–9 seconds spoken|~4–9s spoken/);
     }
   });
 
@@ -328,13 +338,14 @@ describe('selectCoachingStyle', () => {
     expect(picked.band).toBe('technical');
   });
 
-  it('threading a 3-window of recent ids prevents a same-band repeat several shots later', () => {
-    // Simulate: shot 0 (hype) spoken, shot 1/2 in other bands, shot 3 back to
-    // hype at the SAME index parity that a naive index%length rotation would
-    // have repeated — recentIds must steer it away.
+  it('threading a window of recent ids prevents a same-band repeat several shots later', () => {
+    // Simulate: shot 0 (hype) spoken, several shots in other bands, then back to
+    // hype at the SAME index parity (index === band length) that a naive
+    // index%length rotation would have repeated — recentIds must steer it away.
     const first = selectCoachingStyle(90, 0, []);
     const recent = [first.id];
-    const second = selectCoachingStyle(90, 3, recent); // index 3 ≡ 0 mod 3 variants
+    const hypeLen = COACHING_STYLES.hype.length;
+    const second = selectCoachingStyle(90, hypeLen, recent); // index ≡ 0 mod hypeLen
     expect(second.id).not.toBe(first.id);
   });
 });
@@ -772,15 +783,29 @@ describe('CoachLiveClient.pickCoachingStyle (stateful no-repeat window)', () => 
     }
   });
 
-  it('does not repeat a same-band style within its own 3-entry recency window', () => {
+  it('does not repeat a same-band style within its own 5-entry recency window', () => {
     const client = new CoachLiveClient();
     const ids: string[] = [];
-    for (const idx of [0, 1, 2]) {
+    for (const idx of [0, 1, 2, 3, 4]) {
       ids.push(pick(client, 62, idx).id);
       commit(client);
     }
-    // technical band has ≥3 variants — all three spoken picks in the window must be distinct.
+    // technical band has ≥7 variants — all five spoken picks in the window must be distinct.
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('keeps the recency window capped at exactly 5 entries, evicting the oldest', () => {
+    const client = new CoachLiveClient();
+    const ids: string[] = [];
+    for (const idx of [0, 1, 2, 3, 4, 5]) {
+      ids.push(pick(client, 62, idx).id);
+      commit(client);
+    }
+    const recentIds = (client as unknown as { recentStyleIds: string[] }).recentStyleIds;
+    // Six spoken picks, but the window caps at 5 — the oldest (ids[0]) is evicted.
+    expect(recentIds).toHaveLength(5);
+    expect(recentIds).toEqual(ids.slice(-5));
+    expect(recentIds).not.toContain(ids[0]);
   });
 
   it('a pick that is never spoken (failed send) does not pollute the window', () => {

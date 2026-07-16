@@ -42,6 +42,7 @@ import type {
 } from '../types';
 import { appStore, evaluateAngleStatuses } from '../store';
 import { scoreShot } from './scoring';
+import { estimateSpeedKmh } from './swingSpeed';
 
 // ---------------------------------------------------------------------------
 // Swing keyframe capture
@@ -777,6 +778,15 @@ export class ShotDetector {
         };
       });
 
+      // Approximate km/h swing speed, calibrated from the held contact-frame
+      // landmarks (= the peak-speed frame) + player height. undefined when the
+      // body was out of frame / low visibility. Attach-only; no FSM impact.
+      const speedKmh = estimateSpeedKmh(
+        this.contactLandmarks,
+        this.peakWristSpeed,
+        settings.playerHeightCm,
+      );
+
       const shot: Shot = {
         id,
         index: shots.length + 1,
@@ -786,6 +796,7 @@ export class ShotDetector {
         endMs,
         contactAngles: this.contactAngles as JointAngles,
         peakWristSpeed: this.peakWristSpeed,
+        speedKmh,
         score,
         issues,
         captures,

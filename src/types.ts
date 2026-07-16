@@ -251,6 +251,13 @@ export interface Shot {
   contactAngles: JointAngles;
   /** Peak dominant-wrist speed during the swing (normalized units/s). */
   peakWristSpeed: number;
+  /**
+   * APPROXIMATE swing (hand/wrist) speed in km/h, calibrated from peakWristSpeed
+   * and the player's height at finalize (src/analysis/swingSpeed.ts). Undefined
+   * when the body was out of frame / low visibility so no estimate was possible.
+   * Always shown with a "≈" prefix — NOT ball speed. See swingSpeed.ts caveats.
+   */
+  speedKmh?: number;
   /** Local rule-based score 0–100. */
   score: number;
   issues: ShotIssue[];
@@ -383,6 +390,9 @@ export interface CloudShot {
   statuses: AngleStatuses;
   issues: ShotIssue[];
   peakWristSpeed: number;
+  /** APPROXIMATE swing speed (km/h) if the server persisted it; else undefined
+   *  (cloud round-trip may not carry it — same-session shots always have it). */
+  speedKmh?: number;
   hasClip: boolean;
   clipMime: string | null;
   /** True when the coach's spoken critique WAV is stored for this shot. */
@@ -497,6 +507,11 @@ export interface Settings {
   /** Play coach audio (off = transcript only, cheaper UX but same tokens). */
   coachVoiceOn: boolean;
   dominantHand: DominantHand;
+  /**
+   * Player height in cm (clamped 100–230, default 170). Used ONLY to calibrate
+   * normalized wrist speed into an approximate km/h swing speed. Persisted.
+   */
+  playerHeightCm: number;
   /** 'user' = front camera (default: player props phone facing themself). */
   cameraFacing: 'user' | 'environment';
   /** Shot the player is drilling this session. */

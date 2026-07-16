@@ -17,6 +17,33 @@
 import type { DominantHand, JointAngles, ShotIssue, ShotType } from '../types';
 
 // ---------------------------------------------------------------------------
+// Peak-wrist-speed thresholds — RETUNED v1.0.4 (2026-07-16)
+//
+// STALE-TUNING FIX. The old rule penalized peak < 2.0 (full fault) / < 2.5
+// (warn). Those numbers predate the v0.3 on-court tuning, which MEASURED real
+// EMA-smoothed phone-swing peaks at ~0.8–1.6 units/s and retuned the shot
+// detector's contact gate 2.0 -> 1.1 (SHOT_THRESHOLDS.contactMinPeakSpeed).
+// The scorer was never retuned, so EVERY real swing ate a 15-pt fault + a
+// "สวิงช้าไป" issue and the history speed axis read ~0.5 for everyone.
+//
+// The peak handed to scoreShot() is `prevSpeed` at the gated contact tick, and
+// the detector only records a contact (hence only completes a shot) when that
+// value is >= contactMinPeakSpeed (1.1). So a completed shot's peak is ALWAYS
+// >= 1.1. Therefore the "good" bar MUST equal the gate (1.1): any higher value
+// is a guaranteed permanent penalty floor — a fresh recurrence of this very
+// bug. SPEED_GOOD is the single source of truth; scoring.test.ts asserts it
+// stays == SHOT_THRESHOLDS.contactMinPeakSpeed so the two can't drift again,
+// and history/derive.ts imports it as the radar's speed target.
+// ---------------------------------------------------------------------------
+
+/** No speed penalty at/above this. Anchored to the detector's contact gate. */
+export const SPEED_GOOD = 1.1;
+/** Below this = full "swing-faster" fault (a genuinely limp swing / glitch). */
+export const SPEED_WARN = 0.8;
+/** Human-readable good-speed target string reused in RULES + issue payloads. */
+export const SPEED_TARGET_LABEL = '≥1.1 units/s';
+
+// ---------------------------------------------------------------------------
 // Rule table (display metadata — DevPlan/Settings render this)
 // ---------------------------------------------------------------------------
 
@@ -69,7 +96,7 @@ export const RULES: ScoringRuleDef[] = [
     label: 'Peak wrist speed',
     labelTH: 'ความเร็วข้อมือสูงสุด',
     weight: 15,
-    target: '≥2.5 units/s',
+    target: SPEED_TARGET_LABEL,
     unit: 'units/s',
   },
 ];
@@ -218,23 +245,24 @@ export function scoreShot(input: ScoreShotInput): ScoreShotResult {
   }
 
   // --- 5. Peak wrist speed (weight 15) ------------------------------------
-  if (peakWristSpeed < 2.0) {
+  // Thresholds anchored to the detector's contact gate (see SPEED_GOOD above).
+  if (peakWristSpeed < SPEED_WARN) {
     totalPenalty += penaltyPoints(WEIGHT['swing-faster'], 1);
     issues.push({
       key: 'swing-faster',
       severity: 'fault',
       measured: peakWristSpeed,
-      target: '≥2.5 units/s',
+      target: SPEED_TARGET_LABEL,
       messageTH: 'สวิงช้าไปหน่อย เร่งความเร็วช่วงเข้าหาลูกให้มากขึ้น',
       messageEN: 'Swing was slow — accelerate more through the ball.',
     });
-  } else if (peakWristSpeed < 2.5) {
+  } else if (peakWristSpeed < SPEED_GOOD) {
     totalPenalty += penaltyPoints(WEIGHT['swing-faster'], 0.5);
     issues.push({
       key: 'swing-faster',
       severity: 'warn',
       measured: peakWristSpeed,
-      target: '≥2.5 units/s',
+      target: SPEED_TARGET_LABEL,
       messageTH: 'สวิงเร็วขึ้นอีกนิดเพื่อแรงส่งที่ดีกว่า',
       messageEN: 'Swing a bit faster for more pace.',
     });

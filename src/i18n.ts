@@ -369,6 +369,8 @@ const DICT = {
   'settings.usdToThb': { th: 'อัตราแลกเปลี่ยน USD→THB', en: 'USD→THB Rate' },
   'settings.sendFrame': { th: 'ส่งภาพจังหวะสัมผัสลูก', en: 'Send contact frame' },
   'settings.coachVoice': { th: 'เปิดเสียงโค้ช', en: 'Coach voice' },
+  'settings.playerHeight': { th: 'ส่วนสูง (ซม.)', en: 'Height (cm)' },
+  'speed.label': { th: 'สปีด', en: 'speed' },
   'settings.dominantHand': { th: 'มือถนัด', en: 'Dominant hand' },
   'settings.handLeft': { th: 'ซ้าย', en: 'Left' },
   'settings.handRight': { th: 'ขวา', en: 'Right' },

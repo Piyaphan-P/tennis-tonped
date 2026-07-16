@@ -58,6 +58,42 @@ export function angleDeg(a: Landmark, b: Landmark, c: Landmark): number {
 }
 
 /**
+ * Interior angle at vertex `b` (degrees) computed in FULL 3D using the z
+ * coordinate MediaPipe already provides (z ≈ depth normalized by hip width,
+ * negative toward the camera). Same acos-of-dot-product formula as `angleDeg`,
+ * just with the third axis included.
+ *
+ * WHY THIS EXISTS (shoulder-angle fix, v1.0.4): the shoulder angle
+ * hip->shoulder->elbow is meant to measure arm ABDUCTION. On a front-facing
+ * shot the arm extends TOWARD the camera at contact, so the shoulder->elbow
+ * segment is almost parallel to the view axis and its (x,y) projection nearly
+ * vanishes — the 2D `angleDeg` then reads a projection artifact that swings
+ * from ~1° to ~148° for the SAME real ~85° abduction (verified numerically),
+ * pushing essentially every real contact out of the 60–110° "good" window.
+ * Adding z recovers the true, stable angle. When z≈0 for all three points
+ * (person side-on / flat depth) this reduces EXACTLY to `angleDeg`, so it
+ * degrades gracefully rather than trusting noisy depth where there is none.
+ *
+ * Only the shoulder uses this; elbow/knee/hip stay 2D (their segments lie
+ * roughly in the image plane for a front-facing shot and were tuned in 2D).
+ */
+export function angleDeg3D(a: Landmark, b: Landmark, c: Landmark): number {
+  const bax = a.x - b.x;
+  const bay = a.y - b.y;
+  const baz = a.z - b.z;
+  const bcx = c.x - b.x;
+  const bcy = c.y - b.y;
+  const bcz = c.z - b.z;
+  const magBa = Math.hypot(bax, bay, baz);
+  const magBc = Math.hypot(bcx, bcy, bcz);
+  const denom = magBa * magBc;
+  if (denom < 1e-6) return 0;
+  const cos = Math.max(-1, Math.min(1, (bax * bcx + bay * bcy + baz * bcz) / denom));
+  const deg = (Math.acos(cos) * 180) / Math.PI;
+  return Number.isFinite(deg) ? Math.max(0, Math.min(180, deg)) : 0;
+}
+
+/**
  * Angle (degrees) of the segment `bottom`->`top` measured from the vertical
  * axis. 0 = perfectly upright, 90 = horizontal. Image coordinates (y grows
  * downward) are handled via absolute components, so lean is always non-negative.
@@ -118,8 +154,10 @@ export function computeJointAngles(
 
   const leftElbowDeg = angleDeg(lm[LM.LEFT_SHOULDER], lm[LM.LEFT_ELBOW], lm[LM.LEFT_WRIST]);
   const rightElbowDeg = angleDeg(lm[LM.RIGHT_SHOULDER], lm[LM.RIGHT_ELBOW], lm[LM.RIGHT_WRIST]);
-  const leftShoulderDeg = angleDeg(lm[LM.LEFT_HIP], lm[LM.LEFT_SHOULDER], lm[LM.LEFT_ELBOW]);
-  const rightShoulderDeg = angleDeg(lm[LM.RIGHT_HIP], lm[LM.RIGHT_SHOULDER], lm[LM.RIGHT_ELBOW]);
+  // Shoulder (abduction) uses 3D — the 2D projection collapses when the arm
+  // extends toward the camera at contact. See angleDeg3D for the full rationale.
+  const leftShoulderDeg = angleDeg3D(lm[LM.LEFT_HIP], lm[LM.LEFT_SHOULDER], lm[LM.LEFT_ELBOW]);
+  const rightShoulderDeg = angleDeg3D(lm[LM.RIGHT_HIP], lm[LM.RIGHT_SHOULDER], lm[LM.RIGHT_ELBOW]);
   const leftKneeDeg = angleDeg(lm[LM.LEFT_HIP], lm[LM.LEFT_KNEE], lm[LM.LEFT_ANKLE]);
   const rightKneeDeg = angleDeg(lm[LM.RIGHT_HIP], lm[LM.RIGHT_KNEE], lm[LM.RIGHT_ANKLE]);
   const leftHipDeg = angleDeg(lm[LM.LEFT_SHOULDER], lm[LM.LEFT_HIP], lm[LM.LEFT_KNEE]);
