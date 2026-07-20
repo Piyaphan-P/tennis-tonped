@@ -7,7 +7,7 @@
 // attaches req.user = { email, role, displayName } for the ownership checks in
 // routes.mjs. Static assets stay public — the frontend shows login on 401.
 //
-// The /api guard now re-checks the store per request (cached ≤60s): a
+// The /api guard now re-checks the store per request (cached ≤1h): a
 // disabled/deleted/demoted user is revoked within the TTL, not only at the next
 // /api/gate probe. The cookie's role is superseded by the STORED role when the
 // lookup succeeds; a transient store error falls back to trusting the cookie
@@ -35,15 +35,19 @@ const OPEN_PATHS = new Set(['/api/login', '/api/logout', '/healthz']);
 // --- Per-user store cache (UAM revocation) ----------------------------------
 // The cookie is stateless + 90-day, so a disabled/deleted/demoted user would
 // stay effective until expiry. The /api guard consults the store per request,
-// cached here per-email for a short TTL (one backend.getUser per ≤60s per
-// active user — acceptable). Best-effort: a getUser THROW is cached as a
-// failed lookup so the guard trusts the cookie AND we don't re-hit a flapping
-// store on every request. Resolved entries hold the user (or null = deleted).
-const USER_CACHE_TTL_MS = 60_000;
+// cached here per-email for a TTL (one backend.getUser per ≤1h per active
+// user). This TTL is also the MAX revocation delay: after an admin
+// disables/deletes/demotes a user, their live cookie stops working within
+// USER_CACHE_TTL_MS. Set to 1h (PO decision 2026-07-20 — fewer Firestore
+// reads; revocation within the hour is acceptable for this app). Best-effort:
+// a getUser THROW is cached as a failed lookup so the guard trusts the cookie
+// AND we don't re-hit a flapping store on every request. Resolved entries hold
+// the user (or null = deleted).
+const USER_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 const userCache = new Map(); // email → { at, user, failed }
 
 /**
- * Best-effort store read for a cookie's email, cached ≤60s. Returns
+ * Best-effort store read for a cookie's email, cached ≤1h. Returns
  * { user } (user may be null = definitively deleted) or { failed: true } on a
  * transient store error (caller then trusts the cookie). Never throws.
  */
@@ -218,7 +222,7 @@ export function mountAuthGate(app) {
   });
 
   // Guard every other /api/* route; attach the identity for ownership checks.
-  // ASYNC: per request it consults the store (cached ≤60s) so a disabled/
+  // ASYNC: per request it consults the store (cached ≤1h) so a disabled/
   // deleted/demoted user is revoked without waiting for the 90-day cookie to
   // expire. Best-effort — a transient store error falls back to trusting the
   // cookie (see lookupUserCached + evaluateGuard); it never locks users out.
