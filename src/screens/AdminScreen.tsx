@@ -6,7 +6,7 @@
 // cloud offline latch).
 // ============================================================================
 
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useAppStore } from '../store';
 import { useT } from '../i18n';
 import type { I18nKey } from '../i18n';
@@ -26,6 +26,8 @@ interface Msg {
   serverMsg?: string;
 }
 
+type AdminTab = 'players' | 'costs';
+
 /** Map a mutation failure to bilingual copy (server message as fallback). */
 function msgOf(res: api.AuthFailure): Msg {
   if (res.error === 'user_exists') return { kind: 'err', key: 'admin.errUserExists' };
@@ -39,11 +41,15 @@ export default function AdminScreen() {
   const setAuth = useAppStore((s) => s.setAuth);
   const setScreen = useAppStore((s) => s.setScreen);
 
+  const [tab, setTab] = useState<AdminTab>('players');
   const [users, setUsers] = useState<AdminUserRow[] | null | undefined>(undefined);
   const [msg, setMsg] = useState<Msg | null>(null);
   const [busy, setBusy] = useState(false);
   // undefined = loading, null = load failed, else the report (same pattern as users).
   const [usage, setUsage] = useState<api.UsageReport | null | undefined>(undefined);
+  // Cost data loads LAZILY — GET /api/usage is only hit once the Costs tab is
+  // first opened, so opening Admin (Players default) never touches the endpoint.
+  const usageRequested = useRef(false);
 
   // --- add-player form ---
   const [email, setEmail] = useState('');
@@ -56,14 +62,23 @@ export default function AdminScreen() {
   }, []);
 
   const reloadUsage = useCallback(() => {
+    usageRequested.current = true;
     setUsage(undefined);
     api.fetchUsage().then(setUsage);
   }, []);
 
   useEffect(() => {
     reload();
-    reloadUsage();
-  }, [reload, reloadUsage]);
+  }, [reload]);
+
+  /** Switch tabs; the Costs tab lazily kicks off its first /api/usage load. */
+  const selectTab = useCallback(
+    (next: AdminTab) => {
+      setTab(next);
+      if (next === 'costs' && !usageRequested.current) reloadUsage();
+    },
+    [reloadUsage],
+  );
 
   /** Run one mutation, surface its result, refresh the list on success. */
   async function run(action: () => Promise<api.UserMutationResult>, okKey: I18nKey) {
@@ -152,12 +167,38 @@ export default function AdminScreen() {
         </button>
       </div>
 
-      {msg && (
+      {/* --- tab bar (Players | Costs) — Costs kept out of the default view --- */}
+      <div className="admin-tabs" role="tablist" aria-label={t('admin.title')}>
+        <button
+          role="tab"
+          id="admin-tab-players"
+          aria-selected={tab === 'players'}
+          aria-controls="admin-panel-players"
+          className={`admin-tab tap${tab === 'players' ? ' admin-tab--active' : ''}`}
+          onClick={() => selectTab('players')}
+        >
+          {t('admin.tabPlayers')}
+        </button>
+        <button
+          role="tab"
+          id="admin-tab-costs"
+          aria-selected={tab === 'costs'}
+          aria-controls="admin-panel-costs"
+          className={`admin-tab tap${tab === 'costs' ? ' admin-tab--active' : ''}`}
+          onClick={() => selectTab('costs')}
+        >
+          {t('admin.tabCosts')}
+        </button>
+      </div>
+
+      {msg && tab === 'players' && (
         <div role="status" className={`admin-msg admin-msg--${msg.kind}`}>
           {msg.serverMsg ?? t(msg.key)}
         </div>
       )}
 
+      {tab === 'players' ? (
+      <div id="admin-panel-players" role="tabpanel" aria-labelledby="admin-tab-players" className="col" style={{ gap: 'var(--sp-4)' }}>
       {/* --- add player --- */}
       <div className="admin-card">
         <h2>{t('admin.addTitle')}</h2>
@@ -255,7 +296,9 @@ export default function AdminScreen() {
           </div>
         )}
       </div>
-
+      </div>
+      ) : (
+      <div id="admin-panel-costs" role="tabpanel" aria-labelledby="admin-tab-costs">
       {/* --- costs (real Gemini usage uploaded at session end; ≈ THB) --- */}
       <div className="admin-card">
         <h2>{t('admin.costTitle')}</h2>
@@ -329,6 +372,8 @@ export default function AdminScreen() {
           </>
         )}
       </div>
+      </div>
+      )}
     </div>
   );
 }

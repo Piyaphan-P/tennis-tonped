@@ -210,19 +210,27 @@ export const pgBackend = {
     // best-effort — a board failure must not fail the session PATCH.
     if ((Number(shotCount) || 0) > 0) {
       try {
+        // SECURITY: avg_score AND max_score for the DURABLE board are computed
+        // from the STORED shots (avg()/max()), NOT from the client-supplied
+        // avgScore (spoofable). The WHERE ... EXISTS shots gate means a session
+        // with zero shots writes NO leaderboard row (matches the Firestore
+        // path's leaderboardScores→null skip). shot_count = $2.
         await query(
           `INSERT INTO leaderboard_records
              (session_id, user_name, avg_score, max_score, shot_count, played_at)
-           SELECT s.id, s.user_name, $2,
+           SELECT s.id, s.user_name,
+                  COALESCE((SELECT avg(score) FROM shots WHERE session_id = s.id), 0),
                   COALESCE((SELECT max(score) FROM shots WHERE session_id = s.id), 0),
-                  $3, s.started_at
-             FROM sessions s WHERE s.id = $1
+                  $2, s.started_at
+             FROM sessions s
+            WHERE s.id = $1
+              AND EXISTS (SELECT 1 FROM shots WHERE session_id = s.id)
            ON CONFLICT (session_id) DO UPDATE SET
              user_name = EXCLUDED.user_name,
              avg_score = EXCLUDED.avg_score,
              max_score = EXCLUDED.max_score,
              shot_count = EXCLUDED.shot_count`,
-          [id, Number(avgScore) || 0, Number(shotCount) || 0],
+          [id, Number(shotCount) || 0],
         );
       } catch (err) {
         console.error('[routes] leaderboard record (non-fatal):', err?.message || err);
@@ -257,7 +265,32 @@ export const pgBackend = {
     return found.rows[0].session_id;
   },
 
-  async setShotClip(shotId, path, mime) {
+  /**
+   * Single-lookup resolver for the clip/audio routes (mirrors the Firestore
+   * getShotAccess): ONE SELECT returns session_id + existing clip/audio refs.
+   * ownerEmail is always null on the Postgres path (legacy/admin-only, like
+   * getShotOwner). Returns null when the shot does not exist.
+   */
+  async getShotAccess(shotId) {
+    const { rows, rowCount } = await query(
+      `SELECT session_id, clip_path, clip_mime, audio_path, audio_mime FROM shots WHERE id = $1`,
+      [shotId],
+    );
+    if (rowCount === 0) return null;
+    const r = rows[0];
+    return {
+      sessionId: r.session_id,
+      ownerEmail: null,
+      clipPath: r.clip_path ?? null,
+      clipMime: r.clip_mime ?? null,
+      audioPath: r.audio_path ?? null,
+      audioMime: r.audio_mime ?? null,
+    };
+  },
+
+  // sessionId accepted for signature parity with the Firestore backend (which
+  // writes by direct path); Postgres keys on the shot PK and ignores it.
+  async setShotClip(_sessionId, shotId, path, mime) {
     await query(`UPDATE shots SET clip_path = $2, clip_mime = $3 WHERE id = $1`, [
       shotId,
       path,
@@ -265,7 +298,7 @@ export const pgBackend = {
     ]);
   },
 
-  async setShotAudio(shotId, path, mime) {
+  async setShotAudio(_sessionId, shotId, path, mime) {
     await query(`UPDATE shots SET audio_path = $2, audio_mime = $3 WHERE id = $1`, [
       shotId,
       path,

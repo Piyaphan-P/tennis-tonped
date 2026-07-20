@@ -50,9 +50,26 @@ function markOnline(): void {
 }
 
 /**
+ * Auth cookie expired/revoked mid-session (401 on a cloud DATA call). Clear the
+ * stored identity so LoginGate reappears. This is an AUTH failure, NOT offline,
+ * so we never latch offline here. Scoped to safeFetch (the cloud data path):
+ * the auth probes/mutations (fetchGate/login/listUsers/…) use raw fetch and
+ * bypass this, so their own expected 401s never recursively clear auth.
+ * Guarded against SSR / a missing store (never throws).
+ */
+function clearAuthOn401(): void {
+  try {
+    useAppStore.getState().setAuth(null);
+  } catch {
+    /* no store available (e.g. SSR) — nothing to clear */
+  }
+}
+
+/**
  * fetch wrapper: returns the Response on 2xx, or null on any failure. A 503
  * (cloud not configured / server DB error) OR a thrown network error latches
- * offline for 60s. Never throws.
+ * offline for 60s. A 401 clears the auth identity (LoginGate reappears) but
+ * does NOT latch offline. Never throws.
  */
 async function safeFetch(input: string, init?: RequestInit): Promise<Response | null> {
   if (isOffline()) return null;
@@ -60,6 +77,12 @@ async function safeFetch(input: string, init?: RequestInit): Promise<Response | 
     const res = await fetch(input, init);
     if (res.status === 503) {
       latchOffline();
+      return null;
+    }
+    if (res.status === 401) {
+      // Auth, not offline: drop the identity so re-login is prompted; the
+      // offline latch stays untouched so cloud sync resumes after re-login.
+      clearAuthOn401();
       return null;
     }
     if (!res.ok) {

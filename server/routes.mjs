@@ -23,7 +23,7 @@ import {
   sanitizeUsage,
   unavailableBody,
 } from './lib.mjs';
-import { hashPassword, isValidEmail } from './authCore.mjs';
+import { hashPasswordAsync, isValidEmail } from './authCore.mjs';
 
 const CLIP_MAX_BYTES = 8 * 1024 * 1024; // ~8MB cap (413 beyond)
 
@@ -71,20 +71,25 @@ async function authorizeSession(req, res, sessionId) {
 }
 
 /**
- * Resolve + authorize a shot by bare id (clip/audio routes carry no
- * sessionId). Returns { sessionId } when allowed; null after responding 404.
+ * Single-lookup resolve + authorize for the clip/audio routes (finding #7):
+ * ONE backend.getShotAccess (→ one findShot) does the ownership check AND
+ * returns the sessionId + existing clip/audio refs the stream/save then reuse
+ * (no second lookup). 404 semantics are IDENTICAL to authorizeShot:
+ *   missing shot     → 404 shot_not_found
+ *   foreign/denied   → 404 session_not_found (don't leak existence)
+ * Returns the access object when allowed, else null after responding.
  */
-async function authorizeShot(req, res, shotId) {
-  const owner = await backend.getShotOwner(shotId);
-  if (!owner) {
+async function authorizeShotAccess(req, res, shotId) {
+  const access = await backend.getShotAccess(shotId);
+  if (!access) {
     res.status(404).json({ error: 'shot_not_found' });
     return null;
   }
-  if (!canAccess(req.user, owner.ownerEmail)) {
+  if (!canAccess(req.user, access.ownerEmail)) {
     sessionNotFound(res);
     return null;
   }
-  return { sessionId: owner.sessionId };
+  return access;
 }
 
 export function mountCloudRoutes(app) {
@@ -185,11 +190,11 @@ export function mountCloudRoutes(app) {
         return res.status(413).json({ error: 'clip_too_large' });
       }
       const mime = req.get('content-type') || 'video/webm';
-      const owner = await authorizeShot(req, res, req.params.id);
-      if (!owner) return;
-      const path = clipObjectPath(owner.sessionId, req.params.id, mime);
+      const access = await authorizeShotAccess(req, res, req.params.id);
+      if (!access) return;
+      const path = clipObjectPath(access.sessionId, req.params.id, mime);
       await saveClip(path, buf, mime);
-      await backend.setShotClip(req.params.id, path, mime);
+      await backend.setShotClip(access.sessionId, req.params.id, path, mime);
       res.status(204).end();
     } catch (err) {
       console.error('[routes] upload clip:', err?.message || err);
@@ -212,11 +217,11 @@ export function mountCloudRoutes(app) {
         return res.status(413).json({ error: 'audio_too_large' });
       }
       const mime = req.get('content-type') || 'audio/wav';
-      const owner = await authorizeShot(req, res, req.params.id);
-      if (!owner) return;
-      const path = audioObjectPath(owner.sessionId, req.params.id);
+      const access = await authorizeShotAccess(req, res, req.params.id);
+      if (!access) return;
+      const path = audioObjectPath(access.sessionId, req.params.id);
       await saveClip(path, buf, mime);
-      await backend.setShotAudio(req.params.id, path, mime);
+      await backend.setShotAudio(access.sessionId, req.params.id, path, mime);
       res.status(204).end();
     } catch (err) {
       console.error('[routes] upload audio:', err?.message || err);
@@ -267,13 +272,13 @@ export function mountCloudRoutes(app) {
     if (!requireDb(res)) return;
     if (!requireGcs(res)) return;
     try {
-      if (!(await authorizeShot(req, res, req.params.shotId))) return;
-      const ref = await backend.getShotClipRef(req.params.shotId);
-      if (!ref) {
+      const access = await authorizeShotAccess(req, res, req.params.shotId);
+      if (!access) return;
+      if (!access.clipPath) {
         return res.status(404).json({ error: 'clip_not_found' });
       }
       res.setHeader('Cache-Control', 'private, max-age=3600');
-      await streamClip(ref.clipPath, ref.clipMime, req, res);
+      await streamClip(access.clipPath, access.clipMime, req, res);
     } catch (err) {
       console.error('[routes] clip stream:', err?.message || err);
       if (!res.headersSent) res.status(503).json(unavailableBody('clips'));
@@ -285,13 +290,13 @@ export function mountCloudRoutes(app) {
     if (!requireDb(res)) return;
     if (!requireGcs(res)) return;
     try {
-      if (!(await authorizeShot(req, res, req.params.shotId))) return;
-      const ref = await backend.getShotAudioRef(req.params.shotId);
-      if (!ref) {
+      const access = await authorizeShotAccess(req, res, req.params.shotId);
+      if (!access) return;
+      if (!access.audioPath) {
         return res.status(404).json({ error: 'audio_not_found' });
       }
       res.setHeader('Cache-Control', 'private, max-age=3600');
-      await streamClip(ref.audioPath, ref.audioMime || 'audio/wav', req, res);
+      await streamClip(access.audioPath, access.audioMime || 'audio/wav', req, res);
     } catch (err) {
       console.error('[routes] audio stream:', err?.message || err);
       if (!res.headersSent) res.status(503).json(unavailableBody('clips'));
@@ -351,7 +356,7 @@ export function mountCloudRoutes(app) {
       if (await backend.getUser(email)) {
         return res.status(409).json({ error: 'user_exists' });
       }
-      const { passSalt, passHash } = hashPassword(password);
+      const { passSalt, passHash } = await hashPasswordAsync(password);
       await backend.createUser({ email, passSalt, passHash, displayName, role: 'player' });
       res.status(201).json({ ok: true, email });
     } catch (err) {
@@ -379,7 +384,7 @@ export function mountCloudRoutes(app) {
     }
     try {
       const patch = {};
-      if (password != null) Object.assign(patch, hashPassword(password));
+      if (password != null) Object.assign(patch, await hashPasswordAsync(password));
       if (typeof displayName === 'string') patch.displayName = displayName;
       if (typeof disabled === 'boolean') patch.disabled = disabled;
       const found = await backend.updateUser(email, patch);

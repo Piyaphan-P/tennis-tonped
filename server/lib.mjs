@@ -196,6 +196,26 @@ export function sanitizeUsage(usage) {
   };
 }
 
+/**
+ * Recompute the DURABLE leaderboard scores from the session's STORED shot
+ * scores — never from the client-supplied avgScore (which is spoofable and
+ * only display-only/owner-scoped on the session doc). Returns
+ * { avgScore, maxScore } where avgScore is the unrounded mean (matches
+ * Postgres avg()) and maxScore the max. Returns null when there are no shots
+ * (caller skips the upsert). Non-numeric scores are coerced to 0.
+ */
+export function leaderboardScores(scores) {
+  const list = (Array.isArray(scores) ? scores : []).map((s) => Number(s) || 0);
+  if (list.length === 0) return null;
+  let sum = 0;
+  let maxScore = 0;
+  for (const s of list) {
+    sum += s;
+    if (s > maxScore) maxScore = s;
+  }
+  return { avgScore: sum / list.length, maxScore };
+}
+
 /** Round to 2 decimals for THB display in the /api/usage response. */
 function round2(n) {
   return Math.round((Number(n) || 0) * 100) / 100;

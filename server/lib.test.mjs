@@ -16,6 +16,7 @@ import {
   validateShotMeta,
   sanitizeUsage,
   aggregateUsageRows,
+  leaderboardScores,
   unavailableBody,
 } from './lib.mjs';
 
@@ -40,6 +41,25 @@ describe('clipObjectPath', () => {
   it('builds <sessionId>/<shotId>.<ext>', () => {
     expect(clipObjectPath('sess-1', 'shot-9', 'video/mp4')).toBe('sess-1/shot-9.mp4');
     expect(clipObjectPath('s', 'x', 'video/webm;codecs=vp8')).toBe('s/x.webm');
+  });
+});
+
+describe('leaderboardScores — recompute from stored shots (never trust client)', () => {
+  it('returns the mean and max of the stored shot scores', () => {
+    expect(leaderboardScores([80, 90, 100])).toEqual({ avgScore: 90, maxScore: 100 });
+  });
+  it('mean is unrounded (matches Postgres avg())', () => {
+    const { avgScore, maxScore } = leaderboardScores([80, 85]);
+    expect(avgScore).toBeCloseTo(82.5, 10);
+    expect(maxScore).toBe(85);
+  });
+  it('returns null for zero shots so the caller skips the upsert', () => {
+    expect(leaderboardScores([])).toBeNull();
+    expect(leaderboardScores(undefined)).toBeNull();
+    expect(leaderboardScores(null)).toBeNull();
+  });
+  it('coerces non-numeric scores to 0 and never trusts a passed-in avg', () => {
+    expect(leaderboardScores([50, 'x', undefined, 100])).toEqual({ avgScore: 37.5, maxScore: 100 });
   });
 });
 

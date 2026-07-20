@@ -170,6 +170,10 @@ const DICT = {
   'admin.errUserExists': { th: 'มีผู้ใช้อีเมลนี้อยู่แล้ว', en: 'A user with this email already exists' },
   'admin.errFailed': { th: 'ดำเนินการไม่สำเร็จ ลองใหม่อีกครั้ง', en: 'Action failed — try again' },
 
+  // --- admin tabs (Players | Costs) ---
+  'admin.tabPlayers': { th: 'ผู้เล่น', en: 'Players' },
+  'admin.tabCosts': { th: 'ค่าใช้จ่าย', en: 'Costs' },
+
   // --- admin cost section (GET /api/usage — real Gemini spend, ≈-labelled) ---
   'admin.costTitle': { th: 'ค่าใช้จ่าย', en: 'Costs' },
   'admin.costTotal': { th: 'รวมทั้งหมด (Gemini)', en: 'Total (Gemini)' },

@@ -19,7 +19,13 @@
 
 import { Firestore, Timestamp } from '@google-cloud/firestore';
 import { randomUUID } from 'node:crypto';
-import { aggregateUsageRows, sessionDocToJson, shotDocToJson, userDocToJson } from './lib.mjs';
+import {
+  aggregateUsageRows,
+  leaderboardScores,
+  sessionDocToJson,
+  shotDocToJson,
+  userDocToJson,
+} from './lib.mjs';
 
 const PROJECT = process.env.GOOGLE_CLOUD_PROJECT || 'adge-tennis-nonprd';
 const DATABASE = process.env.FIRESTORE_DATABASE || 'nonprd';
@@ -119,23 +125,25 @@ export const firestoreBackend = {
     if ((Number(shotCount) || 0) > 0) {
       try {
         const shotsSnap = await ref.collection('shots').get();
-        let maxScore = 0;
-        shotsSnap.forEach((d) => {
-          const s = Number(d.get('score')) || 0;
-          if (s > maxScore) maxScore = s;
-        });
-        const data = snap.data();
-        // Doc id = sessionId → idempotent upsert (durable, NO expireAt).
-        await db()
-          .collection('leaderboard_records')
-          .doc(id)
-          .set({
-            userName: data.userName ?? '',
-            avgScore: Number(avgScore) || 0,
-            maxScore,
-            shotCount: Number(shotCount) || 0,
-            playedAt: data.startedAt, // session startedAt Timestamp
-          });
+        // SECURITY: avgScore AND maxScore for the DURABLE board are recomputed
+        // from the STORED shot scores — NEVER from the client-supplied avgScore
+        // (spoofable; only display-only on the session doc). Zero shots → skip.
+        const scores = shotsSnap.docs.map((d) => Number(d.get('score')) || 0);
+        const recomputed = leaderboardScores(scores);
+        if (recomputed) {
+          const data = snap.data();
+          // Doc id = sessionId → idempotent upsert (durable, NO expireAt).
+          await db()
+            .collection('leaderboard_records')
+            .doc(id)
+            .set({
+              userName: data.userName ?? '',
+              avgScore: recomputed.avgScore,
+              maxScore: recomputed.maxScore,
+              shotCount: Number(shotCount) || 0,
+              playedAt: data.startedAt, // session startedAt Timestamp
+            });
+        }
       } catch (err) {
         console.error('[routes] leaderboard record (non-fatal):', err?.message || err);
       }
@@ -209,16 +217,46 @@ export const firestoreBackend = {
     return doc ? doc.get('sessionId') : null;
   },
 
-  async setShotClip(shotId, path, mime) {
+  /**
+   * Single-lookup resolver for the clip/audio routes (findShot #7): ONE
+   * collectionGroup scan for the shot + one direct session read for the owner,
+   * returning everything those routes need (ownership + existing clip/audio
+   * refs). Returns null when the shot does not exist. sessionId lets the
+   * setters below write by DIRECT path (no second collectionGroup scan).
+   */
+  async getShotAccess(shotId) {
     const doc = await findShot(shotId);
-    if (!doc) return;
-    await doc.ref.update({ clipPath: path, clipMime: mime });
+    if (!doc) return null;
+    const sessionId = doc.get('sessionId');
+    const sess = await db().collection('sessions').doc(sessionId).get();
+    return {
+      sessionId,
+      ownerEmail: sess.exists ? sess.get('ownerEmail') ?? null : null,
+      clipPath: doc.get('clipPath') ?? null,
+      clipMime: doc.get('clipMime') ?? null,
+      audioPath: doc.get('audioPath') ?? null,
+      audioMime: doc.get('audioMime') ?? null,
+    };
   },
 
-  async setShotAudio(shotId, path, mime) {
-    const doc = await findShot(shotId);
-    if (!doc) return;
-    await doc.ref.update({ audioPath: path, audioMime: mime });
+  // Writes go by DIRECT doc path (sessionId known from getShotAccess) so the
+  // POST clip/audio path does NOT run a second collectionGroup shot scan.
+  async setShotClip(sessionId, shotId, path, mime) {
+    await db()
+      .collection('sessions')
+      .doc(sessionId)
+      .collection('shots')
+      .doc(shotId)
+      .update({ clipPath: path, clipMime: mime });
+  },
+
+  async setShotAudio(sessionId, shotId, path, mime) {
+    await db()
+      .collection('sessions')
+      .doc(sessionId)
+      .collection('shots')
+      .doc(shotId)
+      .update({ audioPath: path, audioMime: mime });
   },
 
   async getShotClipRef(shotId) {
