@@ -5,7 +5,8 @@
 
 ## TL;DR
 
-**ADGE Tennis (SIT)** deploy อยู่ที่ https://adge-tennis-sit-441370880467.asia-southeast1.run.app (โปรเจค GCP **`adge-tennis-nonprd`**, image `app:sit-v8` revision `00003`, code = **SIT v1.5 UAM** commit `f188110`) + เว็บ Ranking https://adge-ranking-sit-441370880467.asia-southeast1.run.app · backend = **Firestore** DB `nonprd` (platform TTL 3 วัน) + GCS `adge-tennis-nonprd-clips` · `GEMINI_API_KEY` มาจาก Secret Manager (`gemini-api-key`) · **login = email + password ต่อคน** (role admin/player; bootstrap admin `piyaphan.po@gmail.com`) — `GATE_USER/PASS` เลิกใช้แล้ว · **v1.5.1 กำลัง integrate** (ตัด token field/CostFab/Compare + หน้า Admin cost `usage_records`) ยังไม่ deploy
+**ADGE Tennis (SIT)** deploy อยู่ที่ https://adge-tennis-sit-441370880467.asia-southeast1.run.app (โปรเจค GCP **`adge-tennis-nonprd`**, image `app:sit-v9` revision `00004`, code = **SIT v1.5.1** — UAM + admin cost) + เว็บ Ranking https://adge-ranking-sit-441370880467.asia-southeast1.run.app · backend = **Firestore** DB `nonprd` (platform TTL 3 วัน) + GCS `adge-tennis-nonprd-clips` · `GEMINI_API_KEY` มาจาก Secret Manager · **login = email + password ต่อคน** (role admin/player; bootstrap admin `piyaphan.po@gmail.com`) · ตัด token field/CostFab/Compare ออกจาก UI · หน้า Admin มี cost dashboard (usage รวมต่อคน + infra estimate)
+> ⚠️ **มี code-review report ค้าง (2026-07-20):** เจอ 8 ช่องโหว่ UAM (5 security) — **ยังไม่แก้ รอ user ยืนยัน** → v1.5.2 (ดู task 18 ใน `tasks20260720.md`)
 
 ## โครงสร้าง GCP ปัจจุบัน (ตั้งแต่ 2026-07-20)
 
