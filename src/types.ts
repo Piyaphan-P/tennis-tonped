@@ -10,8 +10,33 @@
 /** UI language. Thai is primary. */
 export type Lang = 'th' | 'en';
 
-/** Top-level screens routed by App.tsx via store.screen. */
-export type Screen = 'home' | 'live' | 'summary' | 'devplan' | 'compare' | 'history';
+/** Top-level screens routed by App.tsx via store.screen.
+ *  'admin' is reachable ONLY when auth.role === 'admin' (App/BottomNav gate it). */
+export type Screen = 'home' | 'live' | 'summary' | 'devplan' | 'compare' | 'history' | 'admin';
+
+// ---------------------------------------------------------------------------
+// Auth / user access management (UAM v1.5 — per-user email+password login)
+// ---------------------------------------------------------------------------
+
+/** Server-side role. Admins see everyone's data + manage players. */
+export type UserRole = 'admin' | 'player';
+
+/** The signed-in identity (from POST /api/login or GET /api/gate). */
+export interface AuthUser {
+  /** Lowercase email — the primary key of the account. */
+  email: string;
+  role: UserRole;
+  displayName: string;
+}
+
+/** One user row from GET /api/users (admin only). */
+export interface AdminUserRow {
+  email: string;
+  displayName: string;
+  role: UserRole;
+  disabled: boolean;
+  createdAt: string;
+}
 
 // ---------------------------------------------------------------------------
 // Pose (MediaPipe PoseLandmarker, 33 landmarks, normalized [0..1] coords)
@@ -377,6 +402,9 @@ export interface CloudSessionSummary {
   avgScore: number;
   shotCount: number;
   summary: SessionSummaryJson | null;
+  /** Owning account (UAM v1.5). The SERVER filters history by it — players get
+   *  their own rows only, admins get everyone's. Optional: pre-UAM rows lack it. */
+  ownerEmail?: string;
 }
 
 /** One shot row from the cloud (metadata only; clip streamed separately). */

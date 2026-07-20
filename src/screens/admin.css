@@ -1,0 +1,126 @@
+/* ============================================================================
+   ADGE Tennis — Admin screen styles (UAM v1.5).
+   Imported ONLY by AdminScreen.tsx. All colors via theme.css tokens; card/list
+   language mirrors history.css (.session-card family).
+   ============================================================================ */
+
+.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.admin-whoami {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.admin-whoami .admin-email {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- cards (add-player form + list) --- */
+.admin-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--sp-4);
+}
+.admin-card h2 {
+  font-size: 1rem;
+}
+
+.admin-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+/* --- inline toast (success / error) --- */
+.admin-msg {
+  border-radius: var(--radius-sm);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: 0.82rem;
+  border: 1px solid var(--line);
+}
+.admin-msg--ok {
+  color: var(--good);
+}
+.admin-msg--err {
+  color: var(--fault);
+}
+
+/* --- player list --- */
+.admin-user-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.user-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--sp-3) var(--sp-4);
+}
+.user-row--disabled {
+  opacity: 0.6;
+}
+
+.user-row-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.user-email {
+  font-size: 0.92rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-badge {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 1px var(--sp-2);
+  border: 1px solid var(--line-strong);
+  color: var(--text-dim);
+}
+.user-badge--you {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.user-badge--disabled {
+  color: var(--fault);
+  border-color: var(--fault);
+}
+
+.user-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.user-actions .btn {
+  font-size: 0.78rem;
+  padding: var(--sp-1) var(--sp-2);
+}
+.user-action-danger {
+  color: var(--fault);
+}

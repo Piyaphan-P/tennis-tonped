@@ -282,7 +282,11 @@ export const pgBackend = {
     return { audioPath: rows[0].audio_path, audioMime: rows[0].audio_mime };
   },
 
-  async listHistory(days) {
+  async listHistory(days, { ownerEmail } = {}) {
+    // UAM v1.5 is Firestore-only (user decision — SIT and future prod both run
+    // Firestore). The owner-filtered path has no SQL implementation; routes
+    // turn this into their bilingual 503.
+    if (ownerEmail) throw new Error('listHistory(ownerEmail) not implemented on postgres path');
     const { rows } = await query(
       `SELECT * FROM sessions
         WHERE started_at >= now() - ($1 || ' days')::interval
@@ -304,5 +308,47 @@ export const pgBackend = {
 
   async deleteSession(id) {
     await query(`DELETE FROM sessions WHERE id = $1`, [id]);
+  },
+
+  // ==========================================================================
+  // Users + ownership (UAM v1.5) — STUBS ONLY on the Postgres path.
+  //
+  // The real implementation is Firestore-only (user decision: SIT and future
+  // prod both run DB_BACKEND=firestore). These stubs exist so the interface is
+  // complete and DB_BACKEND=postgres still boots: user-management methods
+  // throw a clear error (routes → 503); the ownership helpers reuse EXISTING
+  // queries and report ownerEmail=null, i.e. every pg session behaves like a
+  // legacy row (admin-visible only). No new SQL here by design.
+  // ==========================================================================
+
+  async getUser() {
+    throw new Error('users not implemented on postgres path (UAM is Firestore-only)');
+  },
+  async listUsers() {
+    throw new Error('users not implemented on postgres path (UAM is Firestore-only)');
+  },
+  async createUser() {
+    throw new Error('users not implemented on postgres path (UAM is Firestore-only)');
+  },
+  async updateUser() {
+    throw new Error('users not implemented on postgres path (UAM is Firestore-only)');
+  },
+  async deleteUser() {
+    throw new Error('users not implemented on postgres path (UAM is Firestore-only)');
+  },
+  async ensureAdmin() {
+    throw new Error('ensureAdmin not implemented on postgres path (UAM is Firestore-only)');
+  },
+
+  /** Ownership stub: session exists → legacy owner (null → admin-only). */
+  async getSessionOwner(id) {
+    const detail = await this.getSessionDetail(id);
+    return detail ? { ownerEmail: detail.ownerEmail ?? null } : null;
+  },
+
+  /** Ownership stub: resolves the shot's session, owner always legacy-null. */
+  async getShotOwner(shotId) {
+    const sessionId = await this.getShotSession(shotId);
+    return sessionId ? { sessionId, ownerEmail: null } : null;
   },
 };

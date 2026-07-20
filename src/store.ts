@@ -27,6 +27,7 @@ import { HISTORY_TTL_MS } from './types';
 import { clampHeightCm } from './analysis/swingSpeed';
 import type {
   AngleStatuses,
+  AuthUser,
   CompareClipRef,
   CoachingResult,
   CoachState,
@@ -457,6 +458,13 @@ export interface AppState {
   settings: Settings;
   settingsOpen: boolean;
 
+  /**
+   * Signed-in identity (UAM v1.5), set by LoginGate from /api/login or
+   * /api/gate. Null = not signed in — either the gate is locked (LoginGate
+   * shows the form) or there is no backend at all (dev fail-open).
+   */
+  auth: AuthUser | null;
+
   /** Cloud session id for the CURRENT live session (null until created lazily
    *  on first shot; reset to null by startSession). Written by the cloud-sync
    *  flow, read when uploading shots/clips. */
@@ -496,6 +504,12 @@ export interface AppState {
   updateRates: (patch: Partial<PricingRates>) => void;
   /** Sets the player name (settings.userName) and persists it. */
   setUserName: (name: string) => void;
+  /**
+   * Set (or clear, on logout) the signed-in identity. On sign-in, if
+   * settings.userName is still empty, it is initialized from displayName (or
+   * the email local-part) via setUserName so the coach greets by name.
+   */
+  setAuth: (auth: AuthUser | null) => void;
   setAuthToken: (token: string) => void;
   /** Set the cloud session id for the current live session (or null to clear). */
   setCloudSessionId: (id: string | null) => void;
@@ -584,6 +598,7 @@ export const useAppStore = create<AppState>()((set) => ({
   screen: 'home',
   settings: DEFAULT_SETTINGS,
   settingsOpen: false,
+  auth: null,
   authToken: envToken(),
   cloudSessionId: null,
   compareClip: null,
@@ -628,6 +643,16 @@ export const useAppStore = create<AppState>()((set) => ({
     const userName = name.trim();
     lsSet(LS_USER_NAME, userName);
     set((s) => ({ settings: { ...s.settings, userName } }));
+  },
+  setAuth: (auth) => {
+    set({ auth });
+    if (auth) {
+      const s = useAppStore.getState();
+      if (!s.settings.userName.trim()) {
+        // First sign-in on this device: seed the coach-greeting name.
+        s.setUserName(auth.displayName.trim() || auth.email.split('@')[0]);
+      }
+    }
   },
   setAuthToken: (authToken) => set({ authToken: authToken.trim() }),
   setCloudSessionId: (cloudSessionId) => set({ cloudSessionId }),

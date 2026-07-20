@@ -17,6 +17,9 @@ const ITEMS: NavItem[] = [
   { screen: 'devplan', labelKey: 'nav.devplan', icon: '◎' },
 ];
 
+/** Shown only when the signed-in user has role 'admin' (UAM v1.5). */
+const ADMIN_ITEM: NavItem = { screen: 'admin', labelKey: 'nav.admin', icon: '⛭' };
+
 /**
  * Persistent bottom navigation. Hidden during the live session (that screen is
  * immersive and owns its own controls). The Settings entry opens the sheet
@@ -27,13 +30,16 @@ export default function BottomNav() {
   const setScreen = useAppStore((s) => s.setScreen);
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen);
   const shotCount = useAppStore(selectShotCount);
+  const isAdmin = useAppStore((s) => s.auth?.role === 'admin');
   const t = useT();
 
   if (screen === 'live') return null;
 
+  const items = isAdmin ? [...ITEMS, ADMIN_ITEM] : ITEMS;
+
   return (
     <nav className="bottom-nav" aria-label="primary">
-      {ITEMS.map((item) => {
+      {items.map((item) => {
         const active = screen === item.screen;
         // Summary is only meaningful once a session has produced shots.
         const disabled = item.screen === 'summary' && shotCount === 0;

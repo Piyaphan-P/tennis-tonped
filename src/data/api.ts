@@ -15,6 +15,8 @@
 // ============================================================================
 
 import type {
+  AdminUserRow,
+  AuthUser,
   CloudSessionDetail,
   CloudSessionSummary,
   Shot,
@@ -232,4 +234,185 @@ export async function deleteSessionCloud(id: string): Promise<boolean> {
     method: 'DELETE',
   });
   return res !== null;
+}
+
+// ---------------------------------------------------------------------------
+// Auth + user management (UAM v1.5). These calls deliberately BYPASS the
+// offline latch above: a login attempt / admin action must never be silently
+// swallowed because clip sync latched offline, and an auth failure (401/429/
+// 503 on /api/login) must never latch the CLOUD offline — the two failure
+// domains are unrelated. All functions still never throw.
+// ---------------------------------------------------------------------------
+
+/** Known server error codes plus client-side buckets. */
+export type AuthErrorCode =
+  | 'bad_credentials'
+  | 'too_many_attempts'
+  | 'user_exists'
+  | 'invalid_input'
+  | 'forbidden'
+  | 'server'
+  | 'network';
+
+export interface AuthFailure {
+  ok: false;
+  error: AuthErrorCode;
+  /** Server-provided human message (fallback copy when we lack an i18n key). */
+  message?: string;
+}
+
+export type LoginResult = { ok: true; user: AuthUser } | AuthFailure;
+export type UserMutationResult = { ok: true } | AuthFailure;
+
+export type GateResult =
+  | { status: 'authed'; user: AuthUser }
+  | { status: 'unauthed' }
+  /** 404 / network / non-contract response — no gate (dev). Caller fails OPEN. */
+  | { status: 'no-gate' };
+
+const KNOWN_CODES: readonly AuthErrorCode[] = [
+  'bad_credentials',
+  'too_many_attempts',
+  'user_exists',
+  'invalid_input',
+  'forbidden',
+];
+
+async function jsonOf(res: Response): Promise<Record<string, unknown>> {
+  try {
+    return (await res.json()) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+function userOf(body: Record<string, unknown>): AuthUser | null {
+  if (typeof body.email !== 'string' || body.email === '') return null;
+  return {
+    email: body.email,
+    role: body.role === 'admin' ? 'admin' : 'player',
+    displayName: typeof body.displayName === 'string' ? body.displayName : '',
+  };
+}
+
+async function failureOf(res: Response): Promise<AuthFailure> {
+  if (res.status === 403) return { ok: false, error: 'forbidden' };
+  const body = await jsonOf(res);
+  const code = KNOWN_CODES.find((c) => c === body.error);
+  return {
+    ok: false,
+    error: code ?? 'server',
+    message: typeof body.message === 'string' ? body.message : undefined,
+  };
+}
+
+/** POST /api/login — sets the httpOnly cookie on success. */
+export async function login(email: string, password: string): Promise<LoginResult> {
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ email, password }),
+    });
+    if (res.ok) {
+      const user = userOf(await jsonOf(res));
+      if (user) return { ok: true, user };
+      return { ok: false, error: 'server' };
+    }
+    return failureOf(res);
+  } catch {
+    return { ok: false, error: 'network' };
+  }
+}
+
+/** POST /api/logout — clears the cookie. Returns true on success. */
+export async function logout(): Promise<boolean> {
+  try {
+    const res = await fetch('/api/logout', {
+      method: 'POST',
+      credentials: 'same-origin',
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** GET /api/gate — who am I? (LoginGate boot probe.) */
+export async function fetchGate(): Promise<GateResult> {
+  try {
+    const res = await fetch('/api/gate', { credentials: 'same-origin' });
+    if (res.status === 401) return { status: 'unauthed' };
+    if (!res.ok) return { status: 'no-gate' };
+    const user = userOf(await jsonOf(res));
+    // 200 without the contract body = pre-UAM server / dev stub → fail open.
+    return user ? { status: 'authed', user } : { status: 'no-gate' };
+  } catch {
+    return { status: 'no-gate' };
+  }
+}
+
+/** GET /api/users — all accounts (admin only). Null on any failure. */
+export async function listUsers(): Promise<AdminUserRow[] | null> {
+  try {
+    const res = await fetch('/api/users', { credentials: 'same-origin' });
+    if (!res.ok) return null;
+    const body = (await res.json()) as unknown;
+    return Array.isArray(body) ? (body as AdminUserRow[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface CreateUserInput {
+  email: string;
+  password: string;
+  displayName?: string;
+}
+
+/** POST /api/users — add a player (admin only). */
+export async function createUser(input: CreateUserInput): Promise<UserMutationResult> {
+  try {
+    const res = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(input),
+    });
+    return res.ok ? { ok: true } : failureOf(res);
+  } catch {
+    return { ok: false, error: 'network' };
+  }
+}
+
+/** PATCH /api/users/:email — reset password / rename / enable-disable. */
+export async function patchUser(
+  email: string,
+  patch: { password?: string; displayName?: string; disabled?: boolean },
+): Promise<UserMutationResult> {
+  try {
+    const res = await fetch(`/api/users/${encodeURIComponent(email)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(patch),
+    });
+    return res.ok ? { ok: true } : failureOf(res);
+  } catch {
+    return { ok: false, error: 'network' };
+  }
+}
+
+/** DELETE /api/users/:email — remove a player (cannot delete self). */
+export async function deleteUser(email: string): Promise<UserMutationResult> {
+  try {
+    const res = await fetch(`/api/users/${encodeURIComponent(email)}`, {
+      method: 'DELETE',
+      credentials: 'same-origin',
+    });
+    return res.ok ? { ok: true } : failureOf(res);
+  } catch {
+    return { ok: false, error: 'network' };
+  }
 }

@@ -55,6 +55,8 @@ export function sessionRowToJson(row) {
     avgScore: Number(row.avg_score) || 0,
     shotCount: Number(row.shot_count) || 0,
     summary: row.summary ?? null,
+    // UAM v1.5: session owner (null on legacy rows → admin-visible only).
+    ownerEmail: row.owner_email ?? null,
   };
 }
 
@@ -93,6 +95,24 @@ export function sessionDocToJson(id, data) {
     avgScore: Number(d.avgScore) || 0,
     shotCount: Number(d.shotCount) || 0,
     summary: d.summary ?? null,
+    // UAM v1.5: session owner (null/absent on legacy docs → admin-visible only).
+    ownerEmail: d.ownerEmail ?? null,
+  };
+}
+
+/**
+ * Firestore `users/{email}` doc → the /api/users wire shape. NEVER includes
+ * passSalt/passHash — this mapper is the only thing user-management responses
+ * go through, so credentials can't leak by construction.
+ */
+export function userDocToJson(data) {
+  const d = data ?? {};
+  return {
+    email: d.email ?? '',
+    displayName: d.displayName ?? '',
+    role: d.role === 'admin' ? 'admin' : 'player',
+    disabled: Boolean(d.disabled),
+    createdAt: isoOrNull(d.createdAt),
   };
 }
 

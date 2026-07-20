@@ -34,14 +34,18 @@ const DICT = {
   'common.loading': { th: 'กำลังโหลด…', en: 'Loading…' },
   'common.times': { th: 'ครั้ง', en: 'x' },
 
-  // --- login gate ---
+  // --- login gate (UAM v1.5: per-user email+password) ---
   'login.title': { th: 'เข้าสู่ระบบ', en: 'Sign in' },
-  'login.subtitle': { th: 'กรอกชื่อผู้ใช้และรหัสผ่านเพื่อเริ่มใช้งาน', en: 'Enter username and password to continue' },
-  'login.user': { th: 'ชื่อผู้ใช้', en: 'Username' },
+  'login.subtitle': { th: 'กรอกอีเมลและรหัสผ่านเพื่อเริ่มใช้งาน', en: 'Enter your email and password to continue' },
+  'login.email': { th: 'อีเมล', en: 'Email' },
   'login.pass': { th: 'รหัสผ่าน', en: 'Password' },
   'login.submit': { th: 'เข้าสู่ระบบ', en: 'Sign in' },
   'login.checking': { th: 'กำลังตรวจสอบ…', en: 'Checking…' },
-  'login.wrong': { th: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง', en: 'Wrong username or password' },
+  'login.wrong': { th: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง', en: 'Wrong email or password' },
+  'login.tooMany': {
+    th: 'ลองเข้าสู่ระบบผิดหลายครั้งเกินไป รอสักครู่แล้วลองใหม่',
+    en: 'Too many attempts — wait a moment and try again',
+  },
   'login.error': { th: 'เชื่อมต่อไม่ได้ ลองใหม่อีกครั้ง', en: 'Connection failed — try again' },
 
   // --- language toggle ---
@@ -125,6 +129,46 @@ const DICT = {
   'nav.summary': { th: 'สรุป', en: 'Summary' },
   'nav.devplan': { th: 'พัฒนา', en: 'Plan' },
   'nav.settings': { th: 'ตั้งค่า', en: 'Settings' },
+  'nav.admin': { th: 'ผู้ดูแล', en: 'Admin' },
+
+  // --- admin screen (UAM v1.5 — role 'admin' only) ---
+  'admin.title': { th: 'จัดการผู้เล่น', en: 'Manage players' },
+  'admin.signedInAs': { th: 'เข้าสู่ระบบเป็น', en: 'Signed in as' },
+  'admin.logout': { th: 'ออกจากระบบ', en: 'Log out' },
+  'admin.addTitle': { th: 'เพิ่มผู้เล่น', en: 'Add player' },
+  'admin.password': { th: 'รหัสผ่าน (อย่างน้อย 4 ตัวอักษร)', en: 'Password (min 4 characters)' },
+  'admin.displayName': { th: 'ชื่อที่แสดง (ไม่บังคับ)', en: 'Display name (optional)' },
+  'admin.add': { th: 'เพิ่มผู้เล่น', en: 'Add player' },
+  'admin.listTitle': { th: 'ผู้เล่นทั้งหมด', en: 'All players' },
+  'admin.you': { th: 'คุณ', en: 'you' },
+  'admin.roleAdmin': { th: 'แอดมิน', en: 'admin' },
+  'admin.disabledBadge': { th: 'ปิดใช้งาน', en: 'disabled' },
+  'admin.created': { th: 'สร้างเมื่อ', en: 'Created' },
+  'admin.enable': { th: 'เปิดใช้งาน', en: 'Enable' },
+  'admin.disable': { th: 'ระงับ', en: 'Disable' },
+  'admin.resetPass': { th: 'รีเซ็ตรหัสผ่าน', en: 'Reset password' },
+  'admin.resetPrompt': {
+    th: 'รหัสผ่านใหม่สำหรับ {email} (อย่างน้อย 4 ตัวอักษร)',
+    en: 'New password for {email} (min 4 characters)',
+  },
+  'admin.delete': { th: 'ลบ', en: 'Delete' },
+  'admin.deleteConfirm': {
+    th: 'ลบผู้เล่น {email}? ประวัติ session จะหมดอายุเองใน 3 วัน',
+    en: 'Delete player {email}? Their session history expires on its own within 3 days.',
+  },
+  'admin.empty': { th: 'ยังไม่มีผู้เล่น', en: 'No players yet' },
+  'admin.loadFailed': { th: 'โหลดรายชื่อไม่สำเร็จ ลองใหม่อีกครั้ง', en: 'Failed to load players — try again' },
+  'admin.retry': { th: 'ลองใหม่', en: 'Retry' },
+  'admin.added': { th: 'เพิ่มผู้เล่นแล้ว', en: 'Player added' },
+  'admin.updated': { th: 'บันทึกแล้ว', en: 'Saved' },
+  'admin.deleted': { th: 'ลบผู้เล่นแล้ว', en: 'Player deleted' },
+  'admin.errInvalidEmail': { th: 'รูปแบบอีเมลไม่ถูกต้อง', en: 'Invalid email format' },
+  'admin.errPassShort': {
+    th: 'รหัสผ่านต้องมีอย่างน้อย 4 ตัวอักษร',
+    en: 'Password must be at least 4 characters',
+  },
+  'admin.errUserExists': { th: 'มีผู้ใช้อีเมลนี้อยู่แล้ว', en: 'A user with this email already exists' },
+  'admin.errFailed': { th: 'ดำเนินการไม่สำเร็จ ลองใหม่อีกครั้ง', en: 'Action failed — try again' },
 
   // --- continuous open mic ---
   'live.micOn': { th: 'ไมค์เปิด — พูดกับโค้ชได้เลย', en: 'Mic on — just talk to the coach' },
@@ -360,6 +404,8 @@ const DICT = {
 
   // --- settings ---
   'settings.title': { th: 'ตั้งค่า', en: 'Settings' },
+  'settings.account': { th: 'บัญชีผู้ใช้', en: 'Account' },
+  'settings.logout': { th: 'ออกจากระบบ', en: 'Log out' },
   'settings.pricing': { th: 'ราคา (USD ต่อ 1M โทเคน)', en: 'Pricing (USD per 1M tokens)' },
   'settings.textIn': { th: 'ข้อความเข้า', en: 'Text In' },
   'settings.audioIn': { th: 'เสียงเข้า', en: 'Audio In' },

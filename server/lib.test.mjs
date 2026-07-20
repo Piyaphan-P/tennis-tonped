@@ -12,6 +12,7 @@ import {
   shotRowToJson,
   sessionDocToJson,
   shotDocToJson,
+  userDocToJson,
   validateShotMeta,
   unavailableBody,
 } from './lib.mjs';
@@ -59,7 +60,16 @@ describe('sessionRowToJson', () => {
       avgScore: 82.5,
       shotCount: 12,
       summary: { goodFormPct: 50 },
+      ownerEmail: null, // no owner_email column value → legacy row
     });
+  });
+  it('passes owner_email through as ownerEmail (UAM v1.5)', () => {
+    const out = sessionRowToJson({
+      id: 'c',
+      started_at: '2026-07-05T10:00:00.000Z',
+      owner_email: 'player@adge.co',
+    });
+    expect(out.ownerEmail).toBe('player@adge.co');
   });
   it('tolerates null ended_at / summary and missing user_name', () => {
     const out = sessionRowToJson({
@@ -150,6 +160,44 @@ describe('sessionDocToJson (Firestore)', () => {
     expect(out.summary).toBeNull();
     expect(out.userName).toBe('');
     expect(out.startedAt).toBe('2026-07-05T10:00:00.000Z');
+    expect(out.ownerEmail).toBeNull(); // legacy doc without ownerEmail
+  });
+  it('passes ownerEmail through (UAM v1.5)', () => {
+    const out = sessionDocToJson('c', {
+      startedAt: ts('2026-07-05T10:00:00.000Z'),
+      ownerEmail: 'player@adge.co',
+    });
+    expect(out.ownerEmail).toBe('player@adge.co');
+  });
+});
+
+describe('userDocToJson (Firestore, UAM v1.5)', () => {
+  it('maps to the /api/users wire shape and NEVER leaks credential fields', () => {
+    const out = userDocToJson({
+      email: 'player@adge.co',
+      passSalt: 'aa'.repeat(16),
+      passHash: 'bb'.repeat(64),
+      role: 'player',
+      displayName: 'Ton',
+      disabled: false,
+      createdAt: ts('2026-07-20T10:00:00.000Z'),
+    });
+    expect(out).toEqual({
+      email: 'player@adge.co',
+      displayName: 'Ton',
+      role: 'player',
+      disabled: false,
+      createdAt: '2026-07-20T10:00:00.000Z',
+    });
+    expect('passHash' in out).toBe(false);
+    expect('passSalt' in out).toBe(false);
+  });
+  it('defaults missing fields and coerces unknown roles to player', () => {
+    const out = userDocToJson({ email: 'x@y.co', role: 'superuser' });
+    expect(out.role).toBe('player');
+    expect(out.displayName).toBe('');
+    expect(out.disabled).toBe(false);
+    expect(out.createdAt).toBeNull();
   });
 });
 

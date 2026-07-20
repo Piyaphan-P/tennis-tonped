@@ -19,7 +19,7 @@
 
 import { Firestore, Timestamp } from '@google-cloud/firestore';
 import { randomUUID } from 'node:crypto';
-import { sessionDocToJson, shotDocToJson } from './lib.mjs';
+import { sessionDocToJson, shotDocToJson, userDocToJson } from './lib.mjs';
 
 const PROJECT = process.env.GOOGLE_CLOUD_PROJECT || 'adge-tennis-nonprd';
 const DATABASE = process.env.FIRESTORE_DATABASE || 'nonprd';
@@ -79,17 +79,19 @@ export const firestoreBackend = {
     );
   },
 
-  async createSession({ userName, startedAt }) {
+  async createSession({ userName, startedAt, ownerEmail }) {
     const id = randomUUID();
     const startedTs = Timestamp.fromDate(startedAt);
     // Every contract field initialized up front: /api/history can list an
     // in-progress session BEFORE its PATCH, so a pre-patch read must already
-    // match the Postgres column defaults.
+    // match the Postgres column defaults. ownerEmail (UAM v1.5) is stamped by
+    // the route from the auth cookie — never from the client body.
     await db()
       .collection('sessions')
       .doc(id)
       .set({
         userName,
+        ownerEmail: ownerEmail ?? null,
         startedAt: startedTs,
         endedAt: null,
         avgScore: 0,
@@ -201,8 +203,22 @@ export const firestoreBackend = {
     return { audioPath, audioMime: doc.get('audioMime') ?? null };
   },
 
-  async listHistory(days) {
-    const cutoff = Timestamp.fromMillis(Date.now() - days * 24 * 60 * 60 * 1000);
+  async listHistory(days, { ownerEmail } = {}) {
+    const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;
+    if (ownerEmail) {
+      // Owner-filtered path (player, or admin ?email=). Query ONLY the equality
+      // on ownerEmail (COLLECTION scope → auto-indexed) and do the startedAt
+      // cutoff + DESC sort in memory — the 3-day TTL keeps result sets tiny.
+      // NEVER combine where(ownerEmail)+orderBy(startedAt) in one query: that
+      // needs a composite index which does not exist and would 503 (this repo
+      // already paid that lesson with shots.id).
+      const snap = await db().collection('sessions').where('ownerEmail', '==', ownerEmail).get();
+      return snap.docs
+        .map((d) => sessionDocToJson(d.id, d.data()))
+        .filter((s) => s.startedAt && Date.parse(s.startedAt) >= cutoffMs)
+        .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
+    }
+    const cutoff = Timestamp.fromMillis(cutoffMs);
     // Range filter + orderBy on the SAME field → single-field index (automatic).
     const snap = await db()
       .collection('sessions')
@@ -210,6 +226,25 @@ export const firestoreBackend = {
       .orderBy('startedAt', 'desc')
       .get();
     return snap.docs.map((d) => sessionDocToJson(d.id, d.data()));
+  },
+
+  /** Owner of a session (for PATCH/DELETE authorization without pulling all
+   *  shots). Returns { ownerEmail } (null on legacy docs) or null if missing. */
+  async getSessionOwner(id) {
+    const snap = await db().collection('sessions').doc(id).get();
+    if (!snap.exists) return null;
+    return { ownerEmail: snap.get('ownerEmail') ?? null };
+  },
+
+  /** Resolve a bare shotId → its parent session's owner (clip/audio routes
+   *  carry no sessionId). collectionGroup id lookup (same index requirement as
+   *  findShot) then one session read. Returns { sessionId, ownerEmail } | null. */
+  async getShotOwner(shotId) {
+    const doc = await findShot(shotId);
+    if (!doc) return null;
+    const sessionId = doc.get('sessionId');
+    const sess = await db().collection('sessions').doc(sessionId).get();
+    return { sessionId, ownerEmail: sess.exists ? sess.get('ownerEmail') ?? null : null };
   },
 
   async getSessionDetail(id) {
@@ -238,5 +273,85 @@ export const firestoreBackend = {
       if (page.size < DELETE_BATCH) break;
     }
     await ref.delete();
+  },
+
+  // ==========================================================================
+  // Users (UAM v1.5) — collection `users/{email}` (doc id = lowercased email),
+  // fields { email, passSalt, passHash, role, displayName, disabled,
+  // createdAt:Timestamp }. NO expireAt — accounts are durable (like the
+  // leaderboard). Passwords are scrypt hashes only (authCore.mjs) — plaintext
+  // never reaches this file.
+  // ==========================================================================
+
+  /** Full user doc (INCLUDING passSalt/passHash — login needs them) or null.
+   *  Callers must never serialize this to the wire; listUsers is the safe one. */
+  async getUser(email) {
+    const snap = await db().collection('users').doc(String(email).toLowerCase()).get();
+    return snap.exists ? snap.data() : null;
+  },
+
+  /** All users in the SAFE wire shape (no credential fields), newest first. */
+  async listUsers() {
+    const snap = await db().collection('users').get();
+    return snap.docs
+      .map((d) => userDocToJson(d.data()))
+      .sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
+  },
+
+  /** Create a user (role decided by the route — always 'player' via the API).
+   *  Caller (route) pre-checks existence for the 409; `create()` still throws
+   *  ALREADY_EXISTS on a race, which the route surfaces as its 503. */
+  async createUser({ email, passSalt, passHash, displayName, role }) {
+    const key = String(email).toLowerCase();
+    await db().collection('users').doc(key).create({
+      email: key,
+      passSalt,
+      passHash,
+      role: role === 'admin' ? 'admin' : 'player',
+      displayName: displayName ?? '',
+      disabled: false,
+      createdAt: Timestamp.now(),
+    });
+  },
+
+  /** Patch allowed fields (passSalt/passHash/displayName/disabled). Returns
+   *  false when the user does not exist (route → 404) — never upserts. */
+  async updateUser(email, patch) {
+    const ref = db().collection('users').doc(String(email).toLowerCase());
+    const snap = await ref.get();
+    if (!snap.exists) return false;
+    const allowed = {};
+    if (patch.passSalt != null) allowed.passSalt = patch.passSalt;
+    if (patch.passHash != null) allowed.passHash = patch.passHash;
+    if (patch.displayName != null) allowed.displayName = patch.displayName;
+    if (patch.disabled != null) allowed.disabled = Boolean(patch.disabled);
+    if (Object.keys(allowed).length > 0) await ref.update(allowed);
+    return true;
+  },
+
+  /** Delete the account doc ONLY — sessions (TTL cleans up) and leaderboard
+   *  rows are deliberately left alone (frozen contract). */
+  async deleteUser(email) {
+    await db().collection('users').doc(String(email).toLowerCase()).delete();
+  },
+
+  /** Boot-time admin upsert (env ADMIN_EMAIL/ADMIN_PASS): idempotent recovery
+   *  path — always (re)sets role=admin + the password, re-enables the account,
+   *  and fills createdAt/displayName only on first creation. */
+  async ensureAdmin({ email, passSalt, passHash }) {
+    const key = String(email).toLowerCase();
+    const ref = db().collection('users').doc(key);
+    const snap = await ref.get();
+    await ref.set(
+      {
+        email: key,
+        passSalt,
+        passHash,
+        role: 'admin',
+        disabled: false,
+        ...(snap.exists ? {} : { displayName: '', createdAt: Timestamp.now() }),
+      },
+      { merge: true },
+    );
   },
 };

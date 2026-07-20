@@ -1,5 +1,6 @@
 import { useAppStore } from '../store';
 import { useT } from '../i18n';
+import * as api from '../data/api';
 import type { PricingRates } from '../types';
 
 /**
@@ -25,9 +26,20 @@ export default function SettingsSheet() {
   const updateSettings = useAppStore((s) => s.updateSettings);
   const authToken = useAppStore((s) => s.authToken);
   const setAuthToken = useAppStore((s) => s.setAuthToken);
+  const auth = useAppStore((s) => s.auth);
+  const setAuth = useAppStore((s) => s.setAuth);
+  const setScreen = useAppStore((s) => s.setScreen);
   const t = useT();
 
   if (!open) return null;
+
+  /** Log out (players' only exit; admins also have one on AdminScreen). */
+  async function handleLogout() {
+    await api.logout();
+    setOpen(false);
+    setScreen('home');
+    setAuth(null); // LoginGate reappears
+  }
 
   const rateField = (key: keyof PricingRates, labelKey: Parameters<typeof t>[0]) => (
     <label className="col" style={{ gap: 4 }}>
@@ -196,6 +208,30 @@ export default function SettingsSheet() {
           {rateField('audioOutPer1M', 'settings.audioOut')}
           {rateField('usdToThb', 'settings.usdToThb')}
         </div>
+
+        {/* --- account (UAM v1.5) — only when signed in via the gate --- */}
+        {auth && (
+          <>
+            <h3 style={{ margin: '16px 0 8px' }}>{t('settings.account')}</h3>
+            <div className="row" style={{ justifyContent: 'space-between', gap: 8 }}>
+              <span
+                className="dim"
+                style={{
+                  fontSize: '0.85rem',
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {auth.email}
+              </span>
+              <button className="btn btn-ghost tap" onClick={handleLogout}>
+                {t('settings.logout')}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

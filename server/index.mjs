@@ -14,9 +14,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GoogleGenAI } from '@google/genai';
 import { mountCloudRoutes } from './routes.mjs';
-import { initDb } from './store.mjs';
+import { backend, initDb } from './store.mjs';
 import { mountLiveRelay } from './liveRelay.mjs';
 import { mountAuthGate } from './authGate.mjs';
+import { hashPassword } from './authCore.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -73,6 +74,20 @@ app.get('/api/token', async (_req, res) => {
 // when DATABASE_URL / GCS creds are absent — nothing crashes.
 initDb();
 mountCloudRoutes(app);
+
+// UAM v1.5 bootstrap admin (idempotent recovery path): when ADMIN_EMAIL +
+// ADMIN_PASS are both set AND the Firestore backend is selected, upsert that
+// user as role=admin and reset its password — the first admin (or a locked-out
+// one) never depends on the UI. Fire-and-forget: must never block boot.
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+const ADMIN_PASS = process.env.ADMIN_PASS || '';
+if (ADMIN_EMAIL && ADMIN_PASS && backend.name === 'firestore') {
+  const { passSalt, passHash } = hashPassword(ADMIN_PASS);
+  backend
+    .ensureAdmin({ email: ADMIN_EMAIL, passSalt, passHash })
+    .then(() => console.log(`[auth] bootstrap admin ensured: ${ADMIN_EMAIL}`))
+    .catch((err) => console.error('[auth] bootstrap admin failed (non-fatal):', err?.message || err));
+}
 
 // Static frontend + SPA fallback.
 const dist = path.join(__dirname, '..', 'dist');

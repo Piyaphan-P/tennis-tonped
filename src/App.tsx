@@ -5,6 +5,7 @@ import SummaryScreen from './screens/SummaryScreen';
 import DevPlanScreen from './screens/DevPlanScreen';
 import CompareScreen from './screens/CompareScreen';
 import HistoryScreen from './screens/HistoryScreen';
+import AdminScreen from './screens/AdminScreen';
 import SettingsSheet from './components/SettingsSheet';
 import BottomNav from './components/BottomNav';
 import LoginGate from './components/LoginGate';
@@ -14,6 +15,7 @@ import LoginGate from './components/LoginGate';
  *  passed before anything renders; fails open when no gate exists (dev). */
 export default function App() {
   const screen = useAppStore((s) => s.screen);
+  const isAdmin = useAppStore((s) => s.auth?.role === 'admin');
 
   return (
     <LoginGate>
@@ -24,6 +26,9 @@ export default function App() {
         {screen === 'devplan' && <DevPlanScreen />}
         {screen === 'compare' && <CompareScreen />}
         {screen === 'history' && <HistoryScreen />}
+        {/* Admin is role-gated: a non-admin landing here (e.g. after logout)
+            falls back to Home instead of a blank screen. */}
+        {screen === 'admin' && (isAdmin ? <AdminScreen /> : <HomeScreen />)}
         <SettingsSheet />
         <BottomNav />
       </div>
