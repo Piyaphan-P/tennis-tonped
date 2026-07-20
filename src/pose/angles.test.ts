@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { angleDeg, angleDeg3D, computeJointAngles } from './angles';
+import {
+  angleDeg,
+  angleDeg3D,
+  computeJointAngles,
+  ema,
+  SHOULDER_STATUS_EMA_ALPHA,
+} from './angles';
 import { LM } from '../types';
 import type { Landmark, PoseFrame } from '../types';
 
@@ -78,5 +84,36 @@ describe('computeJointAngles — shoulder foreshortening fix (Suspect 2)', () =>
     });
     const angles = computeJointAngles(f, null, 'right');
     expect(angles.rightShoulderDeg).toBeGreaterThan(110); // ~172° → correctly warns
+  });
+});
+
+describe('ema (live shoulder-status smoothing, pure)', () => {
+  it('seeds with next when prev is null/undefined/non-finite (identity on first sample)', () => {
+    expect(ema(null, 87, 0.35)).toBe(87);
+    expect(ema(undefined, 87, 0.35)).toBe(87);
+    expect(ema(NaN, 87, 0.35)).toBe(87);
+  });
+
+  it('is the standard one-step EMA: alpha*next + (1-alpha)*prev', () => {
+    expect(ema(100, 200, 0.35)).toBeCloseTo(0.35 * 200 + 0.65 * 100, 10);
+    // alpha=1 tracks the input exactly; alpha=0 freezes at prev.
+    expect(ema(100, 200, 1)).toBe(200);
+    expect(ema(100, 200, 0)).toBe(100);
+  });
+
+  it('damps a single-frame z-noise spike (the flicker we are killing)', () => {
+    // Angle sits at 100° (good), one frame jumps to 40° (would flip to warn),
+    // then returns. The smoothed value must stay well inside the 60–110 window.
+    let v = ema(null, 100, SHOULDER_STATUS_EMA_ALPHA);
+    v = ema(v, 40, SHOULDER_STATUS_EMA_ALPHA); // the noise spike
+    expect(v).toBeGreaterThan(60); // did NOT flip to warn on one bad frame
+    v = ema(v, 100, SHOULDER_STATUS_EMA_ALPHA);
+    expect(v).toBeGreaterThan(60);
+  });
+
+  it('converges toward a sustained new level', () => {
+    let v = 100;
+    for (let i = 0; i < 20; i++) v = ema(v, 70, SHOULDER_STATUS_EMA_ALPHA);
+    expect(v).toBeCloseTo(70, 1);
   });
 });

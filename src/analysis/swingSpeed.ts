@@ -48,6 +48,22 @@ export const HEIGHT_MIN_CM = 100;
 export const HEIGHT_MAX_CM = 230;
 export const DEFAULT_HEIGHT_CM = 170;
 
+/**
+ * PO-tunable km/h calibration multiplier. Because the normalized→km/h scale is
+ * anisotropic and can read low (see caveat above), the user can calibrate the
+ * magnitude live by comparing to a known reference. DEFAULT = 1.0 = NO change
+ * (identity) so nobody ever sees a silent shift; clamped to a sane range.
+ */
+export const SPEED_FACTOR_MIN = 0.5;
+export const SPEED_FACTOR_MAX = 3.0;
+export const DEFAULT_SPEED_FACTOR = 1.0;
+
+/** Clamp a speed-correction factor into [0.5, 3.0]; NaN/absent → 1.0 (identity). */
+export function clampSpeedFactor(f: number | undefined | null): number {
+  if (f == null || !Number.isFinite(f)) return DEFAULT_SPEED_FACTOR;
+  return Math.min(SPEED_FACTOR_MAX, Math.max(SPEED_FACTOR_MIN, f));
+}
+
 /** Landmarks below this visibility are treated as not usable for calibration. */
 const MIN_VISIBILITY = 0.5;
 
@@ -95,11 +111,17 @@ export function normalizedBodyLength(landmarks: Landmark[] | null | undefined): 
  * in km/h using the player's height and their body length in the frame. Returns
  * a rounded integer km/h, or undefined when calibration is not possible (out-of-
  * frame body, non-positive speed). Always display with a "≈" prefix.
+ *
+ * `correctionFactor` (default 1.0 = identity) is the PO-tunable calibration
+ * multiplier applied here at compute time — the single place km/h is produced —
+ * so every display site (gallery, History, export, coach prompt) reads the
+ * already-corrected value. Clamped to [0.5, 3.0].
  */
 export function estimateSpeedKmh(
   landmarks: Landmark[] | null | undefined,
   peakWristSpeed: number,
   heightCm: number | undefined | null,
+  correctionFactor: number | undefined | null = DEFAULT_SPEED_FACTOR,
 ): number | undefined {
   if (!Number.isFinite(peakWristSpeed) || peakWristSpeed <= 0) return undefined;
   const bodyLen = normalizedBodyLength(landmarks);
@@ -107,7 +129,7 @@ export function estimateSpeedKmh(
 
   const heightM = clampHeightCm(heightCm) / 100;
   const scaleMeters = (heightM * NOSE_ANKLE_FRACTION) / bodyLen; // m per unit
-  const kmh = peakWristSpeed * scaleMeters * 3.6;
+  const kmh = peakWristSpeed * scaleMeters * 3.6 * clampSpeedFactor(correctionFactor);
   if (!Number.isFinite(kmh) || kmh <= 0) return undefined;
   return Math.round(kmh);
 }

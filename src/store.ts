@@ -24,7 +24,8 @@
 
 import { create } from 'zustand';
 import { HISTORY_TTL_MS } from './types';
-import { clampHeightCm } from './analysis/swingSpeed';
+import { clampHeightCm, clampSpeedFactor } from './analysis/swingSpeed';
+import { SHOULDER_STATUS_EMA_ALPHA, ema } from './pose/angles';
 import type {
   AngleStatuses,
   AuthUser,
@@ -70,6 +71,7 @@ const LS_AUTH_EMAIL = 'tp.authEmail'; // last signed-in account — drives userN
 const LS_PLAYER_HEIGHT = 'tp.playerHeightCm';
 const LS_VOICE_TONE = 'tp.voiceTone';
 const LS_COACH_MODE = 'tp.coachMode';
+const LS_SPEED_FACTOR = 'tp.speedFactor'; // km/h calibration multiplier (PO-tunable on court)
 const LS_HISTORY = 'tp.history';
 
 function lsGet(key: string): string | null {
@@ -225,6 +227,15 @@ function shoulderStatus(deg: number): JointStatus {
   return 'warn';
 }
 
+/**
+ * LIVE-DISPLAY-ONLY EMA state for the dominant shoulder angle. Smooths the
+ * noisy 3D shoulder angle used to COLOR the status chip/skeleton so it stops
+ * flickering good↔warn on z-noise. Reset on startSession. This never touches
+ * the raw angles stored in `pose.angles` or captured for scoring — it is
+ * applied only to the transient copy fed into evaluateAngleStatuses below.
+ */
+let liveShoulderEma: number | null = null;
+
 function trunkStatus(deg: number): JointStatus {
   if (deg <= 15) return 'good';
   if (deg <= 25) return 'warn';
@@ -317,6 +328,11 @@ const DEFAULT_SETTINGS: Settings = {
   focusShot: 'forehand',
   voiceTone: readEnum(LS_VOICE_TONE, VOICE_TONES, 'gentleF'),
   coachMode: readEnum(LS_COACH_MODE, COACH_MODES, 'encourage'),
+  // km/h calibration multiplier — clamped 0.5–3.0, default 1.0 (= no change).
+  // Tunable on court to correct the anisotropic under/over-read without redeploy.
+  speedCorrectionFactor: clampSpeedFactor(
+    lsGet(LS_SPEED_FACTOR) != null ? Number(lsGet(LS_SPEED_FACTOR)) : undefined,
+  ),
 };
 
 const ZERO_TOKENS: TokenTotals = {
@@ -659,6 +675,12 @@ export const useAppStore = create<AppState>()((set) => ({
     if (patch.playerHeightCm != null) {
       lsSet(LS_PLAYER_HEIGHT, String(patch.playerHeightCm));
     }
+    // Persist the (PO-tuned, physical) km/h calibration factor across reloads,
+    // clamped to the sane range so a stray value can never poison the display.
+    if (patch.speedCorrectionFactor != null) {
+      patch = { ...patch, speedCorrectionFactor: clampSpeedFactor(patch.speedCorrectionFactor) };
+      lsSet(LS_SPEED_FACTOR, String(patch.speedCorrectionFactor));
+    }
     set((s) => ({ settings: { ...s.settings, ...patch } }));
   },
   updateRates: (patch) =>
@@ -707,6 +729,7 @@ export const useAppStore = create<AppState>()((set) => ({
     set((s) => {
       // Defensive: a session abandoned without endSession must not leak blobs.
       for (const sh of s.shots) revokeClipUrl(sh.clip);
+      liveShoulderEma = null; // reset live shoulder-status EMA for the new session
       return {
         cloudSessionId: null,
         session: {
@@ -750,18 +773,29 @@ export const useAppStore = create<AppState>()((set) => ({
 
   // --- pose loop ---
   pushPoseFrame: (frame, angles) =>
-    set((s) => ({
-      pose: {
-        ...s.pose,
-        frame,
-        angles,
-        statuses: evaluateAngleStatuses(
-          angles,
-          s.settings.dominantHand,
-          s.pose.phase,
-        ),
-      },
-    })),
+    set((s) => {
+      const hand = s.settings.dominantHand;
+      // LIVE-DISPLAY ONLY: de-flicker the noisy 3D shoulder angle for the status
+      // chip/skeleton coloring. We build a SHALLOW COPY of angles with just the
+      // dominant shoulder EMA-smoothed and pass THAT into evaluateAngleStatuses.
+      // `pose.angles` is stored byte-for-byte RAW below, so the per-shot scoring
+      // angle (which the detector captures from the raw stream) is untouched.
+      const rawShoulder =
+        hand === 'right' ? angles.rightShoulderDeg : angles.leftShoulderDeg;
+      liveShoulderEma = ema(liveShoulderEma, rawShoulder, SHOULDER_STATUS_EMA_ALPHA);
+      const displayAngles: JointAngles =
+        hand === 'right'
+          ? { ...angles, rightShoulderDeg: liveShoulderEma }
+          : { ...angles, leftShoulderDeg: liveShoulderEma };
+      return {
+        pose: {
+          ...s.pose,
+          frame,
+          angles, // RAW — never smoothed (scoring reads this)
+          statuses: evaluateAngleStatuses(displayAngles, hand, s.pose.phase),
+        },
+      };
+    }),
   setPhase: (phase) =>
     set((s) => (s.pose.phase === phase ? s : { pose: { ...s.pose, phase } })),
   setPoseFps: (fps) => set((s) => ({ pose: { ...s.pose, fps } })),

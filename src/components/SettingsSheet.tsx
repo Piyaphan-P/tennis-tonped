@@ -100,6 +100,36 @@ export default function SettingsSheet() {
           />
         </label>
 
+        {/* --- swing-speed calibration (× multiplier on km/h, PO-tunable) --- */}
+        <label className="col" style={{ gap: 4, marginBottom: 10 }}>
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <span>{t('settings.speedFactor')}</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0.5}
+              max={3}
+              step={0.05}
+              style={{ width: 92, textAlign: 'right' }}
+              value={settings.speedCorrectionFactor}
+              onChange={(e) => {
+                // Loose while typing; clampSpeedFactor (in the store setter) lands
+                // the hard 0.5–3.0 clamp so a stray value can't poison the display.
+                const n = Number(e.target.value);
+                if (Number.isFinite(n) && n > 0) updateSettings({ speedCorrectionFactor: n });
+              }}
+              onBlur={() =>
+                updateSettings({
+                  speedCorrectionFactor: Math.min(3, Math.max(0.5, settings.speedCorrectionFactor)),
+                })
+              }
+            />
+          </div>
+          <span className="dim" style={{ fontSize: '0.8rem' }}>
+            {t('settings.speedFactorHint')}
+          </span>
+        </label>
+
         {/* --- camera --- */}
         <label className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
           <span>{t('settings.camera')}</span>

@@ -785,6 +785,7 @@ export class ShotDetector {
         this.contactLandmarks,
         this.peakWristSpeed,
         settings.playerHeightCm,
+        settings.speedCorrectionFactor,
       );
 
       const shot: Shot = {

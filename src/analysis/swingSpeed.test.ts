@@ -10,7 +10,11 @@ import {
   DEFAULT_HEIGHT_CM,
   HEIGHT_MIN_CM,
   HEIGHT_MAX_CM,
+  SPEED_FACTOR_MIN,
+  SPEED_FACTOR_MAX,
+  DEFAULT_SPEED_FACTOR,
   clampHeightCm,
+  clampSpeedFactor,
   normalizedBodyLength,
   estimateSpeedKmh,
   formatSpeedKmh,
@@ -152,5 +156,43 @@ describe('formatSpeedKmh', () => {
   it('returns empty string for undefined/non-finite', () => {
     expect(formatSpeedKmh(undefined, 'th')).toBe('');
     expect(formatSpeedKmh(NaN, 'en')).toBe('');
+  });
+});
+
+describe('clampSpeedFactor (PO-tunable km/h calibration multiplier)', () => {
+  it('defaults to 1.0 (identity) for absent/garbage values', () => {
+    expect(DEFAULT_SPEED_FACTOR).toBe(1.0);
+    expect(clampSpeedFactor(undefined)).toBe(1.0);
+    expect(clampSpeedFactor(null)).toBe(1.0);
+    expect(clampSpeedFactor(NaN)).toBe(1.0);
+  });
+  it('clamps to [0.5, 3.0]', () => {
+    expect(clampSpeedFactor(0.1)).toBe(SPEED_FACTOR_MIN);
+    expect(clampSpeedFactor(10)).toBe(SPEED_FACTOR_MAX);
+    expect(clampSpeedFactor(1.7)).toBe(1.7);
+  });
+});
+
+describe('estimateSpeedKmh — correction factor', () => {
+  const lms = standingFrame(0.1, 0.9); // body length 0.8
+
+  it('factor 1.0 is identical to the default (no silent shift)', () => {
+    const base = estimateSpeedKmh(lms, 1.5, 170) as number;
+    expect(estimateSpeedKmh(lms, 1.5, 170, 1.0)).toBe(base);
+    expect(estimateSpeedKmh(lms, 1.5, 170, undefined)).toBe(base);
+  });
+
+  it('scales the km/h by the factor (2× factor ≈ 2× speed)', () => {
+    const base = estimateSpeedKmh(lms, 1.5, 170) as number;
+    const doubled = estimateSpeedKmh(lms, 1.5, 170, 2.0) as number;
+    // integer-rounded, so allow ±1 around the exact 2× relationship
+    expect(Math.abs(doubled - 2 * base)).toBeLessThanOrEqual(1);
+  });
+
+  it('out-of-range factors are clamped before applying', () => {
+    const base = estimateSpeedKmh(lms, 1.5, 170) as number;
+    // 10 clamps to 3.0, 0.1 clamps to 0.5 (±1 rounding tolerance)
+    expect(Math.abs((estimateSpeedKmh(lms, 1.5, 170, 10) as number) - base * SPEED_FACTOR_MAX)).toBeLessThanOrEqual(1);
+    expect(Math.abs((estimateSpeedKmh(lms, 1.5, 170, 0.1) as number) - base * SPEED_FACTOR_MIN)).toBeLessThanOrEqual(1);
   });
 });

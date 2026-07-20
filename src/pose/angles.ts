@@ -12,6 +12,29 @@ import type { DominantHand, JointAngles, Landmark, PoseFrame } from '../types';
 /** EMA smoothing factor for dominant-wrist speed/velocity. */
 export const EMA_ALPHA = 0.4;
 
+/**
+ * EMA smoothing factor for the LIVE shoulder-angle STATUS coloring only
+ * (HUD/skeleton good↔warn chip). The shoulder angle uses angleDeg3D and
+ * MediaPipe z is noisy frame-to-frame, so the raw 3D angle jitters across the
+ * 60–110° "good" boundary and the chip flickers. A short EMA de-flickers the
+ * DISPLAYED status without touching any per-shot scoring angle. Lower = smoother
+ * but laggier; 0.35 keeps the chip responsive within a swing while killing the
+ * frame-to-frame z-noise flicker.
+ *
+ * ⚠️ This applies ONLY to the transient angle copy fed into the live status
+ * evaluation — never to the raw angles stored/captured for scoring.
+ */
+export const SHOULDER_STATUS_EMA_ALPHA = 0.35;
+
+/**
+ * One-step exponential moving average. `prev === null` (or non-finite) seeds the
+ * filter with `next` (identity on the first sample). Pure — no state, unit-safe.
+ */
+export function ema(prev: number | null | undefined, next: number, alpha: number): number {
+  if (prev == null || !Number.isFinite(prev)) return next;
+  return alpha * next + (1 - alpha) * prev;
+}
+
 /** Minimum landmark visibility to trust a joint for angle math. */
 export const MIN_VISIBILITY = 0.3;
 

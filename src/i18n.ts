@@ -460,6 +460,11 @@ const DICT = {
   'settings.sendFrame': { th: 'ส่งภาพจังหวะสัมผัสลูก', en: 'Send contact frame' },
   'settings.coachVoice': { th: 'เปิดเสียงโค้ช', en: 'Coach voice' },
   'settings.playerHeight': { th: 'ส่วนสูง (ซม.)', en: 'Height (cm)' },
+  'settings.speedFactor': { th: 'ปรับค่าความเร็ว (คูณ)', en: 'Speed calibration ×' },
+  'settings.speedFactorHint': {
+    th: '1.0 = ค่าเริ่มต้น ปรับที่สนามโดยเทียบกับความเร็วอ้างอิงที่รู้จริง',
+    en: '1.0 = default. Tune on court by comparing to a known reference speed.',
+  },
   'speed.label': { th: 'สปีด', en: 'speed' },
   'settings.dominantHand': { th: 'มือถนัด', en: 'Dominant hand' },
   'settings.handLeft': { th: 'ซ้าย', en: 'Left' },

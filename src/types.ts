@@ -561,6 +561,13 @@ export interface Settings {
    * normalized wrist speed into an approximate km/h swing speed. Persisted.
    */
   playerHeightCm: number;
+  /**
+   * PO-tunable km/h calibration multiplier (clamped 0.5–3.0, default 1.0 = no
+   * change). Multiplies the estimated swing speed at compute time so the user
+   * can correct the anisotropic under/over-read on court without a redeploy.
+   * Persisted to localStorage (tp.speedFactor).
+   */
+  speedCorrectionFactor: number;
   /** 'user' = front camera (default: player props phone facing themself). */
   cameraFacing: 'user' | 'environment';
   /** Shot the player is drilling this session. */
