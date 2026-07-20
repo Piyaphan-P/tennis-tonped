@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
   useAppStore,
-  selectSessionCostTHB,
-  selectTHBPerShot,
   selectShotCount,
   selectAvgScore,
   selectSessionDurationMs,
@@ -12,7 +10,6 @@ import {
 } from '../store';
 import { useT } from '../i18n';
 import type { I18nKey } from '../i18n';
-import { formatTHB } from '../cost/pricing';
 import { renderCaptureToDataUrl } from '../analysis/captureRenderer';
 import CaptureLightbox from '../components/CaptureLightbox';
 import type {
@@ -247,18 +244,16 @@ function IssueChip({ issue, lang }: { issue: ShotIssue; lang: Lang }) {
   );
 }
 
-/** Post-session summary: cost, stats, improvements, per-shot cards, breakdown, history. */
+/** Post-session summary: stats, improvements, per-shot cards, history.
+ *  (Player-facing THB cost blocks removed 2026-07-20 — costMonitor still runs;
+ *  its totals go to the admin usage upload at session end.) */
 export default function SummaryScreen() {
   const t = useT();
   const lang = useAppStore((s) => s.lang);
   const setScreen = useAppStore((s) => s.setScreen);
-  const total = useAppStore(selectSessionCostTHB);
-  const perShot = useAppStore(selectTHBPerShot);
   const shotCount = useAppStore(selectShotCount);
   const avg = useAppStore(selectAvgScore);
   const duration = useAppStore(selectSessionDurationMs);
-  const tokens = useAppStore((s) => s.cost.tokens);
-  const breakdown = useAppStore((s) => s.cost.breakdown);
   const shots = useAppStore((s) => s.shots);
   const improvements = useAppStore(selectSessionImprovements);
   const stats = useAppStore(selectUserStats);
@@ -284,28 +279,9 @@ export default function SummaryScreen() {
     </div>
   );
 
-  // THB-per-modality bars. width ∝ largest modality cost; token counts as secondary text.
-  const modalityRows: Array<{ label: string; thb: number; tok: number }> = [
-    { label: t('token.textIn'), thb: breakdown.textInTHB, tok: tokens.textIn },
-    { label: t('token.audioIn'), thb: breakdown.audioInTHB, tok: tokens.audioIn },
-    { label: t('token.videoIn'), thb: breakdown.videoInTHB, tok: tokens.videoIn },
-    { label: t('token.textOut'), thb: breakdown.textOutTHB, tok: tokens.textOut },
-    { label: t('token.audioOut'), thb: breakdown.audioOutTHB, tok: tokens.audioOut },
-    { label: t('token.thoughts'), thb: breakdown.thoughtsTHB, tok: tokens.thoughts },
-  ];
-  const maxTHB = Math.max(...modalityRows.map((r) => r.thb), 0);
-
   return (
     <div className="screen">
       <h1>{t('summary.title')}</h1>
-
-      <div className="card cost-meter col" style={{ gap: 4 }}>
-        <span className="dim">{t('summary.totalCost')}</span>
-        <span className="big">{formatTHB(total)}</span>
-        <span className="dim num" style={{ fontSize: '0.85rem' }}>
-          ~{formatTHB(perShot)} {t('summary.costPerShot')} ({t('common.approx')})
-        </span>
-      </div>
 
       <div
         style={{
@@ -371,14 +347,9 @@ export default function SummaryScreen() {
                     />
                   )}
                   <div className="col" style={{ gap: 4, flex: 1, minWidth: 0 }}>
-                    <div className="row" style={{ justifyContent: 'space-between', gap: 8 }}>
-                      <span className="dim" style={{ fontSize: '0.85rem' }}>
-                        {t(typeKey)}
-                      </span>
-                      <span className="num faint" style={{ fontSize: '0.75rem' }}>
-                        {sh.costTHB !== undefined ? `~${formatTHB(sh.costTHB)}` : '—'}
-                      </span>
-                    </div>
+                    <span className="dim" style={{ fontSize: '0.85rem' }}>
+                      {t(typeKey)}
+                    </span>
                     {sh.issues.length > 0 && (
                       <div className="row" style={{ gap: 5, flexWrap: 'wrap' }}>
                         {sh.issues.map((iss, i) => (
@@ -408,48 +379,6 @@ export default function SummaryScreen() {
       ) : (
         <p className="dim">{t('summary.noShots')}</p>
       )}
-
-      {/* --- cost by modality: THB bars + secondary token counts --- */}
-      <div className="card col" style={{ gap: 10 }}>
-        <h3>{t('summary.breakdown')}</h3>
-        <div className="col" style={{ gap: 10 }}>
-          {modalityRows.map((r) => (
-            <div key={r.label} className="col" style={{ gap: 3 }}>
-              <div className="row" style={{ justifyContent: 'space-between', gap: 8 }}>
-                <span className="dim" style={{ fontSize: '0.82rem' }}>
-                  {r.label}
-                </span>
-                <span className="num" style={{ fontSize: '0.85rem', fontWeight: 700 }}>
-                  {formatTHB(r.thb)}
-                </span>
-              </div>
-              <div
-                style={{
-                  height: 6,
-                  borderRadius: 'var(--radius-pill)',
-                  background: 'rgba(255,255,255,0.08)',
-                  overflow: 'hidden',
-                }}
-              >
-                <div
-                  style={{
-                    height: '100%',
-                    width: maxTHB > 0 ? `${(r.thb / maxTHB) * 100}%` : '0%',
-                    background: 'var(--accent)',
-                    borderRadius: 'var(--radius-pill)',
-                  }}
-                />
-              </div>
-              <span className="faint num" style={{ fontSize: '0.7rem' }}>
-                {r.tok.toLocaleString()} tok
-              </span>
-            </div>
-          ))}
-        </div>
-        <p className="faint" style={{ fontSize: '0.78rem' }}>
-          {t('summary.approxNote')}
-        </p>
-      </div>
 
       {/* --- cross-session stats (your progress) --- */}
       {stats.sessions > 0 && (
@@ -533,7 +462,7 @@ export default function SummaryScreen() {
                     </span>
                     <span className="faint num" style={{ fontSize: '0.72rem' }}>
                       {h.shotCount} {t('history.shots')} · {h.goodFormPct.toFixed(0)}%{' '}
-                      {t('stats.goodForm')} · ~{formatTHB(h.totalCostTHB)}
+                      {t('stats.goodForm')}
                     </span>
                   </div>
                   <span

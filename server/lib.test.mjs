@@ -14,6 +14,8 @@ import {
   shotDocToJson,
   userDocToJson,
   validateShotMeta,
+  sanitizeUsage,
+  aggregateUsageRows,
   unavailableBody,
 } from './lib.mjs';
 
@@ -299,5 +301,84 @@ describe('unavailableBody', () => {
     expect(b.error).toBe('cloud_unavailable');
     expect(b.message).toContain('Cloud history is not configured');
     expect(b.message).toContain('ยังไม่ได้ตั้งค่าระบบคลาวด์');
+  });
+});
+
+describe('sanitizeUsage', () => {
+  it('returns null when absent or not a plain object (old clients keep working)', () => {
+    expect(sanitizeUsage(undefined)).toBeNull();
+    expect(sanitizeUsage(null)).toBeNull();
+    expect(sanitizeUsage('7.5')).toBeNull();
+    expect(sanitizeUsage([1, 2])).toBeNull();
+  });
+  it('coerces numbers with Number()||0 and keeps detail only when plain object', () => {
+    expect(
+      sanitizeUsage({ thb: '7.25', tokensIn: 1200, tokensOut: '340', detail: { audio: 1 } }),
+    ).toEqual({ thb: 7.25, tokensIn: 1200, tokensOut: 340, detail: { audio: 1 } });
+    expect(sanitizeUsage({ thb: 'x', tokensIn: NaN, detail: [1] })).toEqual({
+      thb: 0,
+      tokensIn: 0,
+      tokensOut: 0,
+      detail: null,
+    });
+  });
+});
+
+describe('aggregateUsageRows', () => {
+  // Fake Firestore Timestamp playedAt — exercises the import-free duck-typing.
+  const row = (ownerEmail, userName, thb, tokensIn, tokensOut, playedAtIso) => ({
+    ownerEmail,
+    userName,
+    thb,
+    tokensIn,
+    tokensOut,
+    playedAt: playedAtIso ? ts(playedAtIso) : null,
+  });
+
+  it('returns empty shape on no rows', () => {
+    expect(aggregateUsageRows([])).toEqual({
+      users: [],
+      total: { thb: 0, tokensIn: 0, tokensOut: 0, sessions: 0 },
+    });
+    expect(aggregateUsageRows(undefined).users).toEqual([]);
+  });
+
+  it('groups by ownerEmail, sums, sorts by thb desc, rounds thb to 2 decimals', () => {
+    const out = aggregateUsageRows([
+      row('a@x.com', 'A', 1.005, 100, 10, '2026-07-18T10:00:00Z'),
+      row('a@x.com', 'A2', 2.001, 200, 20, '2026-07-19T10:00:00Z'),
+      row('b@x.com', 'B', 9.999, 50, 5, '2026-07-17T10:00:00Z'),
+    ]);
+    expect(out.users.map((u) => u.email)).toEqual(['b@x.com', 'a@x.com']);
+    const a = out.users[1];
+    expect(a).toEqual({
+      email: 'a@x.com',
+      userName: 'A2', // most recent record names the group
+      thb: 3.01,
+      tokensIn: 300,
+      tokensOut: 30,
+      sessions: 2,
+    });
+    expect(out.users[0].thb).toBe(10);
+    expect(out.total).toEqual({ thb: 13.01, tokensIn: 350, tokensOut: 35, sessions: 3 });
+  });
+
+  it('buckets null ownerEmail under "(legacy)" and tolerates missing playedAt', () => {
+    const out = aggregateUsageRows([
+      row(null, 'Old Phone', 0.5, 10, 1, null),
+      row(null, 'Older Phone', 0.25, 5, 1, null),
+    ]);
+    expect(out.users).toHaveLength(1);
+    expect(out.users[0].email).toBe('(legacy)');
+    expect(out.users[0].sessions).toBe(2);
+    expect(out.users[0].thb).toBe(0.75);
+  });
+
+  it('most-recent userName wins regardless of row order', () => {
+    const out = aggregateUsageRows([
+      row('a@x.com', 'Newest', 1, 1, 1, '2026-07-20T00:00:00Z'),
+      row('a@x.com', 'Oldest', 1, 1, 1, '2026-07-01T00:00:00Z'),
+    ]);
+    expect(out.users[0].userName).toBe('Newest');
   });
 });

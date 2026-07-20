@@ -106,7 +106,7 @@ export default function LoginGate({ children }: { children: ReactNode }) {
           <h1 style={{ fontSize: '1.15rem', margin: 0 }}>{t('login.title')}</h1>
           <p style={{ color: 'var(--text-dim)', fontSize: '0.85rem', margin: 0 }}>{t('login.subtitle')}</p>
           <input
-            type="email"
+            type="text"
             inputMode="email"
             autoComplete="username"
             autoCapitalize="none"

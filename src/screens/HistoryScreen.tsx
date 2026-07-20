@@ -175,7 +175,6 @@ function DetailView({ id, onBack }: { id: string; onBack: () => void }) {
   const cloudSessionId = useAppStore((s) => s.cloudSessionId);
   const localShots = useAppStore((s) => s.shots);
   const setScreen = useAppStore((s) => s.setScreen);
-  const setCompareClip = useAppStore((s) => s.setCompareClip);
 
   const [detail, setDetail] = useState<CloudSessionDetail | null | undefined>(undefined);
   const [deleteFailed, setDeleteFailed] = useState(false);
@@ -392,23 +391,6 @@ function DetailView({ id, onBack }: { id: string; onBack: () => void }) {
                     <li key={i}>{line}</li>
                   ))}
                 </ul>
-              )}
-
-              {shot.hasClip && (
-                <button
-                  type="button"
-                  className="btn btn-block"
-                  onClick={() => {
-                    setCompareClip({
-                      url: src ?? api.clipUrl(shot.id),
-                      mimeType: shot.clipMime ?? 'video/mp4',
-                      shotType: shot.type,
-                    });
-                    setScreen('compare');
-                  }}
-                >
-                  {t('history.compareThis')}
-                </button>
               )}
 
               {shot.hasClip && src && (

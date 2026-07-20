@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useAppStore } from '../store';
 import { useT } from '../i18n';
 import type { I18nKey } from '../i18n';
@@ -15,21 +14,6 @@ const FOCUS_OPTIONS: Array<{ value: FocusShot; labelKey: I18nKey }> = [
   { value: 'both', labelKey: 'home.both' },
 ];
 
-/**
- * True when the backend provisions the coach automatically (prod/SIT): the
- * `/api/token` mint endpoint is baked in, or the app talks to the same-origin
- * relay. In that case the pasted-token field is a dev/fallback only — the start
- * flow must never gate on it and we suppress the "token missing" alarm.
- */
-export function coachAutoProvisioned(): boolean {
-  try {
-    const env = (import.meta as unknown as { env?: Record<string, string> }).env;
-    return !!env?.VITE_TOKEN_ENDPOINT || env?.VITE_LIVE_TRANSPORT === 'relay';
-  } catch {
-    return false;
-  }
-}
-
 /** Landing screen: brand, session setup, start CTA, stats + history. */
 export default function HomeScreen() {
   const t = useT();
@@ -39,13 +23,6 @@ export default function HomeScreen() {
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
   const setUserName = useAppStore((s) => s.setUserName);
-  const authToken = useAppStore((s) => s.authToken);
-
-  const [tokenBannerDismissed, setTokenBannerDismissed] = useState(false);
-  // Only nag about a missing token when the coach is NOT auto-provisioned
-  // (pure local dev with no /api/token endpoint and no relay). On prod/SIT the
-  // backend mints the token, so a missing pasted token is a non-issue.
-  const showTokenBanner = !authToken && !coachAutoProvisioned() && !tokenBannerDismissed;
 
   const start = () => {
     // Unlock the AudioContext INSIDE this tap gesture so iOS Safari will play
@@ -130,33 +107,6 @@ export default function HomeScreen() {
           </span>
         </div>
       </div>
-
-      {/* --- bilingual coach-token-missing warning (session still allowed) --- */}
-      {showTokenBanner && (
-        <div
-          className="card col"
-          role="alert"
-          style={{ gap: 8, borderColor: 'var(--warn)' }}
-        >
-          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <h3 style={{ color: 'var(--warn)' }}>{t('error.tokenMissing.title')}</h3>
-            <button
-              className="btn-ghost tap"
-              aria-label={t('common.close')}
-              onClick={() => setTokenBannerDismissed(true)}
-              style={{ border: 0, background: 'transparent', color: 'var(--text-dim)', cursor: 'pointer', fontSize: '1.1rem', lineHeight: 1, padding: 4 }}
-            >
-              ×
-            </button>
-          </div>
-          <p className="dim" style={{ fontSize: '0.85rem' }}>
-            {t('error.tokenMissing.body')}
-          </p>
-          <button className="btn btn-ghost" style={{ borderColor: 'var(--warn)', color: 'var(--warn)' }} onClick={() => setSettingsOpen(true)}>
-            {t('home.settings')}
-          </button>
-        </div>
-      )}
 
       <div className="col">
         <button className="btn btn-primary btn-block" onClick={start}>

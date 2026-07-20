@@ -20,6 +20,7 @@ import {
   clipObjectPath,
   audioObjectPath,
   validateShotMeta,
+  sanitizeUsage,
   unavailableBody,
 } from './lib.mjs';
 import { hashPassword, isValidEmail } from './authCore.mjs';
@@ -130,10 +131,18 @@ export function mountCloudRoutes(app) {
     if (!requireDb(res)) return;
     try {
       if (!(await authorizeSession(req, res, req.params.id))) return;
-      const { endedAt, avgScore, shotCount, summary } = req.body ?? {};
+      const { endedAt, avgScore, shotCount, summary, usage } = req.body ?? {};
       // The durable leaderboard upsert (best-effort, shotCount>0 gate) lives
       // inside the backend so both Postgres and Firestore record it identically.
-      await backend.patchSession(req.params.id, { endedAt, avgScore, shotCount, summary });
+      // `usage` (admin cost visibility) is OPTIONAL — sanitizeUsage returns
+      // null when absent/malformed, so old clients keep working unchanged.
+      await backend.patchSession(req.params.id, {
+        endedAt,
+        avgScore,
+        shotCount,
+        summary,
+        usage: sanitizeUsage(usage),
+      });
       res.status(204).end();
     } catch (err) {
       console.error('[routes] patch session:', err?.message || err);
@@ -399,6 +408,21 @@ export function mountCloudRoutes(app) {
       res.status(204).end();
     } catch (err) {
       console.error('[routes] delete user:', err?.message || err);
+      res.status(503).json(unavailableBody('cloud'));
+    }
+  });
+
+  // --- GET /api/usage — per-user Gemini cost aggregate, ADMIN ONLY ---------
+  // Aggregated over ALL durable usage_records (tiny scale — whole-collection
+  // read is deliberate). Shape: { users: [{ email, userName, thb, tokensIn,
+  // tokensOut, sessions }], total: {...} } — built by lib.aggregateUsageRows.
+  app.get('/api/usage', async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    if (!requireDb(res)) return;
+    try {
+      res.json(await backend.aggregateUsage());
+    } catch (err) {
+      console.error('[routes] usage aggregate:', err?.message || err);
       res.status(503).json(unavailableBody('cloud'));
     }
   });

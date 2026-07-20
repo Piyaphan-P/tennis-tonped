@@ -3,7 +3,6 @@ import HomeScreen from './screens/HomeScreen';
 import LiveScreen from './screens/LiveScreen';
 import SummaryScreen from './screens/SummaryScreen';
 import DevPlanScreen from './screens/DevPlanScreen';
-import CompareScreen from './screens/CompareScreen';
 import HistoryScreen from './screens/HistoryScreen';
 import AdminScreen from './screens/AdminScreen';
 import SettingsSheet from './components/SettingsSheet';
@@ -24,7 +23,9 @@ export default function App() {
         {screen === 'live' && <LiveScreen />}
         {screen === 'summary' && <SummaryScreen />}
         {screen === 'devplan' && <DevPlanScreen />}
-        {screen === 'compare' && <CompareScreen />}
+        {/* Compare is un-routed (2026-07-20): the screen value falls back to
+            Home like the admin fallback. CompareScreen stays on disk. */}
+        {screen === 'compare' && <HomeScreen />}
         {screen === 'history' && <HistoryScreen />}
         {/* Admin is role-gated: a non-admin landing here (e.g. after logout)
             falls back to Home instead of a blank screen. */}

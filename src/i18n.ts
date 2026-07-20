@@ -86,10 +86,11 @@ const DICT = {
   'home.handedness.current': { th: 'กำลังวิเคราะห์แบบมือ', en: 'Analyzing as' },
 
   // --- errors (ALWAYS bilingual, never raw API strings) ---
-  'error.tokenMissing.title': { th: 'ยังไม่ได้ตั้งค่าโทเคนโค้ช', en: 'Coach token not set' },
+  // (The manual token field was removed 2026-07-20 — coach auth is provisioned
+  // server-side, so this copy no longer tells the user to paste anything.)
   'error.tokenMissing.body': {
-    th: 'วางโทเคน Gemini ชั่วคราว (ขึ้นต้น AQ.) ในหน้าตั้งค่า จึงจะคุยกับโค้ชได้ — การวิเคราะห์ท่าและคะแนนยังใช้งานได้ปกติ',
-    en: 'Paste a Gemini ephemeral token (starts with AQ.) in Settings to enable the coach — pose analysis and scoring still work without it.',
+    th: 'ยังเชื่อมต่อโค้ชไม่ได้ในตอนนี้ — การวิเคราะห์ท่าและคะแนนยังใช้งานได้ปกติ',
+    en: 'The coach cannot connect right now — pose analysis and scoring still work.',
   },
   'error.cameraDenied.title': { th: 'เข้าถึงกล้องไม่ได้', en: 'Camera unavailable' },
   'error.cameraDenied.body': {
@@ -124,7 +125,6 @@ const DICT = {
 
   // --- bottom nav ---
   'nav.home': { th: 'หน้าหลัก', en: 'Home' },
-  'nav.compare': { th: 'เปรียบเทียบ', en: 'Compare' },
   'nav.history': { th: 'ประวัติ', en: 'History' },
   'nav.summary': { th: 'สรุป', en: 'Summary' },
   'nav.devplan': { th: 'พัฒนา', en: 'Plan' },
@@ -169,6 +169,35 @@ const DICT = {
   },
   'admin.errUserExists': { th: 'มีผู้ใช้อีเมลนี้อยู่แล้ว', en: 'A user with this email already exists' },
   'admin.errFailed': { th: 'ดำเนินการไม่สำเร็จ ลองใหม่อีกครั้ง', en: 'Action failed — try again' },
+
+  // --- admin cost section (GET /api/usage — real Gemini spend, ≈-labelled) ---
+  'admin.costTitle': { th: 'ค่าใช้จ่าย', en: 'Costs' },
+  'admin.costTotal': { th: 'รวมทั้งหมด (Gemini)', en: 'Total (Gemini)' },
+  'admin.costUser': { th: 'อีเมล', en: 'Email' },
+  'admin.costName': { th: 'ชื่อ', en: 'Name' },
+  'admin.costThb': { th: 'THB ≈', en: 'THB ≈' },
+  'admin.costTokensIn': { th: 'โทเคนเข้า', en: 'Tokens in' },
+  'admin.costTokensOut': { th: 'โทเคนออก', en: 'Tokens out' },
+  'admin.costSessions': { th: 'เซสชัน', en: 'Sessions' },
+  'admin.costEmpty': { th: 'ยังไม่มีข้อมูลค่าใช้จ่าย', en: 'No usage data yet' },
+  'admin.costLoadFailed': {
+    th: 'โหลดข้อมูลค่าใช้จ่ายไม่สำเร็จ ลองใหม่อีกครั้ง',
+    en: 'Failed to load costs — try again',
+  },
+  'admin.costInfraTitle': { th: 'ค่าโครงสร้างพื้นฐาน (ประมาณการ)', en: 'Infra (estimate)' },
+  'admin.costInfraRun': {
+    th: 'Cloud Run (scale-to-zero) ≈ ฿0–20/เดือน',
+    en: 'Cloud Run (scale-to-zero) ≈ ฿0–20/month',
+  },
+  'admin.costInfraAr': { th: 'Artifact Registry ≈ ฿5/เดือน', en: 'Artifact Registry ≈ ฿5/month' },
+  'admin.costInfraStore': {
+    th: 'GCS + Firestore อยู่ใน free tier ≈ ฿0',
+    en: 'GCS + Firestore within the free tier ≈ ฿0',
+  },
+  'admin.costInfraNote': {
+    th: 'ประมาณการคงที่ ไม่ใช่บิลจริง',
+    en: 'Static estimates — not an actual bill',
+  },
 
   // --- continuous open mic ---
   'live.micOn': { th: 'ไมค์เปิด — พูดกับโค้ชได้เลย', en: 'Mic on — just talk to the coach' },
@@ -349,7 +378,6 @@ const DICT = {
   'history.trendFlat': { th: 'ฟอร์มคงที่ทั้งเซสชัน', en: 'Form held steady' },
   'history.perShotScores': { th: 'คะแนนรายลูก', en: 'Per-shot scores' },
   'history.noClip': { th: 'ไม่มีคลิปสำหรับลูกนี้', en: 'No clip for this shot' },
-  'history.compareThis': { th: 'เปรียบเทียบคลิปนี้', en: 'Compare this clip' },
   'history.delete': { th: 'ลบเซสชัน', en: 'Delete session' },
   'history.deleteConfirm': {
     th: 'ลบเซสชันนี้และคลิปทั้งหมด?',
@@ -424,21 +452,8 @@ const DICT = {
   'settings.cameraUser': { th: 'กล้องหน้า', en: 'Front' },
   'settings.cameraEnv': { th: 'กล้องหลัง', en: 'Rear' },
   'settings.session': { th: 'การฝึกซ้อม', en: 'Session' },
-  'settings.token': { th: 'โทเคน Gemini (AQ.…)', en: 'Gemini token (AQ.…)' },
-  'settings.tokenHint': {
-    th: 'วางโทเคนชั่วคราวใหม่เพื่อเชื่อมต่อโค้ชโดยไม่ต้อง build ใหม่',
-    en: 'Paste a fresh ephemeral token to connect the coach without rebuilding.',
-  },
-  'settings.tokenSet': { th: 'ตั้งค่าโทเคนแล้ว', en: 'Token set' },
-  'settings.tokenNone': { th: 'ยังไม่มีโทเคน', en: 'No token' },
-  // Shown when the coach is auto-provisioned (token endpoint / relay transport):
-  // the pasted-token field is an OPTIONAL dev/fallback, never required.
-  'settings.tokenOptional': { th: '(ไม่บังคับ)', en: '(optional)' },
-  'settings.tokenAuto': { th: 'ต่อโค้ชอัตโนมัติ', en: 'Auto-connects' },
-  'settings.tokenAutoHint': {
-    th: 'ไม่ต้องใส่ — ระบบต่อโค้ชให้อัตโนมัติ วางโทเคนเองเฉพาะตอนทดสอบหรือใช้สำรองเท่านั้น',
-    en: 'No need to enter one — the coach connects automatically. Paste a token only for testing or as a fallback.',
-  },
+  // (settings.token* keys removed 2026-07-20 — the manual token field is gone;
+  // the coach key is auto-provisioned server-side.)
 
   // --- dev plan screen ---
   'devplan.title': { th: 'แผนพัฒนา', en: 'Development Plan' },

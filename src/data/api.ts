@@ -103,18 +103,37 @@ export async function createSession(
   }
 }
 
-/** PATCH /api/sessions/:id — end + summary. Returns true on success. */
+/**
+ * Per-session Gemini usage totals, PATCHed with the session end (frozen
+ * contract). thb = costMonitor's real THB total; tokensIn/tokensOut = summed
+ * input/output tokens across modalities; detail = per-modality breakdown.
+ */
+export interface SessionUsage {
+  thb: number;
+  tokensIn: number;
+  tokensOut: number;
+  detail?: object;
+}
+
+/** PATCH /api/sessions/:id — end + summary (+ optional usage). Returns true on success. */
 export async function endSessionCloud(
   id: string,
   endedAtIso: string,
   avgScore: number,
   shotCount: number,
   summary: SessionSummaryJson,
+  usage?: SessionUsage,
 ): Promise<boolean> {
   const res = await safeFetch(`/api/sessions/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ endedAt: endedAtIso, avgScore, shotCount, summary }),
+    body: JSON.stringify({
+      endedAt: endedAtIso,
+      avgScore,
+      shotCount,
+      summary,
+      ...(usage ? { usage } : {}),
+    }),
   });
   return res !== null;
 }
@@ -414,5 +433,48 @@ export async function deleteUser(email: string): Promise<UserMutationResult> {
     return res.ok ? { ok: true } : failureOf(res);
   } catch {
     return { ok: false, error: 'network' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Usage / cost reporting (admin only). Frozen contract:
+//   GET /api/usage → { users: [{ email, userName, thb, tokensIn, tokensOut,
+//   sessions }], total: { thb, tokensIn, tokensOut, sessions } }
+// Bypasses the offline latch like the other admin calls. Never throws.
+// ---------------------------------------------------------------------------
+
+export interface UsageUserRow {
+  email: string;
+  userName: string;
+  thb: number;
+  tokensIn: number;
+  tokensOut: number;
+  sessions: number;
+}
+
+export interface UsageTotals {
+  thb: number;
+  tokensIn: number;
+  tokensOut: number;
+  sessions: number;
+}
+
+export interface UsageReport {
+  users: UsageUserRow[];
+  total: UsageTotals;
+}
+
+/** GET /api/usage — per-user + total Gemini spend (admin only). Null on any failure. */
+export async function fetchUsage(): Promise<UsageReport | null> {
+  try {
+    const res = await fetch('/api/usage', { credentials: 'same-origin' });
+    if (!res.ok) return null;
+    const body = (await res.json()) as unknown;
+    if (!body || typeof body !== 'object') return null;
+    const r = body as UsageReport;
+    if (!Array.isArray(r.users) || !r.total || typeof r.total !== 'object') return null;
+    return r;
+  } catch {
+    return null;
   }
 }

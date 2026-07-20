@@ -124,3 +124,65 @@
 .user-action-danger {
   color: var(--fault);
 }
+
+/* --- cost section (admin-only Gemini usage; values are ≈ estimates) --- */
+.usage-total {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: var(--sp-3);
+}
+.usage-total-thb {
+  font-size: 1.6rem;
+  font-weight: 800;
+}
+
+.usage-table-wrap {
+  overflow-x: auto;
+  margin-bottom: var(--sp-3);
+}
+.usage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.usage-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  padding: var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--line-strong);
+}
+.usage-table td {
+  padding: var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--line);
+}
+.usage-table .usage-num {
+  text-align: right;
+}
+.usage-email {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.usage-infra {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--sp-2) var(--sp-3);
+}
+.usage-infra-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.usage-infra ul {
+  margin: 0;
+  padding-left: 1.1em;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}

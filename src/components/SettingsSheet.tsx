@@ -3,29 +3,15 @@ import { useT } from '../i18n';
 import * as api from '../data/api';
 import type { PricingRates } from '../types';
 
-/**
- * True when the backend provisions the coach automatically (prod/SIT):
- * `/api/token` mint endpoint baked in, or same-origin relay. Then the pasted
- * token is a dev/fallback only — never required.
- */
-function coachAutoProvisioned(): boolean {
-  try {
-    const env = (import.meta as unknown as { env?: Record<string, string> }).env;
-    return !!env?.VITE_TOKEN_ENDPOINT || env?.VITE_LIVE_TRANSPORT === 'relay';
-  } catch {
-    return false;
-  }
-}
-
-/** Bottom-sheet settings: pricing rates, session prefs, and coach token. */
+/** Bottom-sheet settings: pricing rates and session prefs. (The manual coach
+ *  token field was removed 2026-07-20 — the key is auto-provisioned server-side.
+ *  store.authToken plumbing stays intact for liveClient/dev flows.) */
 export default function SettingsSheet() {
   const open = useAppStore((s) => s.settingsOpen);
   const setOpen = useAppStore((s) => s.setSettingsOpen);
   const settings = useAppStore((s) => s.settings);
   const updateRates = useAppStore((s) => s.updateRates);
   const updateSettings = useAppStore((s) => s.updateSettings);
-  const authToken = useAppStore((s) => s.authToken);
-  const setAuthToken = useAppStore((s) => s.setAuthToken);
   const auth = useAppStore((s) => s.auth);
   const setAuth = useAppStore((s) => s.setAuth);
   const setScreen = useAppStore((s) => s.setScreen);
@@ -56,11 +42,6 @@ export default function SettingsSheet() {
     </label>
   );
 
-  // Both ephemeral-token formats liveClient accepts (AQ. = 2026 Auth keys /
-  // classic minted tokens; auth_tokens/… = tokens minted from an AQ. key).
-  const tokenValid = authToken.startsWith('AQ.') || authToken.startsWith('auth_tokens/');
-  const autoCoach = coachAutoProvisioned();
-
   return (
     <div className="sheet-backdrop" onClick={() => setOpen(false)}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
@@ -71,49 +52,8 @@ export default function SettingsSheet() {
           </button>
         </div>
 
-        {/* --- coach token --- */}
+        {/* --- session prefs (coach token field removed — auto-provisioned) --- */}
         <h3 style={{ marginBottom: 8 }}>{t('settings.session')}</h3>
-        <label className="col" style={{ gap: 4, marginBottom: 12 }}>
-          <div className="row" style={{ justifyContent: 'space-between' }}>
-            <span className="dim" style={{ fontSize: '0.85rem' }}>
-              {t('settings.token')}
-              {autoCoach && !tokenValid && (
-                <span className="faint" style={{ fontSize: '0.75rem' }}>
-                  {' '}
-                  {t('settings.tokenOptional')}
-                </span>
-              )}
-            </span>
-            <span
-              className="faint"
-              style={{
-                fontSize: '0.75rem',
-                color: tokenValid
-                  ? 'var(--good)'
-                  : autoCoach
-                    ? 'var(--good)'
-                    : 'var(--warn)',
-              }}
-            >
-              {tokenValid
-                ? t('settings.tokenSet')
-                : autoCoach
-                  ? t('settings.tokenAuto')
-                  : t('settings.tokenNone')}
-            </span>
-          </div>
-          <input
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="AQ.…"
-            value={authToken}
-            onChange={(e) => setAuthToken(e.target.value)}
-          />
-          <span className="faint" style={{ fontSize: '0.75rem' }}>
-            {autoCoach && !tokenValid ? t('settings.tokenAutoHint') : t('settings.tokenHint')}
-          </span>
-        </label>
 
         {/* --- dominant hand --- */}
         <label className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>

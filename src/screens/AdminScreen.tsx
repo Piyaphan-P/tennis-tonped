@@ -11,6 +11,7 @@ import { useAppStore } from '../store';
 import { useT } from '../i18n';
 import type { I18nKey } from '../i18n';
 import * as api from '../data/api';
+import { formatTHB, formatTokens } from '../cost/pricing';
 import type { AdminUserRow } from '../types';
 import './admin.css';
 
@@ -41,6 +42,8 @@ export default function AdminScreen() {
   const [users, setUsers] = useState<AdminUserRow[] | null | undefined>(undefined);
   const [msg, setMsg] = useState<Msg | null>(null);
   const [busy, setBusy] = useState(false);
+  // undefined = loading, null = load failed, else the report (same pattern as users).
+  const [usage, setUsage] = useState<api.UsageReport | null | undefined>(undefined);
 
   // --- add-player form ---
   const [email, setEmail] = useState('');
@@ -52,9 +55,15 @@ export default function AdminScreen() {
     api.listUsers().then(setUsers);
   }, []);
 
+  const reloadUsage = useCallback(() => {
+    setUsage(undefined);
+    api.fetchUsage().then(setUsage);
+  }, []);
+
   useEffect(() => {
     reload();
-  }, [reload]);
+    reloadUsage();
+  }, [reload, reloadUsage]);
 
   /** Run one mutation, surface its result, refresh the list on success. */
   async function run(action: () => Promise<api.UserMutationResult>, okKey: I18nKey) {
@@ -154,7 +163,7 @@ export default function AdminScreen() {
         <h2>{t('admin.addTitle')}</h2>
         <form className="admin-form" onSubmit={addPlayer}>
           <input
-            type="email"
+            type="text"
             inputMode="email"
             autoComplete="off"
             autoCapitalize="none"
@@ -244,6 +253,80 @@ export default function AdminScreen() {
               );
             })}
           </div>
+        )}
+      </div>
+
+      {/* --- costs (real Gemini usage uploaded at session end; ≈ THB) --- */}
+      <div className="admin-card">
+        <h2>{t('admin.costTitle')}</h2>
+        {usage === undefined ? (
+          <p className="dim">{t('common.loading')}</p>
+        ) : usage === null ? (
+          <div className="col" style={{ gap: 8 }}>
+            <p className="dim">{t('admin.costLoadFailed')}</p>
+            <button className="btn btn-ghost tap" onClick={reloadUsage}>
+              {t('admin.retry')}
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="usage-total">
+              <span className="faint" style={{ fontSize: '0.72rem' }}>
+                {t('admin.costTotal')}
+              </span>
+              <span className="usage-total-thb num">≈{formatTHB(usage.total.thb)}</span>
+              <span className="faint num" style={{ fontSize: '0.72rem' }}>
+                {formatTokens(usage.total.tokensIn)} {t('admin.costTokensIn')} ·{' '}
+                {formatTokens(usage.total.tokensOut)} {t('admin.costTokensOut')} ·{' '}
+                {usage.total.sessions} {t('admin.costSessions')}
+              </span>
+            </div>
+
+            {usage.users.length === 0 ? (
+              <p className="dim">{t('admin.costEmpty')}</p>
+            ) : (
+              <div className="usage-table-wrap">
+                {/* Rows rendered in server order (contract: sorted as returned). */}
+                <table className="usage-table">
+                  <thead>
+                    <tr>
+                      <th>{t('admin.costUser')}</th>
+                      <th>{t('admin.costName')}</th>
+                      <th className="usage-num">{t('admin.costThb')}</th>
+                      <th className="usage-num">{t('admin.costTokensIn')}</th>
+                      <th className="usage-num">{t('admin.costTokensOut')}</th>
+                      <th className="usage-num">{t('admin.costSessions')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usage.users.map((u) => (
+                      <tr key={u.email}>
+                        <td className="usage-email">{u.email}</td>
+                        <td>{u.userName || '—'}</td>
+                        <td className="num usage-num">≈{formatTHB(u.thb)}</td>
+                        <td className="num usage-num">{formatTokens(u.tokensIn)}</td>
+                        <td className="num usage-num">{formatTokens(u.tokensOut)}</td>
+                        <td className="num usage-num">{u.sessions}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Static infra estimates — clearly NOT a real bill. */}
+            <div className="usage-infra">
+              <span className="usage-infra-title">{t('admin.costInfraTitle')}</span>
+              <ul>
+                <li>{t('admin.costInfraRun')}</li>
+                <li>{t('admin.costInfraAr')}</li>
+                <li>{t('admin.costInfraStore')}</li>
+              </ul>
+              <span className="faint" style={{ fontSize: '0.72rem' }}>
+                {t('admin.costInfraNote')}
+              </span>
+            </div>
+          </>
         )}
       </div>
     </div>

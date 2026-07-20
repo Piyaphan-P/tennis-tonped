@@ -19,7 +19,7 @@
 
 import { Firestore, Timestamp } from '@google-cloud/firestore';
 import { randomUUID } from 'node:crypto';
-import { sessionDocToJson, shotDocToJson, userDocToJson } from './lib.mjs';
+import { aggregateUsageRows, sessionDocToJson, shotDocToJson, userDocToJson } from './lib.mjs';
 
 const PROJECT = process.env.GOOGLE_CLOUD_PROJECT || 'adge-tennis-nonprd';
 const DATABASE = process.env.FIRESTORE_DATABASE || 'nonprd';
@@ -102,7 +102,7 @@ export const firestoreBackend = {
     return { id };
   },
 
-  async patchSession(id, { endedAt, avgScore, shotCount, summary }) {
+  async patchSession(id, { endedAt, avgScore, shotCount, summary, usage }) {
     const ref = db().collection('sessions').doc(id);
     const snap = await ref.get();
     // Phantom guard: Postgres UPDATE on a missing id is a silent no-op; a
@@ -140,6 +140,40 @@ export const firestoreBackend = {
         console.error('[routes] leaderboard record (non-fatal):', err?.message || err);
       }
     }
+    // Durable per-user cost record (admin cost visibility). `usage` arrives
+    // already sanitized by the route (lib.sanitizeUsage — null when the client
+    // sent none, so old clients are a no-op here). Same pattern as the
+    // leaderboard: doc id = sessionId → idempotent upsert, NO expireAt
+    // (durable forever), inner best-effort try/catch — a usage write failure
+    // must never fail the session PATCH.
+    if (usage) {
+      try {
+        const data = snap.data();
+        await db()
+          .collection('usage_records')
+          .doc(id)
+          .set({
+            ownerEmail: data.ownerEmail ?? null, // null on legacy sessions
+            userName: data.userName ?? '',
+            thb: usage.thb,
+            tokensIn: usage.tokensIn,
+            tokensOut: usage.tokensOut,
+            detail: usage.detail, // free-form modality breakdown, stored as-is
+            shotCount: Number(shotCount) || 0,
+            playedAt: data.startedAt, // session startedAt Timestamp
+          });
+      } catch (err) {
+        console.error('[routes] usage record (non-fatal):', err?.message || err);
+      }
+    }
+  },
+
+  /** Admin cost aggregate (GET /api/usage): read ALL usage_records — tiny
+   *  scale by design — and fold them through the pure lib helper, which owns
+   *  the response shape (grouping, sorting, rounding). */
+  async aggregateUsage() {
+    const snap = await db().collection('usage_records').get();
+    return aggregateUsageRows(snap.docs.map((d) => d.data()));
   },
 
   async createShot(sessionId, meta) {
@@ -262,7 +296,8 @@ export const firestoreBackend = {
     const ref = db().collection('sessions').doc(id);
     const shotsCol = ref.collection('shots');
     // Delete the shots subcollection in batches, then the session doc.
-    // leaderboard_records is durable and left untouched; GCS untouched too.
+    // leaderboard_records AND usage_records are durable and left untouched;
+    // GCS untouched too.
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const page = await shotsCol.limit(DELETE_BATCH).get();

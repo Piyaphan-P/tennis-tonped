@@ -182,7 +182,16 @@ export const pgBackend = {
     return { id };
   },
 
-  async patchSession(id, { endedAt, avgScore, shotCount, summary }) {
+  // `usage` (admin cost visibility) is accepted but NOT recorded on the
+  // Postgres path (Firestore-only, like UAM). The usage write is fire-and-
+  // forget by contract — it must never fail the PATCH — so it is logged and
+  // dropped here rather than thrown.
+  async patchSession(id, { endedAt, avgScore, shotCount, summary, usage }) {
+    if (usage) {
+      console.error(
+        '[routes] usage record dropped (not implemented on postgres path — Firestore-only)',
+      );
+    }
     await query(
       `UPDATE sessions
           SET ended_at = $2, avg_score = $3, shot_count = $4, summary = $5
@@ -338,6 +347,11 @@ export const pgBackend = {
   },
   async ensureAdmin() {
     throw new Error('ensureAdmin not implemented on postgres path (UAM is Firestore-only)');
+  },
+  /** Admin cost aggregate (GET /api/usage) — Firestore-only, like users. The
+   *  route maps this throw to its bilingual 503. */
+  async aggregateUsage() {
+    throw new Error('usage aggregation not implemented on postgres path (Firestore-only)');
   },
 
   /** Ownership stub: session exists → legacy owner (null → admin-only). */

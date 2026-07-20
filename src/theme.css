@@ -299,6 +299,7 @@ p {
 /* --- form controls --- */
 input[type='number'],
 input[type='text'],
+input[type='email'],
 input[type='password'] {
   width: 100%;
   background: var(--bg);

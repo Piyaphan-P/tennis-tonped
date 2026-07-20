@@ -64,6 +64,7 @@ import type {
 
 const LS_LANG = 'tp.lang';
 const LS_USER_NAME = 'tp.userName';
+const LS_AUTH_EMAIL = 'tp.authEmail'; // last signed-in account — drives userName re-seed on account switch
 const LS_PLAYER_HEIGHT = 'tp.playerHeightCm';
 const LS_HISTORY = 'tp.history';
 
@@ -648,10 +649,15 @@ export const useAppStore = create<AppState>()((set) => ({
     set({ auth });
     if (auth) {
       const s = useAppStore.getState();
-      if (!s.settings.userName.trim()) {
-        // First sign-in on this device: seed the coach-greeting name.
-        s.setUserName(auth.displayName.trim() || auth.email.split('@')[0]);
+      const prevAccount = lsGet(LS_AUTH_EMAIL);
+      // Seed the coach-greeting name on first sign-in on this device, and
+      // RE-seed whenever a DIFFERENT account signs in — a shared phone must
+      // not keep greeting the previous player. Default = ชื่อเล่น (displayName),
+      // else the full email (user rule, 2026-07-20).
+      if (!s.settings.userName.trim() || prevAccount !== auth.email) {
+        s.setUserName(auth.displayName.trim() || auth.email);
       }
+      lsSet(LS_AUTH_EMAIL, auth.email);
     }
   },
   setAuthToken: (authToken) => set({ authToken: authToken.trim() }),

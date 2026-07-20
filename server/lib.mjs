@@ -179,6 +179,87 @@ export function validateShotMeta(body) {
 }
 
 /**
+ * Sanitize the OPTIONAL `usage` block on the end-of-session PATCH body
+ * (admin cost visibility). Returns null when absent or malformed — old
+ * clients that never send it keep working, and a bad shape is ignored
+ * rather than failing the PATCH. Numbers are coerced (Number()||0), and
+ * `detail` (free-form modality breakdown) is kept only when it is a plain
+ * object — stored as-is otherwise null.
+ */
+export function sanitizeUsage(usage) {
+  if (!isPlainObject(usage)) return null;
+  return {
+    thb: Number(usage.thb) || 0,
+    tokensIn: Number(usage.tokensIn) || 0,
+    tokensOut: Number(usage.tokensOut) || 0,
+    detail: isPlainObject(usage.detail) ? usage.detail : null,
+  };
+}
+
+/** Round to 2 decimals for THB display in the /api/usage response. */
+function round2(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+/**
+ * Fold `usage_records` rows into the GET /api/usage response (admin cost
+ * visibility). PURE — the Firestore backend feeds it plain doc data; rows
+ * are `{ ownerEmail, userName, thb, tokensIn, tokensOut, playedAt }` where
+ * playedAt may be a Date, ISO string or Firestore Timestamp (duck-typed —
+ * this file stays import-free). Group key = ownerEmail (null → "(legacy)");
+ * each group's userName is the MOST RECENT record's (by playedAt). Users
+ * are sorted by thb desc; thb is rounded to 2 decimals in the response.
+ *
+ * Response: { users: [{ email, userName, thb, tokensIn, tokensOut,
+ * sessions }], total: { thb, tokensIn, tokensOut, sessions } }
+ */
+export function aggregateUsageRows(rows) {
+  const byEmail = new Map();
+  for (const row of rows ?? []) {
+    const email = row?.ownerEmail ?? '(legacy)';
+    let g = byEmail.get(email);
+    if (!g) {
+      g = { email, userName: '', thb: 0, tokensIn: 0, tokensOut: 0, sessions: 0, latestMs: -Infinity };
+      byEmail.set(email, g);
+    }
+    g.thb += Number(row?.thb) || 0;
+    g.tokensIn += Number(row?.tokensIn) || 0;
+    g.tokensOut += Number(row?.tokensOut) || 0;
+    g.sessions += 1;
+    // Most-recent record names the group. Rows without a parseable playedAt
+    // compare at -Infinity (>= keeps the LAST such row — stable enough for
+    // legacy data with no timestamps at all).
+    const iso = isoOrNull(row?.playedAt);
+    const ms = iso == null ? -Infinity : Date.parse(iso);
+    if (ms >= g.latestMs) {
+      g.latestMs = ms;
+      g.userName = row?.userName ?? '';
+    }
+  }
+  const users = [...byEmail.values()]
+    .sort((a, b) => b.thb - a.thb)
+    .map(({ email, userName, thb, tokensIn, tokensOut, sessions }) => ({
+      email,
+      userName,
+      thb: round2(thb),
+      tokensIn,
+      tokensOut,
+      sessions,
+    }));
+  const total = users.reduce(
+    (t, u) => ({
+      thb: t.thb + u.thb,
+      tokensIn: t.tokensIn + u.tokensIn,
+      tokensOut: t.tokensOut + u.tokensOut,
+      sessions: t.sessions + u.sessions,
+    }),
+    { thb: 0, tokensIn: 0, tokensOut: 0, sessions: 0 },
+  );
+  total.thb = round2(total.thb);
+  return { users, total };
+}
+
+/**
  * The bilingual 503 body returned when the cloud is not configured
  * (no DATABASE_URL / no GCS creds). COPIES the /api/token degradation pattern:
  * the app shows it verbatim and falls back to localStorage stats-only history.

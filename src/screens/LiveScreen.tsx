@@ -31,7 +31,6 @@ import CaptureGallery from '../components/CaptureGallery';
 import TelemetryStrip from '../components/TelemetryStrip';
 import DetectionHud from '../components/DetectionHud';
 import ScoreBadge from '../components/ScoreBadge';
-import CostFab from '../components/CostFab';
 
 /** Max width (px) of the JPEG we snapshot for captures + the coach frame. */
 const CAPTURE_MAX_W = 640;
@@ -373,7 +372,9 @@ export default function LiveScreen() {
         </div>
       </div>
 
-      <CostFab />
+      {/* CostFab removed 2026-07-20 (player-facing cost hidden). costMonitor
+          still records usage — totals feed the admin usage upload at session
+          end (cloudSync → PATCH usage). Component kept on disk, unrendered. */}
 
       {poseInitError && (
         <div className="live-error-scrim">

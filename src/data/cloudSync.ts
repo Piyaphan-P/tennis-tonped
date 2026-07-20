@@ -175,8 +175,23 @@ export function syncSessionEnded(): void {
     focusShot: s.settings.focusShot,
     improvements: deriveImprovements(shots),
   };
+  // Real Gemini usage from the cost monitor (source of truth: usageMetadata →
+  // store.cost). tokensIn/tokensOut sum the per-modality buckets; thoughts are
+  // billed as text OUTPUT, so they count as output tokens. Fire-and-forget —
+  // must never block or fail session end (the PATCH already .catch()es).
+  const tk = s.cost.tokens;
+  const usage: api.SessionUsage = {
+    thb: s.cost.breakdown.thbTotal,
+    tokensIn: tk.textIn + tk.audioIn + tk.videoIn,
+    tokensOut: tk.textOut + tk.audioOut + tk.thoughts,
+    detail: {
+      tokens: { ...tk },
+      thb: { ...s.cost.breakdown },
+      usageEvents: s.cost.usageEvents,
+    },
+  };
   const endedAtIso = new Date().toISOString();
   void api
-    .endSessionCloud(sessionId, endedAtIso, avgScore, shotCount, summary)
+    .endSessionCloud(sessionId, endedAtIso, avgScore, shotCount, summary, usage)
     .catch(() => false);
 }
