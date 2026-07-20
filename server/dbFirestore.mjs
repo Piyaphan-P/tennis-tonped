@@ -5,7 +5,7 @@
 // routes.mjs is backend-agnostic (store.mjs selects one via DB_BACKEND). Clips
 // and audio still live in GCS — only metadata is stored here.
 //
-// Firestore database "nonprd" (native mode, asia-southeast1, project ton-team).
+// Firestore database "nonprd" (native mode, asia-southeast1, project adge-tennis-nonprd).
 // TTL is enabled at the PLATFORM level on field `expireAt` for collection
 // groups `sessions` and `shots`: we write expireAt = base + 3 days and Firestore
 // deletes automatically — there is NO purge job on this path (contrast db.mjs).
@@ -21,7 +21,7 @@ import { Firestore, Timestamp } from '@google-cloud/firestore';
 import { randomUUID } from 'node:crypto';
 import { sessionDocToJson, shotDocToJson } from './lib.mjs';
 
-const PROJECT = process.env.GOOGLE_CLOUD_PROJECT || 'ton-team';
+const PROJECT = process.env.GOOGLE_CLOUD_PROJECT || 'adge-tennis-nonprd';
 const DATABASE = process.env.FIRESTORE_DATABASE || 'nonprd';
 const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 const DELETE_BATCH = 400; // well under Firestore's 500-writes/batch limit

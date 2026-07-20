@@ -1,5 +1,5 @@
 // ============================================================================
-// ADGE Tennis — GCS clip storage (ADC; bucket "ton-phet-clips").
+// ADGE Tennis — GCS clip storage (ADC; bucket "adge-tennis-nonprd-clips").
 //
 // The bucket has a 3-day lifecycle rule (auto-delete) configured at the bucket
 // level — the server NEVER deletes GCS objects. We only save() and stream().
@@ -15,7 +15,7 @@
 
 import { Storage } from '@google-cloud/storage';
 
-const BUCKET = process.env.GCS_BUCKET || 'ton-phet-clips';
+const BUCKET = process.env.GCS_BUCKET || 'adge-tennis-nonprd-clips';
 const OFFLINE_LATCH_MS = 60_000;
 
 let storage;

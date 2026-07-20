@@ -29,7 +29,7 @@ import { GoogleAuth } from 'google-auth-library';
 import { isGateAuthorized } from './authGate.mjs';
 
 // --- Pinned server-side (the client is NOT trusted for these) -----------------
-const PROJECT = process.env.GOOGLE_CLOUD_PROJECT || 'ton-team';
+const PROJECT = process.env.GOOGLE_CLOUD_PROJECT || 'adge-tennis-nonprd';
 const LOCATION = 'global'; // Live is allowlisted ONLY at global for this project.
 const MODEL_ID = 'gemini-live-2.5-flash'; // half-cascade; native-audio not allowlisted.
 const MODEL_PATH = `projects/${PROJECT}/locations/${LOCATION}/publishers/google/models/${MODEL_ID}`;
