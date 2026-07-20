@@ -5,8 +5,8 @@
 
 ## TL;DR
 
-**ADGE Tennis (SIT)** deploy อยู่ที่ https://adge-tennis-sit-441370880467.asia-southeast1.run.app (โปรเจค GCP **`adge-tennis-nonprd`**, image `app:sit-v9` revision `00004`, code = **SIT v1.5.1** — UAM + admin cost) + เว็บ Ranking https://adge-ranking-sit-441370880467.asia-southeast1.run.app · backend = **Firestore** DB `nonprd` (platform TTL 3 วัน) + GCS `adge-tennis-nonprd-clips` · `GEMINI_API_KEY` มาจาก Secret Manager · **login = email + password ต่อคน** (role admin/player; bootstrap admin `piyaphan.po@gmail.com`) · ตัด token field/CostFab/Compare ออกจาก UI · หน้า Admin มี cost dashboard (usage รวมต่อคน + infra estimate)
-> ⚠️ **มี code-review report ค้าง (2026-07-20):** เจอ 8 ช่องโหว่ UAM (5 security) — **ยังไม่แก้ รอ user ยืนยัน** → v1.5.2 (ดู task 18 ใน `tasks20260720.md`)
+**ADGE Tennis (SIT)** deploy อยู่ที่ https://adge-tennis-sit-441370880467.asia-southeast1.run.app (โปรเจค GCP **`adge-tennis-nonprd`**, image `app:sit-v11` revision `00006`, code = **SIT v1.5.2** — UAM + security hardening) + เว็บ Ranking https://adge-ranking-sit-441370880467.asia-southeast1.run.app · backend = **Firestore** DB `nonprd` (platform TTL 3 วัน) + GCS `adge-tennis-nonprd-clips` · `GEMINI_API_KEY` มาจาก Secret Manager · **login = email + password ต่อคน** (role admin/player; bootstrap admin `piyaphan.po@gmail.com`) · หน้า Admin แยกแท็บ Players | Costs · **ช่องโหว่ code-review 8 ข้อ แก้ครบแล้ว** (revocation cache TTL = 1 ชม. ตาม PO decision)
+> **ถัดไป: v1.6 โหมดเสียง/โค้ช** (user อนุมัติแล้ว, design เสร็จ — เสียง 4 แบบ × สไตล์โค้ช 4 แบบ เป็นปุ่มเลือกก่อน session) กำลังเริ่ม build
 
 ## โครงสร้าง GCP ปัจจุบัน (ตั้งแต่ 2026-07-20)
 
