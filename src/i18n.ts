@@ -370,6 +370,38 @@ const DICT = {
   'stats.goodForm': { th: 'ฟอร์มดี', en: 'Good Form' },
   'stats.bestSpeed': { th: 'สวิงเร็วสุด', en: 'Best Speed' },
 
+  // --- session stats widget (v1.8 — per-session + cumulative overview) ---
+  'stats.widget.title': { th: 'ภาพรวมการฝึก', en: 'Session Overview' },
+  'stats.minutes': { th: 'นาทีที่ตี', en: 'Minutes played' },
+  'stats.minUnit': { th: 'นาที', en: 'min' },
+  'stats.balls': { th: 'ตีโดนลูก', en: 'Balls hit' },
+  'stats.ballsUnit': { th: 'ครั้ง', en: 'shots' },
+  'stats.avgSpeed': { th: 'ความเร็วสวิงเฉลี่ย', en: 'Avg swing speed' },
+  'stats.kmh': { th: 'กม./ชม.', en: 'km/h' },
+  'stats.kcal': { th: 'เผาผลาญ (ประมาณ)', en: 'Burned (est.)' },
+  'stats.kcalUnit': { th: 'แคล', en: 'kcal' },
+  'stats.cumulative': { th: 'รวมทุกครั้ง', en: 'All-time' },
+  'stats.spinTitle': { th: 'สปิน', en: 'Spin' },
+  'stats.topspin': { th: 'topspin (ตวัดขึ้น)', en: 'Topspin' },
+  'stats.backspin': { th: 'backspin (สไลซ์)', en: 'Backspin' },
+  'stats.flat': { th: 'flat (เรียบ)', en: 'Flat' },
+  'stats.spinNote': {
+    th: 'ประมาณจากวิถีวงสวิง (ไม่มีเซนเซอร์ที่ลูก)',
+    en: 'Estimated from swing path (no ball sensor)',
+  },
+  'stats.cumNote': {
+    th: 'สถิติรวมมาจากประวัติ 3 วันล่าสุด · แคลอรีเป็นค่าประมาณ',
+    en: 'All-time is from the last 3 days · calories are an estimate',
+  },
+  'stats.share.save': { th: 'บันทึกสรุป', en: 'Save stats' },
+  'stats.share.share': { th: 'แชร์สรุป', en: 'Share stats' },
+  'stats.share.rendering': { th: 'กำลังสร้างภาพ…', en: 'Rendering…' },
+  'stats.share.ready': {
+    th: 'พร้อมแล้ว — แตะอีกครั้งเพื่อบันทึกหรือแชร์',
+    en: 'Ready — tap again to save or share',
+  },
+  'stats.share.failed': { th: 'สร้างภาพไม่สำเร็จ ลองใหม่อีกครั้ง', en: 'Export failed — try again' },
+
   // --- session history (3-day auto-expiry) ---
   'history.title': { th: 'ประวัติการฝึก', en: 'Training History' },
   'history.empty': {
@@ -460,6 +492,11 @@ const DICT = {
   'settings.sendFrame': { th: 'ส่งภาพจังหวะสัมผัสลูก', en: 'Send contact frame' },
   'settings.coachVoice': { th: 'เปิดเสียงโค้ช', en: 'Coach voice' },
   'settings.playerHeight': { th: 'ส่วนสูง (ซม.)', en: 'Height (cm)' },
+  'settings.playerWeight': { th: 'น้ำหนัก (กก.)', en: 'Weight (kg)' },
+  'settings.playerWeightHint': {
+    th: 'ใช้ประมาณแคลอรีที่เผาผลาญ (ค่าประมาณ ไม่ใช่ทางการแพทย์)',
+    en: 'Used to estimate calories burned (rough estimate, not medical).',
+  },
   'settings.speedFactor': { th: 'ปรับค่าความเร็ว (คูณ)', en: 'Speed calibration ×' },
   'settings.speedFactorHint': {
     th: '1.0 = ค่าเริ่มต้น ปรับที่สนามโดยเทียบกับความเร็วอ้างอิงที่รู้จริง',

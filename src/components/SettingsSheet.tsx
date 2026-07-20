@@ -100,6 +100,36 @@ export default function SettingsSheet() {
           />
         </label>
 
+        {/* --- player weight (calorie estimate on the session-stats widget) --- */}
+        <label className="col" style={{ gap: 4, marginBottom: 10 }}>
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <span>{t('settings.playerWeight')}</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={30}
+              max={200}
+              step={1}
+              style={{ width: 92, textAlign: 'right' }}
+              value={settings.playerWeightKg}
+              onChange={(e) => {
+                // Loose while typing; the hard 30–200 clamp lands on blur (and
+                // clampWeightKg in the store + estimateCalories re-clamp too).
+                const n = Math.round(Number(e.target.value));
+                if (Number.isFinite(n) && n > 0) updateSettings({ playerWeightKg: n });
+              }}
+              onBlur={() =>
+                updateSettings({
+                  playerWeightKg: Math.min(200, Math.max(30, settings.playerWeightKg)),
+                })
+              }
+            />
+          </div>
+          <span className="dim" style={{ fontSize: '0.8rem' }}>
+            {t('settings.playerWeightHint')}
+          </span>
+        </label>
+
         {/* --- swing-speed calibration (× multiplier on km/h, PO-tunable) --- */}
         <label className="col" style={{ gap: 4, marginBottom: 10 }}>
           <div className="row" style={{ justifyContent: 'space-between' }}>

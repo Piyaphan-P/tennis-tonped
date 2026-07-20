@@ -374,6 +374,15 @@ export interface StoredSession {
   focusShot: FocusShot;
   /** Top (<=3) concrete things to improve, derived from shot issues. */
   improvements: SessionImprovement[];
+  // --- v1.8 session-stats fields (OPTIONAL — pre-v1.8 rows / old localStorage
+  //     lack them; cumulative aggregation guards/defaults, never crashes) ---
+  /** Mean of shots' ≈ km/h swing speed (over shots that produced one). */
+  avgSpeedKmh?: number;
+  /** ≈ kcal burned this session (MET estimate). */
+  kcal?: number;
+  /** topspin/backspin/flat tally over the session's completed shots
+   *  (estimated from swing path — no ball sensor). */
+  spin?: { topspin: number; backspin: number; flat: number };
 }
 
 /** Persisted history: pruned to HISTORY_TTL_MS on init and on every save. */
@@ -561,6 +570,11 @@ export interface Settings {
    * normalized wrist speed into an approximate km/h swing speed. Persisted.
    */
   playerHeightCm: number;
+  /**
+   * Player body weight in kg (clamped 30–200, default 65). Used ONLY for the
+   * MET-based calorie ESTIMATE on the session-stats widget. Persisted.
+   */
+  playerWeightKg: number;
   /**
    * PO-tunable km/h calibration multiplier (clamped 0.5–3.0, default 1.0 = no
    * change). Multiplies the estimated swing speed at compute time so the user

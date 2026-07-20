@@ -25,6 +25,8 @@
 import { create } from 'zustand';
 import { HISTORY_TTL_MS } from './types';
 import { clampHeightCm, clampSpeedFactor } from './analysis/swingSpeed';
+import { clampWeightKg } from './analysis/calories';
+import { deriveSessionStats } from './history/sessionStats';
 import { SHOULDER_STATUS_EMA_ALPHA, ema } from './pose/angles';
 import type {
   AngleStatuses,
@@ -69,6 +71,7 @@ const LS_LANG = 'tp.lang';
 const LS_USER_NAME = 'tp.userName';
 const LS_AUTH_EMAIL = 'tp.authEmail'; // last signed-in account — drives userName re-seed on account switch
 const LS_PLAYER_HEIGHT = 'tp.playerHeightCm';
+const LS_PLAYER_WEIGHT = 'tp.playerWeightKg';
 const LS_VOICE_TONE = 'tp.voiceTone';
 const LS_COACH_MODE = 'tp.coachMode';
 const LS_SPEED_FACTOR = 'tp.speedFactor'; // km/h calibration multiplier (PO-tunable on court)
@@ -324,6 +327,9 @@ const DEFAULT_SETTINGS: Settings = {
   playerHeightCm: clampHeightCm(
     lsGet(LS_PLAYER_HEIGHT) != null ? Number(lsGet(LS_PLAYER_HEIGHT)) : undefined,
   ),
+  playerWeightKg: clampWeightKg(
+    lsGet(LS_PLAYER_WEIGHT) != null ? Number(lsGet(LS_PLAYER_WEIGHT)) : undefined,
+  ),
   cameraFacing: 'user',
   focusShot: 'forehand',
   voiceTone: readEnum(LS_VOICE_TONE, VOICE_TONES, 'gentleF'),
@@ -479,11 +485,20 @@ function buildStoredSession(s: AppState): StoredSession {
   const bestPeakWristSpeed =
     shotCount === 0 ? 0 : Math.max(...shots.map((sh) => sh.peakWristSpeed));
   const endedAtMs = Date.now();
+  const durationMs = s.session.startedAtMs ? endedAtMs - s.session.startedAtMs : 0;
+  // v1.8: durable per-session stats via the SHARED derivation, so what the
+  // Summary widget shows == what gets persisted == what feeds cumulative.
+  const sessionStats = deriveSessionStats(
+    shots,
+    durationMs,
+    s.settings.playerWeightKg,
+    s.settings.dominantHand,
+  );
   return {
     id: crypto.randomUUID(),
     tsMs: endedAtMs,
     userName: s.settings.userName,
-    durationMs: s.session.startedAtMs ? endedAtMs - s.session.startedAtMs : 0,
+    durationMs,
     shotCount,
     avgScore,
     goodFormPct,
@@ -491,6 +506,9 @@ function buildStoredSession(s: AppState): StoredSession {
     totalCostTHB: s.cost.breakdown.thbTotal,
     focusShot: s.settings.focusShot,
     improvements: deriveImprovements(shots),
+    avgSpeedKmh: sessionStats.avgSpeedKmh,
+    kcal: sessionStats.kcal,
+    spin: sessionStats.spin,
   };
 }
 
@@ -674,6 +692,13 @@ export const useAppStore = create<AppState>()((set) => ({
     // reloads — the only session-pref that outlives the session besides userName.
     if (patch.playerHeightCm != null) {
       lsSet(LS_PLAYER_HEIGHT, String(patch.playerHeightCm));
+    }
+    // Persist the (stable, physical) player weight — used for the calorie
+    // estimate on the session-stats widget. Clamped so a stray value can't
+    // poison the estimate; estimateCalories re-clamps as a safety net.
+    if (patch.playerWeightKg != null) {
+      patch = { ...patch, playerWeightKg: clampWeightKg(patch.playerWeightKg) };
+      lsSet(LS_PLAYER_WEIGHT, String(patch.playerWeightKg));
     }
     // Persist the (PO-tuned, physical) km/h calibration factor across reloads,
     // clamped to the sane range so a stray value can never poison the display.

@@ -12,6 +12,11 @@ import { useT } from '../i18n';
 import type { I18nKey } from '../i18n';
 import { renderCaptureToDataUrl } from '../analysis/captureRenderer';
 import CaptureLightbox from '../components/CaptureLightbox';
+import StatsShareButton from '../components/StatsShareButton';
+import { deriveSessionStats, deriveCumulativeStats } from '../history/sessionStats';
+import { spinPercentages } from '../analysis/spin';
+import { formatSpeedKmh } from '../analysis/swingSpeed';
+import type { StatsCardData } from '../share/statsCardRenderer';
 import type {
   DominantHand,
   Shot,
@@ -259,6 +264,8 @@ export default function SummaryScreen() {
   const stats = useAppStore(selectUserStats);
   const history = useAppStore((s) => s.history);
   const dominantHand = useAppStore((s) => s.settings.dominantHand);
+  const playerWeightKg = useAppStore((s) => s.settings.playerWeightKg);
+  const playerName = useAppStore((s) => s.settings.userName);
   const [lightbox, setLightbox] = useState<{ capture: SwingCapture; shotIndex: number } | null>(
     null,
   );
@@ -267,6 +274,77 @@ export default function SummaryScreen() {
     shotCount === 0
       ? 0
       : (shots.filter((sh) => sh.score >= GOOD_FORM_SCORE).length / shotCount) * 100;
+
+  // --- v1.8 session-stats widget (per-session via the SAME derivation store
+  //     persists; cumulative from the 3-day localStorage history) ---
+  const sessionStats = deriveSessionStats(shots, duration, playerWeightKg, dominantHand);
+  const cumStats = deriveCumulativeStats(history);
+  const spinPct = spinPercentages(sessionStats.spin);
+  const cumSpinPct = spinPercentages(cumStats.spin);
+  const sessionMinutes = Math.round(duration / 60000);
+  const speedText = (kmh: number | undefined) =>
+    kmh === undefined ? '—' : formatSpeedKmh(kmh, lang);
+
+  const statsCardData: StatsCardData = {
+    lang,
+    playerName,
+    dateLabel: fmtDate(Date.now(), lang),
+    minutes: sessionMinutes,
+    shots: shotCount,
+    avgSpeedKmh: sessionStats.avgSpeedKmh,
+    kcal: sessionStats.kcal,
+    spin: spinPct,
+    cumMinutes: cumStats.totalMinutes,
+    cumShots: cumStats.totalShots,
+    cumAvgSpeedKmh: cumStats.avgSpeedKmh,
+    cumKcal: cumStats.totalKcal,
+  };
+
+  /** One widget tile: label · big session value · "รวมทุกครั้ง: X" secondary. */
+  const widgetTile = (label: string, value: string, cumValue: string, color?: string) => (
+    <div className="card col" style={{ gap: 4 }}>
+      <span className="dim" style={{ fontSize: '0.78rem' }}>
+        {label}
+      </span>
+      <span className="num" style={{ fontSize: '1.5rem', fontWeight: 800, color: color ?? 'var(--text)' }}>
+        {value}
+      </span>
+      <span className="faint num" style={{ fontSize: '0.7rem' }}>
+        {t('stats.cumulative')}: {cumValue}
+      </span>
+    </div>
+  );
+
+  /** One spin bar row: label · % · proportional track. */
+  const spinRow = (label: string, pct: number, color: string) => (
+    <div className="col" style={{ gap: 4 }}>
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <span className="dim" style={{ fontSize: '0.8rem' }}>
+          {label}
+        </span>
+        <span className="num" style={{ fontSize: '0.85rem', fontWeight: 700 }}>
+          {pct}%
+        </span>
+      </div>
+      <div
+        style={{
+          height: 8,
+          borderRadius: 4,
+          background: 'var(--line)',
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            width: `${Math.max(0, Math.min(100, pct))}%`,
+            height: '100%',
+            background: color,
+            borderRadius: 4,
+          }}
+        />
+      </div>
+    </div>
+  );
 
   const stat = (label: string, value: string) => (
     <div className="card col" style={{ gap: 2 }}>
@@ -282,6 +360,65 @@ export default function SummaryScreen() {
   return (
     <div className="screen">
       <h1>{t('summary.title')}</h1>
+
+      {/* --- v1.8 session-stats overview (per-session + all-time) + share --- */}
+      <div className="card col" style={{ gap: 12, borderColor: 'var(--line-strong)' }}>
+        <h3>{t('stats.widget.title')}</h3>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 'var(--sp-3)',
+          }}
+        >
+          {widgetTile(
+            t('stats.minutes'),
+            `${sessionMinutes} ${t('stats.minUnit')}`,
+            `${cumStats.totalMinutes} ${t('stats.minUnit')}`,
+            'var(--accent)',
+          )}
+          {widgetTile(
+            t('stats.balls'),
+            `${shotCount} ${t('stats.ballsUnit')}`,
+            String(cumStats.totalShots),
+          )}
+          {widgetTile(
+            t('stats.avgSpeed'),
+            speedText(sessionStats.avgSpeedKmh),
+            speedText(cumStats.avgSpeedKmh),
+            'var(--good)',
+          )}
+          {widgetTile(
+            t('stats.kcal'),
+            `≈ ${sessionStats.kcal} ${t('stats.kcalUnit')}`,
+            `≈ ${cumStats.totalKcal} ${t('stats.kcalUnit')}`,
+            'var(--warn)',
+          )}
+        </div>
+
+        {/* spin mix (estimated from swing path — no ball sensor) */}
+        <div className="col" style={{ gap: 8 }}>
+          <div className="row" style={{ justifyContent: 'space-between', gap: 8 }}>
+            <span style={{ fontWeight: 700 }}>{t('stats.spinTitle')}</span>
+            <span className="faint" style={{ fontSize: '0.68rem', textAlign: 'right' }}>
+              {t('stats.spinNote')}
+            </span>
+          </div>
+          {spinRow(t('stats.topspin'), spinPct.topspin, 'var(--good)')}
+          {spinRow(t('stats.backspin'), spinPct.backspin, 'var(--accent)')}
+          {spinRow(t('stats.flat'), spinPct.flat, 'var(--warn)')}
+          <span className="faint num" style={{ fontSize: '0.68rem' }}>
+            {t('stats.cumulative')}: {cumSpinPct.topspin}% / {cumSpinPct.backspin}% /{' '}
+            {cumSpinPct.flat}%
+          </span>
+        </div>
+
+        <span className="faint" style={{ fontSize: '0.68rem' }}>
+          {t('stats.cumNote')}
+        </span>
+
+        {shotCount > 0 && <StatsShareButton data={statsCardData} />}
+      </div>
 
       <div
         style={{

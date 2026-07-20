@@ -5,8 +5,8 @@
 
 ## TL;DR
 
-**ADGE Tennis (SIT)** deploy อยู่ที่ https://adge-tennis-sit-441370880467.asia-southeast1.run.app (โปรเจค GCP **`adge-tennis-nonprd`**, image `app:sit-v13`, code = **SIT v1.6 + v1.4 mitigation**) + เว็บ Ranking https://adge-ranking-sit-441370880467.asia-southeast1.run.app (repo `../tennis_ranking01` migrate off ton-team แล้ว) · backend = **Firestore** DB `nonprd` + GCS `adge-tennis-nonprd-clips` · `GEMINI_API_KEY` (Secret Manager, เติมเครดิตแล้ว) · **login email/password ต่อคน** role admin/player (bootstrap `piyaphan.po@gmail.com`) · code-review 8/8 แก้แล้ว (revocation TTL 1 ชม.) · **v1.6**: เลือกเสียง 4 × สไตล์โค้ช 4 ก่อน session · **v1.4 mitigation**: shoulder EMA + km/h calibration knob
-> **ถัดไป: v1.8 Summary stats widget** (user อนุมัติ + เคาะ modeling แล้ว) — widget สรุปบนหน้า Summary + share canvas · กำลัง build
+**ADGE Tennis (SIT)** deploy อยู่ที่ https://adge-tennis-sit-441370880467.asia-southeast1.run.app (โปรเจค GCP **`adge-tennis-nonprd`**, image `app:sit-v14`, code = **SIT v1.8**) + เว็บ Ranking https://adge-ranking-sit-441370880467.asia-southeast1.run.app (repo `../tennis_ranking01` migrate off ton-team แล้ว) · backend = **Firestore** DB `nonprd` + GCS `adge-tennis-nonprd-clips` · `GEMINI_API_KEY` (Secret Manager, เติมเครดิตแล้ว) · **login email/password ต่อคน** role admin/player (bootstrap `piyaphan.po@gmail.com`) · code-review 8/8 แก้แล้ว (revocation TTL 1 ชม.) · **v1.6** เลือกเสียง 4 × สไตล์โค้ช 4 · **v1.4-mit** shoulder EMA + km/h knob · **v1.8** stats widget บนหน้า Summary (นาที/total shots/avg speed/kcal/spin%) + share canvas · **397 tests**
+> **ถัดไป: ไม่มีงานค้างที่รอ build** — เหลือแต่ที่ต้อง user ทำเอง (rotate credential, เทสสนามจริง v1.4/v1.6/v1.8) + prod migration ไป adge-tennis-prod
 
 ## โครงสร้าง GCP ปัจจุบัน (ตั้งแต่ 2026-07-20)
 
