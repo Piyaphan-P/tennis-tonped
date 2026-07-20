@@ -37,6 +37,7 @@
 
 ## สิ่งที่ต้องทำต่อ / รอเทสสนาม
 
+0. **UAM v1.5 (แผนพร้อมแล้ว — `plan-uam-v15.md`, รอ user อนุมัติ):** email เป็น key หลัก · role admin (เห็น/แก้/ลบทุก session + จัดการ player) / player (เห็นเฉพาะของตัวเอง) · `users/{email}` ใน Firestore (scrypt hash) · cookie ต่อคน (`AUTH_SECRET` + bootstrap `ADMIN_EMAIL`/`ADMIN_PASS`) · AdminScreen เพิ่ม/ลบ player · กรอง history/detail/clips ตาม `ownerEmail` · 3 ข้อตัดสินใจค้างในไฟล์แผน (leaderboard, Postgres depth, self-service password)
 1. **เทสสนาม v1.4:** ชิปมุมไหล่กะพริบจาก z noise ไหม · ตัวเลข km/h ต่ำกว่าจริงไหม (ถ้าใช่ → ตัดสินใจ correction factor = PO decision)
 2. **Deploy รอบหน้า** ใช้ image tag `sit-v8` ขึ้นไป (v1.4 code ยังไม่ได้ deploy — service รัน `sit-v7`) — ตรวจว่า v1.4 อยู่ใน sit-v7 หรือยังก่อน build ซ้ำ
 3. **Prod migration (`adge-tennis-prod`):** enable APIs (run/artifactregistry/secretmanager/firestore/storage) → สร้าง bucket + AR repo + secret + Firestore (อย่าลืม index `shots.id` COLLECTION_GROUP + TTL `expireAt`) → deploy จาก branch `main` (แบรนด์ ต้นและเพชร)
