@@ -85,6 +85,18 @@ const DICT = {
   },
   'home.handedness.current': { th: 'กำลังวิเคราะห์แบบมือ', en: 'Analyzing as' },
 
+  // --- coach voice tone + mode selectors (v1.6) ---
+  'home.voiceTone.title': { th: 'เสียงโค้ช', en: 'Coach Voice' },
+  'home.voiceTone.gentleF': { th: 'หญิงอ่อนโยน', en: 'Gentle female' },
+  'home.voiceTone.firmF': { th: 'หญิงเข้ม', en: 'Firm female' },
+  'home.voiceTone.firmM': { th: 'ชายเข้ม', en: 'Firm male' },
+  'home.voiceTone.friendlyM': { th: 'ชายเป็นกันเอง', en: 'Friendly male' },
+  'home.coachMode.title': { th: 'สไตล์โค้ช', en: 'Coach Style' },
+  'home.coachMode.encourage': { th: 'ให้กำลังใจ', en: 'Encouraging' },
+  'home.coachMode.hardcore': { th: 'ดุ hardcore', en: 'Hardcore' },
+  'home.coachMode.polite': { th: 'สุภาพ/เทคนิค', en: 'Polite / technical' },
+  'home.coachMode.buddy': { th: 'เพื่อนซี้/ฮึกเหิม', en: 'Buddy / hype' },
+
   // --- errors (ALWAYS bilingual, never raw API strings) ---
   // (The manual token field was removed 2026-07-20 — coach auth is provisioned
   // server-side, so this copy no longer tells the user to paste anything.)

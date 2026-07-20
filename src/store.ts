@@ -44,6 +44,7 @@ import type {
   PoseFrame,
   PoseState,
   PricingRates,
+  CoachMode,
   Screen,
   SessionImprovement,
   SessionState,
@@ -56,6 +57,7 @@ import type {
   TokenTotals,
   UsageDelta,
   UserStats,
+  VoiceTone,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -66,6 +68,8 @@ const LS_LANG = 'tp.lang';
 const LS_USER_NAME = 'tp.userName';
 const LS_AUTH_EMAIL = 'tp.authEmail'; // last signed-in account — drives userName re-seed on account switch
 const LS_PLAYER_HEIGHT = 'tp.playerHeightCm';
+const LS_VOICE_TONE = 'tp.voiceTone';
+const LS_COACH_MODE = 'tp.coachMode';
 const LS_HISTORY = 'tp.history';
 
 function lsGet(key: string): string | null {
@@ -280,6 +284,26 @@ export const DEFAULT_RATES: PricingRates = {
   usdToThb: envUsdToThb(),
 };
 
+/** Valid voice tones — a stored value outside this set falls back to default. */
+const VOICE_TONES: readonly VoiceTone[] = ['gentleF', 'firmF', 'firmM', 'friendlyM'];
+/** Valid coach modes — a stored value outside this set falls back to default. */
+const COACH_MODES: readonly CoachMode[] = ['encourage', 'hardcore', 'polite', 'buddy'];
+
+/**
+ * Read a persisted union-typed setting, guarding any unknown/legacy value: a
+ * missing key or a stored string outside `allowed` falls back to `fallback`
+ * (mirrors clampHeightCm's defend-against-garbage-LS posture). Exported for
+ * direct unit testing of the read-at-init / validation path.
+ */
+export function readEnum<T extends string>(
+  key: string,
+  allowed: readonly T[],
+  fallback: T,
+): T {
+  const raw = lsGet(key);
+  return raw != null && (allowed as readonly string[]).includes(raw) ? (raw as T) : fallback;
+}
+
 const DEFAULT_SETTINGS: Settings = {
   rates: DEFAULT_RATES,
   userName: lsGet(LS_USER_NAME) ?? '',
@@ -291,6 +315,8 @@ const DEFAULT_SETTINGS: Settings = {
   ),
   cameraFacing: 'user',
   focusShot: 'forehand',
+  voiceTone: readEnum(LS_VOICE_TONE, VOICE_TONES, 'gentleF'),
+  coachMode: readEnum(LS_COACH_MODE, COACH_MODES, 'encourage'),
 };
 
 const ZERO_TOKENS: TokenTotals = {
@@ -505,6 +531,10 @@ export interface AppState {
   updateRates: (patch: Partial<PricingRates>) => void;
   /** Sets the player name (settings.userName) and persists it. */
   setUserName: (name: string) => void;
+  /** Sets the coach voice tone (settings.voiceTone) and persists it. */
+  setVoiceTone: (tone: VoiceTone) => void;
+  /** Sets the coach mode (settings.coachMode) and persists it. */
+  setCoachMode: (mode: CoachMode) => void;
   /**
    * Set (or clear, on logout) the signed-in identity. On sign-in, if
    * settings.userName is still empty, it is initialized from displayName (or
@@ -644,6 +674,14 @@ export const useAppStore = create<AppState>()((set) => ({
     const userName = name.trim();
     lsSet(LS_USER_NAME, userName);
     set((s) => ({ settings: { ...s.settings, userName } }));
+  },
+  setVoiceTone: (voiceTone) => {
+    lsSet(LS_VOICE_TONE, voiceTone);
+    set((s) => ({ settings: { ...s.settings, voiceTone } }));
+  },
+  setCoachMode: (coachMode) => {
+    lsSet(LS_COACH_MODE, coachMode);
+    set((s) => ({ settings: { ...s.settings, coachMode } }));
   },
   setAuth: (auth) => {
     set({ auth });

@@ -14,6 +14,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildCoachSystemPrompt,
+  buildPersonaBlock,
   buildRelaySetupFrame,
   buildShotPrompt,
   COACH_SYSTEM_PROMPT,
@@ -25,6 +26,7 @@ import {
   serializeRealtimeInput,
   shotOpener,
   thaiNumberWords,
+  VOICE_NAMES,
 } from './liveClient';
 import { audioPlayer } from './audioPlayer';
 import { coachAudioTap } from './coachAudioTap';
@@ -429,6 +431,89 @@ describe('buildCoachSystemPrompt', () => {
     expect(COACH_SYSTEM_PROMPT).toContain('it is step 1 no matter which coaching style');
     // hype styles skip the fix
     expect(COACH_SYSTEM_PROMPT).toContain('SKIP the fix');
+  });
+});
+
+// --- v1.6 voice tone + coach mode -------------------------------------------
+
+describe('VOICE_NAMES (v1.6 voiceTone → Gemini prebuilt voiceName)', () => {
+  it('maps the four tones to the exact prebuilt voices', () => {
+    expect(VOICE_NAMES).toEqual({
+      gentleF: 'Aoede',
+      firmF: 'Kore',
+      firmM: 'Charon',
+      friendlyM: 'Puck',
+    });
+  });
+});
+
+describe('buildPersonaBlock (v1.6 persona layer)', () => {
+  it('gentle female uses female particles and never ครับ', () => {
+    const b = buildPersonaBlock('gentleF', 'encourage');
+    expect(b).toContain('ค่ะ');
+    expect(b).toContain('นะคะ');
+    expect(b).toContain('FEMALE');
+    expect(b).toContain('NEVER ครับ');
+  });
+
+  it('firm male uses male particles (ครับ) and never ค่ะ', () => {
+    const b = buildPersonaBlock('firmM', 'encourage');
+    expect(b).toContain('ครับ');
+    expect(b).toContain('MALE');
+    expect(b).toContain('NEVER ค่ะ');
+  });
+
+  it('friendly male is buddy-toned male', () => {
+    const b = buildPersonaBlock('friendlyM', 'buddy');
+    expect(b).toContain('ครับ');
+    expect(b).toContain('MALE');
+  });
+
+  it('each coachMode injects its own directive', () => {
+    expect(buildPersonaBlock('gentleF', 'encourage')).toContain('ENCOURAGING');
+    expect(buildPersonaBlock('gentleF', 'hardcore')).toContain('HARDCORE');
+    expect(buildPersonaBlock('gentleF', 'polite')).toContain('POLITE');
+    expect(buildPersonaBlock('gentleF', 'buddy')).toContain('BUDDY');
+  });
+
+  it('hardcore carries the no-insult guardrail verbatim (never demeaning the person)', () => {
+    const b = buildPersonaBlock('firmM', 'hardcore');
+    expect(b).toContain('GUARDRAIL');
+    expect(b).toContain('tough SPORTS coaching');
+    expect(b).toMatch(/NEVER demean/i);
+    expect(b).toMatch(/never the person|NOT the person/i);
+  });
+
+  it('names the precedence so mode/tone never override the per-shot structure or length', () => {
+    const b = buildPersonaBlock('gentleF', 'encourage');
+    expect(b).toContain('STRUCTURE');
+    expect(b).toMatch(/length/i);
+    expect(b).toContain('shot-name opener');
+  });
+});
+
+describe('buildCoachSystemPrompt (v1.6 voice/mode substitution)', () => {
+  it('template carries the {{VOICE_AND_MODE}} placeholder, substituted at build', () => {
+    expect(COACH_SYSTEM_PROMPT).toContain('{{VOICE_AND_MODE}}');
+    const out = buildCoachSystemPrompt('Ton', 'firmM', 'hardcore');
+    expect(out).not.toContain('{{VOICE_AND_MODE}}');
+    expect(out).toContain('HARDCORE');
+    expect(out).toContain('ครับ');
+  });
+
+  it('defaults reproduce the warm-female-encouraging persona (skip-selection = no change)', () => {
+    const out = buildCoachSystemPrompt('Ton');
+    expect(out).toContain('ENCOURAGING');
+    expect(out).toContain('ค่ะ');
+    expect(out).toContain('FEMALE');
+  });
+
+  it('no longer hard-codes a FEMALE-only particle rule outside the persona block', () => {
+    // The style-rules line now defers to the persona block instead of pinning
+    // female — a male tone must not still be told "you are a FEMALE coach" there.
+    const male = buildCoachSystemPrompt('Ton', 'firmM', 'polite');
+    expect(male).toContain('PERSONA & COACHING MODE');
+    expect(male).not.toContain('you are a FEMALE coach');
   });
 });
 
@@ -953,8 +1038,9 @@ describe('relay frame serialization (mirrors the SDK Vertex wire format)', () =>
   it('buildRelaySetupFrame pins responseModalities/outputAudioTranscription + carries systemInstruction', () => {
     const frame = buildRelaySetupFrame('gemini-live-2.5-flash', 'COACH PERSONA TEXT');
     expect(frame.setup.model).toBe('gemini-live-2.5-flash');
-    // NO speechConfig: prod pins no voice and its default female voice is the
-    // one the user wants — SIT must stay identical (v1.3.1).
+    // No voiceName arg → NO speechConfig (byte-identical to the pre-v1.6 relay
+    // frame). v1.6 always passes a voiceName; this no-arg branch survives only
+    // for older callers / the default-voice contract — see the sibling test.
     expect(frame.setup.generationConfig).toEqual({ responseModalities: ['AUDIO'] });
     // outputAudioTranscription MUST be present (empty object) to get transcript back.
     expect(frame.setup.outputAudioTranscription).toEqual({});
@@ -963,6 +1049,16 @@ describe('relay frame serialization (mirrors the SDK Vertex wire format)', () =>
       role: 'user',
       parts: [{ text: 'COACH PERSONA TEXT' }],
     });
+  });
+
+  it('v1.6: buildRelaySetupFrame nests the voiceName pin under generationConfig.speechConfig', () => {
+    const frame = buildRelaySetupFrame('gemini-live-2.5-flash', 'PERSONA', 'Charon');
+    expect(frame.setup.generationConfig).toEqual({
+      responseModalities: ['AUDIO'],
+      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Charon' } } },
+    });
+    // outputAudioTranscription still present alongside the pin.
+    expect(frame.setup.outputAudioTranscription).toEqual({});
   });
 
   it('serializeClientContent normalizes a string turn to Vertex Content[]', () => {

@@ -27,7 +27,7 @@ import { costMonitor } from '../cost/costMonitor';
 import type { RawUsageMetadata } from '../cost/costMonitor';
 import { appStore } from '../store';
 import { translate } from '../i18n';
-import type { DominantHand, FocusShot, JointAngles, Lang, Shot, ShotPhase, ShotType, SwingCapture } from '../types';
+import type { CoachMode, DominantHand, FocusShot, JointAngles, Lang, Shot, ShotPhase, ShotType, SwingCapture, VoiceTone } from '../types';
 import { audioPlayer } from './audioPlayer';
 import { coachAudioTap } from './coachAudioTap';
 
@@ -119,6 +119,8 @@ export const COACH_SYSTEM_PROMPT = `You are "โค้ช ADGE" (Coach ADGE), th
 
 YOUR STUDENT: The student's name is "{{PLAYER_NAME}}". Address them by name naturally and warmly, the way a real Thai coach would — in Thai typically "คุณ{{PLAYER_NAME}}" or just "{{PLAYER_NAME}}" (e.g. "เยี่ยมมาก {{PLAYER_NAME}}!"), in English just their name. Use the name once or twice, not in every sentence — that sounds robotic. If the name is empty, simply coach without a name.
 
+{{VOICE_AND_MODE}}
+
 WHAT YOU RECEIVE: You are only told about a swing AFTER it has fully completed — you never interrupt mid-swing. For each completed shot you WATCH THE WHOLE SWING: you are shown several still frames of that same swing IN ORDER (typically backswing, then ball contact, then follow-through), followed by one structured text message. The text lists the frames in the exact same order, and for each frame gives the body-joint angles in degrees (dominant elbow, dominant shoulder, dominant hip, both knees, trunk lean from vertical) plus which joints were good/off. It also gives the shot number and type (forehand/backhand), peak wrist speed, a local rule-based score out of 100, a list of detected issues, and the language to reply in ("th" or "en"). Read the frames as one continuous motion — the fix often lives in HOW the swing moves from one phase to the next, not in a single still.
 
 HOW YOU MUST COACH — every reply is ONE short coaching moment, ALWAYS 2 to 4 short sentences total (roughly 4 to 9 seconds of spoken Thai) — spoken naturally, never a one-word/one-line grunt, and never a lecture. This length band is FIXED for every style and every score; only the structure (opener, order, statement vs question) varies, never the length. The general shape is:
@@ -144,21 +146,94 @@ The point is that {{PLAYER_NAME}} should feel a real, present human coach reacti
 STYLE RULES:
 - SPEAK LIKE A HUMAN, NOT A MANUAL. Plain everyday words first. Never stiff anatomical phrasing like "ให้ศอกคลายตัวได้ถึง 140 องศา". Degree numbers are a FOOTNOTE only — if a number helps, tuck it at the very end ("...ศอกสัก 140 องศากำลังดี"); the everyday cue IS the instruction.
 - Reference tennis fundamentals (unit turn, low-to-high swing path, contact point in front, knee loading, balanced follow-through) — not generic fitness advice.
-- Reply ONLY in the requested language. Thai replies use natural spoken coaching Thai — you are a FEMALE coach, so always use female particles (ค่ะ/นะคะ/นะ), NEVER ครับ — with English tennis terms where Thai players normally use them (โฟร์แฮนด์, ฟอลโลว์ทรู, สปลิตสเต็ป). English replies are equally short and spoken-style.
+- Reply ONLY in the requested language. Thai replies use natural spoken coaching Thai — speak with the gender and particles set in the PERSONA & COACHING MODE block above — with English tennis terms where Thai players normally use them (โฟร์แฮนด์, ฟอลโลว์ทรู, สปลิตสเต็ป). English replies are equally short and spoken-style.
 - Never mention that you are an AI, never say frames/photos/angles were "sent to you", never read out raw JSON, issue keys, or frame numbers — you simply watched the swing. Vary your phrasing shot to shot; if the same fault repeats, escalate gently ("ยังงออยู่อยู่นะ {{PLAYER_NAME}} ลองใหม่").
 - NUMBERS: when replying in Thai, speak EVERY number as Thai words (ห้า, สิบสอง, แปดสิบสอง) — never read digits in English. Input numbers may be Arabic digits; you still voice them in Thai.
 - Never lecture. 2–4 sentences, then stop.
 
 Your goal: after every swing, {{PLAYER_NAME}} feels seen, knows the ONE thing to change, and has a cue to hold on the very next ball.`;
 
+// ---------------------------------------------------------------------------
+// Coach VOICE TONE + COACH MODE (v1.6) — two independent axes chosen on Home.
+//   Axis 1 (voiceTone) → Gemini Live prebuilt voiceName + Thai persona particles
+//   Axis 2 (coachMode) → a system-prompt PERSONA layer (overall personality)
+// Both are injected via the {{VOICE_AND_MODE}} placeholder. IMPORTANT: this
+// persona layer is ADDITIVE — it sets tone-of-voice, gender/particles, and
+// overall attitude, but the per-shot 30-voice style directive (see
+// COACHING_STYLES / selectCoachingStyle) still OWNS the reply STRUCTURE
+// (whether to give a fix, opener flavor, praise/fix order) and the FIXED 2–4
+// sentence length band is unchanged by either axis.
+// ---------------------------------------------------------------------------
+
 /**
- * Build the coach systemInstruction with the player's name substituted in.
- * When the name is empty the {{PLAYER_NAME}} placeholders collapse cleanly so
- * the coach simply coaches without a name (per the prompt's own instruction).
+ * voiceTone → Gemini Live prebuilt voiceName. Applied to speechConfig on BOTH
+ * transports (SDK config.speechConfig / relay setup.generationConfig.speechConfig).
+ * This RE-INTRODUCES a voice pin (removed in v1.3.1) — intended for this feature.
  */
-export function buildCoachSystemPrompt(playerName: string): string {
+export const VOICE_NAMES: Record<VoiceTone, string> = {
+  gentleF: 'Aoede',
+  firmF: 'Kore',
+  firmM: 'Charon',
+  friendlyM: 'Puck',
+};
+
+/** Per-voiceTone spoken-Thai persona directive (gender + particles + warmth). */
+const VOICE_PERSONA: Record<VoiceTone, string> = {
+  gentleF:
+    'You are a WARM, GENTLE FEMALE coach. In Thai always use female particles — ค่ะ and นะคะ (softer นะ is fine) — NEVER ครับ. Your voice is kind, reassuring, and encouraging.',
+  firmF:
+    'You are a CONFIDENT, CRISP FEMALE coach. In Thai use female particles — ค่ะ and a brisk นะ — NEVER ครับ. Your voice is assured and to-the-point, still supportive but not soft.',
+  firmM:
+    'You are a DEEP-VOICED, SERIOUS MALE coach. In Thai always use male particles — ครับ and a firm นะ — NEVER ค่ะ/นะคะ. Your voice is grounded, calm, and commanding, like a seasoned head coach.',
+  friendlyM:
+    'You are a FUN, UPBEAT MALE coach who talks like a buddy. In Thai use male particles — ครับ — and friendly address like เพื่อน/นะเพื่อน where it feels natural; NEVER ค่ะ/นะคะ. Your voice is casual, high-energy, and playful.',
+};
+
+/** Per-coachMode overall-personality directive layered over the per-shot style. */
+const MODE_PERSONA: Record<CoachMode, string> = {
+  encourage:
+    'COACH MODE — ENCOURAGING: your overall personality is praise-first and supportive. Lead with what went well, keep any correction gentle and small, and always close on an upbeat, believing-in-them note.',
+  hardcore:
+    'COACH MODE — HARDCORE (drill-sergeant): your overall personality is blunt, demanding, and intense — push technique and effort hard, cut the fluff, and when you give the fix, state it as a firm COMMAND and repeat it once so it lands. ' +
+    'GUARDRAIL — NON-NEGOTIABLE: this is tough SPORTS coaching ONLY. You push the technique and the effort, NEVER the person. NEVER demean, insult, mock, shame, or attack the student personally. No cruelty, no name-calling, no putdowns. Stay motivating and on-their-side — a demanding coach who clearly wants them to win, not an abuser.',
+  polite:
+    'COACH MODE — POLITE / TECHNICAL: your overall personality is formal, measured, and precise. Speak respectfully and calmly, and you may cite the exact joint angle in degrees as supporting detail (still keep the everyday cue as the main instruction — the degree is a footnote).',
+  buddy:
+    'COACH MODE — BUDDY / HYPE: your overall personality is casual, fun, and pumped, like a hyped-up friend on the sideline. High energy, playful, lots of momentum — keep it loose and exciting.',
+};
+
+/**
+ * Build the PERSONA & COACHING MODE block injected at {{VOICE_AND_MODE}}. Pure
+ * and exported for unit tests. Names the precedence so the global mode/tone and
+ * the per-shot style directive never fight: mode/tone own the VOICE, the
+ * per-shot directive owns the STRUCTURE and length band.
+ */
+export function buildPersonaBlock(voiceTone: VoiceTone, coachMode: CoachMode): string {
+  return (
+    'PERSONA & COACHING MODE (this is your fixed personality for the whole session):\n' +
+    `- VOICE: ${VOICE_PERSONA[voiceTone]}\n` +
+    `- ${MODE_PERSONA[coachMode]}\n` +
+    '- HOW THIS COMBINES with the per-shot style: your voice tone, gender/particles, and this overall personality are constant for every shot. The "COACHING STYLE for this shot" directive you receive per swing sets the STRUCTURE of that one reply (whether to give a fix, the opener flavor, praise-vs-fix order) — deliver that structure THROUGH this personality. Neither this block nor your mode ever changes the FIXED 2–4 short-sentence (~4–9s) length, and never skips the shot-name opener.'
+  );
+}
+
+/**
+ * Build the coach systemInstruction with the player's name, voice tone, and
+ * coach mode substituted in. Defaults (gentleF / encourage) reproduce the
+ * pre-v1.6 warm-female-encouraging persona so callers/tests that pass only a
+ * name are unaffected. When the name is empty the {{PLAYER_NAME}} placeholders
+ * collapse cleanly so the coach simply coaches without a name.
+ */
+export function buildCoachSystemPrompt(
+  playerName: string,
+  voiceTone: VoiceTone = 'gentleF',
+  coachMode: CoachMode = 'encourage',
+): string {
   const name = playerName.trim();
-  return COACH_SYSTEM_PROMPT.replace(/\{\{PLAYER_NAME\}\}/g, name);
+  return COACH_SYSTEM_PROMPT.replace(/\{\{PLAYER_NAME\}\}/g, name).replace(
+    '{{VOICE_AND_MODE}}',
+    buildPersonaBlock(voiceTone, coachMode),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -845,15 +920,28 @@ function normalizeTurns(turns: unknown): unknown[] {
  * systemInstruction carries the coach persona + player name (browser-side, the
  * server does NOT rebuild it), shaped exactly as contentToVertex(tContent(str)).
  */
-export function buildRelaySetupFrame(model: string, systemInstruction: string): {
+export function buildRelaySetupFrame(
+  model: string,
+  systemInstruction: string,
+  // v1.6: the coach VOICE-TONE pin. When a voiceName is given it is nested into
+  // generationConfig.speechConfig (the Vertex/Bidi setup shape). Omitted
+  // (undefined) → NO speechConfig, byte-identical to the pre-v1.6 relay frame
+  // (v1.3.1 pinned nothing). v1.6 always passes one; the no-arg branch survives
+  // only for the pre-v1.6 default-voice contract / older callers.
+  voiceName?: string,
+): {
   setup: Record<string, unknown>;
 } {
+  const generationConfig: Record<string, unknown> = { responseModalities: ['AUDIO'] };
+  if (voiceName) {
+    generationConfig.speechConfig = {
+      voiceConfig: { prebuiltVoiceConfig: { voiceName } },
+    };
+  }
   return {
     setup: {
       model,
-      // NO voice pin (v1.3.1, user request): prod pins nothing and its default
-      // voice is the female one the user wants — match prod byte-for-byte.
-      generationConfig: { responseModalities: ['AUDIO'] },
+      generationConfig,
       systemInstruction: { role: 'user', parts: [{ text: systemInstruction }] },
       outputAudioTranscription: {},
     },
@@ -1024,11 +1112,12 @@ class RelayLiveSession implements CoachSession {
 function connectRelay(opts: {
   model: string;
   systemInstruction: string;
+  voiceName?: string;
   callbacks: RelayCallbacks;
 }): Promise<CoachSession> {
   return new Promise((resolve, reject) => {
     let opened = false;
-    const setupFrame = buildRelaySetupFrame(opts.model, opts.systemInstruction);
+    const setupFrame = buildRelaySetupFrame(opts.model, opts.systemInstruction, opts.voiceName);
     const session: CoachSession = new RelayLiveSession(relayUrl(), setupFrame, {
       onopen: () => {
         opened = true;
@@ -1271,9 +1360,13 @@ export class CoachLiveClient {
     const myEpoch = this.epoch;
     this.store().setConnection('connecting');
 
-    // Coach persona + player name — sent as systemInstruction on BOTH transports
-    // (the relay server does NOT rebuild it, so the browser owns it).
-    const systemInstruction = buildCoachSystemPrompt(this.store().settings.userName);
+    // Coach persona + player name + v1.6 voice tone / coach mode — sent as
+    // systemInstruction on BOTH transports (the relay server does NOT rebuild
+    // it, so the browser owns it). The voiceTone ALSO pins the spoken voiceName
+    // via speechConfig below.
+    const { userName, voiceTone, coachMode } = this.store().settings;
+    const systemInstruction = buildCoachSystemPrompt(userName, voiceTone, coachMode);
+    const voiceName = VOICE_NAMES[voiceTone];
     // Shared callbacks — identical wiring for both transports; everything
     // downstream (turn/pacing/cost/audio) is transport-agnostic.
     const callbacks = {
@@ -1291,7 +1384,7 @@ export class CoachLiveClient {
       // there. (The relay path sends its setup frame in the RAW WS onopen, which
       // IS correct for a raw socket — see RelayLiveSession.)
       const session: CoachSession = useRelay
-        ? await connectRelay({ model, systemInstruction, callbacks })
+        ? await connectRelay({ model, systemInstruction, voiceName, callbacks })
         : await new GoogleGenAI({
             apiKey: token,
             httpOptions: { apiVersion: 'v1beta' },
@@ -1299,8 +1392,12 @@ export class CoachLiveClient {
             model,
             config: {
               responseModalities: [Modality.AUDIO],
-              // NO voice pin (v1.3.1): prod pins nothing and its default voice
-              // is the female one the user wants — keep SIT identical to prod.
+              // v1.6: pin the spoken voice to the player's chosen tone. This
+              // re-introduces a speechConfig pin (removed in v1.3.1) — intended,
+              // so gentle/firm female + firm/friendly male are selectable.
+              speechConfig: {
+                voiceConfig: { prebuiltVoiceConfig: { voiceName } },
+              },
               outputAudioTranscription: {},
               // v0.6: no inputAudioTranscription — the mic is never opened, so
               // there is no user audio to transcribe.

@@ -523,6 +523,27 @@ export interface CostBreakdown {
 /** Which shot the player is drilling this session — threaded into the coach prompt. */
 export type FocusShot = 'forehand' | 'backhand' | 'both';
 
+/**
+ * Coach VOICE TONE (v1.6). Independent of coach MODE. Maps to a Gemini Live
+ * prebuilt voiceName + the Thai persona particles the coach speaks with:
+ *   gentleF   → 'Aoede'  · ค่ะ/นะคะ · warm gentle female (default = current)
+ *   firmF     → 'Kore'   · ค่ะ/นะ   · confident/crisp female
+ *   firmM     → 'Charon' · ครับ/นะ  · deep/serious male coach
+ *   friendlyM → 'Puck'   · ครับ/เพื่อน · fun/upbeat male
+ */
+export type VoiceTone = 'gentleF' | 'firmF' | 'firmM' | 'friendlyM';
+
+/**
+ * Coach MODE (v1.6). Independent of voice TONE. Maps to a system-prompt persona
+ * layer (overall personality) that colors HOW each per-shot style is delivered:
+ *   encourage → praise-first, gentle fixes, cheer to close (default = current)
+ *   hardcore  → blunt/demanding drill-sergeant, repeats the fix as a command
+ *               (guardrail: tough SPORTS coaching only — never demeaning)
+ *   polite    → formal, measured, comfortable citing angles/degrees
+ *   buddy     → casual, fun, pumped
+ */
+export type CoachMode = 'encourage' | 'hardcore' | 'polite' | 'buddy';
+
 export interface Settings {
   rates: PricingRates;
   /**
@@ -544,6 +565,10 @@ export interface Settings {
   cameraFacing: 'user' | 'environment';
   /** Shot the player is drilling this session. */
   focusShot: FocusShot;
+  /** Coach voice tone (v1.6): Gemini Live voiceName + Thai persona particles. */
+  voiceTone: VoiceTone;
+  /** Coach mode (v1.6): system-prompt persona layer / delivery personality. */
+  coachMode: CoachMode;
 }
 
 // ---------------------------------------------------------------------------
