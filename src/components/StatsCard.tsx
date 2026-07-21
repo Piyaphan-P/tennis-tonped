@@ -2,17 +2,18 @@
 // ADGE Tennis — Your Stats card
 //
 // Cross-session aggregate stats (avg score, shot count, % good form, best
-// speed) shown on Home. Data comes from selectUserStats, derived from the
-// 3-day-pruned history (store.ts / deriveStats). Hidden entirely until the
-// player has at least one stored session.
+// speed) shown on Home — for the CURRENT player only (selectUserStats filters
+// the shared-device history by userName; players must never merge). Hidden
+// entirely until this player has at least one stored session.
 // ============================================================================
 
 import { useAppStore, selectUserStats } from '../store';
 import { useT } from '../i18n';
 
-/** Cross-session "Your Stats" summary card for Home. */
+/** Cross-session "Your Stats" summary card for Home (current player only). */
 export default function StatsCard() {
   const stats = useAppStore(selectUserStats);
+  const userName = useAppStore((s) => s.settings.userName);
   const t = useT();
 
   if (stats.sessions === 0) return null;
@@ -30,7 +31,10 @@ export default function StatsCard() {
 
   return (
     <div className="stats-card card col" style={{ gap: 8 }}>
-      <h3>{t('stats.title')}</h3>
+      <h3>
+        {t('stats.title')}
+        {userName.trim() ? ` — ${userName.trim()}` : ''}
+      </h3>
       {row(t('stats.sessions'), String(stats.sessions))}
       {row(t('stats.totalShots'), String(stats.totalShots))}
       {row(t('stats.avgScore'), stats.avgScore.toFixed(0))}

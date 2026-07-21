@@ -27,6 +27,7 @@ import { HISTORY_TTL_MS } from './types';
 import { clampHeightCm, clampSpeedFactor } from './analysis/swingSpeed';
 import { clampWeightKg } from './analysis/calories';
 import { deriveSessionStats } from './history/sessionStats';
+import { filterHistoryByPlayer } from './history/playerStats';
 import { SHOULDER_STATUS_EMA_ALPHA, ema } from './pose/angles';
 import type {
   AngleStatuses,
@@ -976,8 +977,11 @@ export const selectSessionDurationMs = (s: AppState): number => {
   return (endedAtMs || startedAtMs) - startedAtMs;
 };
 
-/** Cross-session aggregate stats (Home "Your Stats" card). */
-export const selectUserStats = (s: AppState): UserStats => deriveStats(s.history);
+/** Cross-session aggregate stats (Home "Your Stats" card) — for the CURRENT
+ *  player only. History on a shared device holds everyone's sessions; "Your
+ *  Stats" must never merge players (bug fixed 2026-07-21). */
+export const selectUserStats = (s: AppState): UserStats =>
+  deriveStats(filterHistoryByPlayer(s.history, s.settings.userName));
 
 /** Concrete things to improve for the CURRENT session (Summary). */
 export const selectSessionImprovements = (s: AppState): SessionImprovement[] =>

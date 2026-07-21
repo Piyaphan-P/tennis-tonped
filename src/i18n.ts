@@ -144,6 +144,19 @@ const DICT = {
   'nav.admin': { th: 'ผู้ดูแล', en: 'Admin' },
 
   // --- admin screen (UAM v1.5 — role 'admin' only) ---
+  // --- admin daily overview (Home widget, admin accounts only) ---
+  'adminDaily.title': { th: 'สถิติรวมรายวัน', en: 'Daily overview' },
+  'adminDaily.people': { th: 'คน', en: 'players' },
+  'adminDaily.sessions': { th: 'เซสชัน', en: 'sessions' },
+  'adminDaily.empty': {
+    th: 'ยังไม่มีผู้เล่นในช่วง 3 วันที่ผ่านมา',
+    en: 'No players in the last 3 days',
+  },
+  'adminDaily.note': {
+    th: 'นับผู้เล่นไม่ซ้ำจากทุกเครื่อง ตามชั่วโมงที่เริ่มเซสชัน (ข้อมูลเก็บ 3 วัน)',
+    en: 'Distinct players from all devices, by session start hour (3-day data)',
+  },
+
   'admin.title': { th: 'จัดการผู้เล่น', en: 'Manage players' },
   'admin.signedInAs': { th: 'เข้าสู่ระบบเป็น', en: 'Signed in as' },
   'admin.logout': { th: 'ออกจากระบบ', en: 'Log out' },
@@ -413,6 +426,9 @@ const DICT = {
     en: 'History is kept for 3 days, then auto-deleted',
   },
   'history.shots': { th: 'ลูก', en: 'shots' },
+  'history.perPlayer': { th: 'จำนวนตีแยกรายคน (3 วันล่าสุด)', en: 'Shots per player (last 3 days)' },
+  'history.unnamed': { th: 'ไม่ระบุชื่อ', en: 'Unnamed' },
+  'history.you': { th: '(คุณ)', en: '(you)' },
   'history.loading': { th: 'กำลังโหลดประวัติ…', en: 'Loading history…' },
   'history.offlineNote': {
     th: 'โหมดออฟไลน์ — แสดงสถิติที่บันทึกในเครื่องเท่านั้น',

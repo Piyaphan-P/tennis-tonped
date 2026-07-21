@@ -1,11 +1,11 @@
 # HANDOFF.md — สถานะงาน + สิ่งที่ต้องทำต่อ (branch `SIT`)
 
-> อัปเดตล่าสุด: **2026-07-20** (GCP migration → `adge-tennis-nonprd`) · อ่านคู่กับ `CLAUDE.md` (session log เต็ม) + `tasksYYYYMMDD.md` ของแต่ละวัน
+> อัปเดตล่าสุด: **2026-07-21** (SIT v1.9 — แยกประวัติรายผู้เล่น + admin daily overview) · อ่านคู่กับ `CLAUDE.md` (session log เต็ม) + `tasksYYYYMMDD.md` ของแต่ละวัน
 > **กฎเหล็ก:** ทุกวันทำงานต้องมี `tasksYYYYMMDD.md` และอัพเดทไฟล์นี้ + CLAUDE.md + git ทุกครั้ง
 
 ## TL;DR
 
-**ADGE Tennis (SIT)** deploy อยู่ที่ https://adge-tennis-sit-441370880467.asia-southeast1.run.app (โปรเจค GCP **`adge-tennis-nonprd`**, image `app:sit-v14`, code = **SIT v1.8**) + เว็บ Ranking https://adge-ranking-sit-441370880467.asia-southeast1.run.app (repo `../tennis_ranking01` migrate off ton-team แล้ว) · backend = **Firestore** DB `nonprd` + GCS `adge-tennis-nonprd-clips` · `GEMINI_API_KEY` (Secret Manager, เติมเครดิตแล้ว) · **login email/password ต่อคน** role admin/player (bootstrap `piyaphan.po@gmail.com`) · code-review 8/8 แก้แล้ว (revocation TTL 1 ชม.) · **v1.6** เลือกเสียง 4 × สไตล์โค้ช 4 · **v1.4-mit** shoulder EMA + km/h knob · **v1.8** stats widget บนหน้า Summary (นาที/total shots/avg speed/kcal/spin%) + share canvas · **397 tests**
+**ADGE Tennis (SIT)** deploy อยู่ที่ https://adge-tennis-sit-441370880467.asia-southeast1.run.app (โปรเจค GCP **`adge-tennis-nonprd`**, image `app:sit-v15`, code = **SIT v1.9** — ประวัติ/สถิติแยกรายผู้เล่นด้วย `userName`, admin เห็นสถิติรวมรายวันแทน) + เว็บ Ranking https://adge-ranking-sit-441370880467.asia-southeast1.run.app (repo `../tennis_ranking01` migrate off ton-team แล้ว) · backend = **Firestore** DB `nonprd` + GCS `adge-tennis-nonprd-clips` · `GEMINI_API_KEY` (Secret Manager, เติมเครดิตแล้ว) · **login email/password ต่อคน** role admin/player (bootstrap `piyaphan.po@gmail.com`) · code-review 8/8 แก้แล้ว (revocation TTL 1 ชม.) · **v1.6** เลือกเสียง 4 × สไตล์โค้ช 4 · **v1.4-mit** shoulder EMA + km/h knob · **v1.8** stats widget บนหน้า Summary (นาที/total shots/avg speed/kcal/spin%) + share canvas · **v1.9** ประวัติหน้า Home แยกนับรายคน (playerKey = userName) + AdminDailyStats (ผู้เล่นกี่คน/ชั่วโมงไหน ต่อวัน) · **403 tests**
 > **ถัดไป: ไม่มีงานค้างที่รอ build** — เหลือแต่ที่ต้อง user ทำเอง (rotate credential, เทสสนามจริง v1.4/v1.6/v1.8) + prod migration ไป adge-tennis-prod
 
 ## โครงสร้าง GCP ปัจจุบัน (ตั้งแต่ 2026-07-20)

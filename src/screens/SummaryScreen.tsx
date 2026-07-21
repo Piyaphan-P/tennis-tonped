@@ -14,6 +14,7 @@ import { renderCaptureToDataUrl } from '../analysis/captureRenderer';
 import CaptureLightbox from '../components/CaptureLightbox';
 import StatsShareButton from '../components/StatsShareButton';
 import { deriveSessionStats, deriveCumulativeStats } from '../history/sessionStats';
+import { filterHistoryByPlayer } from '../history/playerStats';
 import { spinPercentages } from '../analysis/spin';
 import { formatSpeedKmh } from '../analysis/swingSpeed';
 import type { StatsCardData } from '../share/statsCardRenderer';
@@ -276,9 +277,12 @@ export default function SummaryScreen() {
       : (shots.filter((sh) => sh.score >= GOOD_FORM_SCORE).length / shotCount) * 100;
 
   // --- v1.8 session-stats widget (per-session via the SAME derivation store
-  //     persists; cumulative from the 3-day localStorage history) ---
+  //     persists; cumulative from the 3-day localStorage history). History on
+  //     a shared device holds EVERY player — cumulative + the list below use
+  //     ONLY the current player's sessions (merge bug fixed 2026-07-21). ---
+  const myHistory = filterHistoryByPlayer(history, playerName);
   const sessionStats = deriveSessionStats(shots, duration, playerWeightKg, dominantHand);
-  const cumStats = deriveCumulativeStats(history);
+  const cumStats = deriveCumulativeStats(myHistory);
   const spinPct = spinPercentages(sessionStats.spin);
   const cumSpinPct = spinPercentages(cumStats.spin);
   const sessionMinutes = Math.round(duration / 60000);
@@ -583,13 +587,13 @@ export default function SummaryScreen() {
             {t('history.expiryNote')}
           </span>
         </div>
-        {history.length === 0 ? (
+        {myHistory.length === 0 ? (
           <span className="dim" style={{ fontSize: '0.85rem' }}>
             {t('history.empty')}
           </span>
         ) : (
           <div className="col" style={{ gap: 6 }}>
-            {[...history]
+            {[...myHistory]
               .sort((a, b) => b.tsMs - a.tsMs)
               .map((h: StoredSession) => (
                 <div key={h.id} className="shot-row" style={{ gap: 10 }}>

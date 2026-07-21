@@ -6,6 +6,7 @@ import BrandMark from '../components/BrandMark';
 import LangToggle from '../components/LangToggle';
 import StatsCard from '../components/StatsCard';
 import HistoryList from '../components/HistoryList';
+import AdminDailyStats from '../components/AdminDailyStats';
 import type { CoachMode, FocusShot, VoiceTone } from '../types';
 
 const FOCUS_OPTIONS: Array<{ value: FocusShot; labelKey: I18nKey }> = [
@@ -39,6 +40,7 @@ export default function HomeScreen() {
   const setUserName = useAppStore((s) => s.setUserName);
   const setVoiceTone = useAppStore((s) => s.setVoiceTone);
   const setCoachMode = useAppStore((s) => s.setCoachMode);
+  const isAdmin = useAppStore((s) => s.auth?.role === 'admin');
 
   const start = () => {
     // Unlock the AudioContext INSIDE this tap gesture so iOS Safari will play
@@ -175,8 +177,16 @@ export default function HomeScreen() {
         </p>
       </div>
 
-      <StatsCard />
-      <HistoryList />
+      {/* Admin sees daily player-traffic aggregates INSTEAD of the personal
+          stats/history widgets (user decision 2026-07-21). */}
+      {isAdmin ? (
+        <AdminDailyStats />
+      ) : (
+        <>
+          <StatsCard />
+          <HistoryList />
+        </>
+      )}
 
       <div className="spacer" />
 
