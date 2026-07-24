@@ -198,16 +198,24 @@ export default function SettingsSheet() {
           </label>
         </div>
 
-        {/* --- pricing --- */}
-        <h3 style={{ marginBottom: 8 }}>{t('settings.pricing')}</h3>
-        <div className="col">
-          {rateField('textInPer1M', 'settings.textIn')}
-          {rateField('audioInPer1M', 'settings.audioIn')}
-          {rateField('videoInPer1M', 'settings.videoIn')}
-          {rateField('textOutPer1M', 'settings.textOut')}
-          {rateField('audioOutPer1M', 'settings.audioOut')}
-          {rateField('usdToThb', 'settings.usdToThb')}
-        </div>
+        {/* --- pricing (ADMIN ONLY) — a cost/dev-tuning block whose "USD per 1M
+             tokens" header reads to players as a token field they must fill in.
+             Player-facing cost was already hidden in v1.5.1 (CostFab/Summary THB);
+             this section was the last leak. Rates still feed costMonitor from the
+             store defaults regardless of whether this editor is shown. --- */}
+        {auth?.role === 'admin' && (
+          <>
+            <h3 style={{ marginBottom: 8 }}>{t('settings.pricing')}</h3>
+            <div className="col">
+              {rateField('textInPer1M', 'settings.textIn')}
+              {rateField('audioInPer1M', 'settings.audioIn')}
+              {rateField('videoInPer1M', 'settings.videoIn')}
+              {rateField('textOutPer1M', 'settings.textOut')}
+              {rateField('audioOutPer1M', 'settings.audioOut')}
+              {rateField('usdToThb', 'settings.usdToThb')}
+            </div>
+          </>
+        )}
 
         {/* --- account (UAM v1.5) — only when signed in via the gate --- */}
         {auth && (
