@@ -19,6 +19,7 @@ import {
   buildShotPrompt,
   COACH_SYSTEM_PROMPT,
   COACHING_STYLES,
+  lengthClause,
   CoachLiveClient,
   orderedCaptures,
   selectCoachingStyle,
@@ -266,11 +267,14 @@ describe('selectCoachingStyle', () => {
     }
   });
 
-  it('every style directive pins spoken length to the 2–4-sentence / ~4–9s band', () => {
+  it('style directives own STRUCTURE only — length is no longer baked in (v2.0)', () => {
+    // v2.0 moved the spoken-length band out of the 30 directives and into a
+    // separate per-session axis (lengthClause). A directive must NOT carry any
+    // sentence/second length text, or it would fight the injected verbosity band.
     const all = Object.values(COACHING_STYLES).flat();
     for (const s of all) {
-      expect(s.directive).toMatch(/2 to 4 short sentences/);
-      expect(s.directive).toMatch(/4–9 seconds spoken|~4–9s spoken/);
+      expect(s.directive).not.toMatch(/\d+ to \d+ short sentences/);
+      expect(s.directive).not.toMatch(/seconds spoken/);
     }
   });
 
@@ -553,6 +557,73 @@ describe('buildShotPrompt — v0.7 shot-name opener instruction', () => {
     expect(p).toContain('ช็อตที่ 4');
     expect(p).not.toContain('โฟร์แฮนด์');
     expect(p).not.toContain('แบ็คแฮนด์');
+  });
+});
+
+// --- verbosity / spoken-length band (v2.0) ----------------------------------
+
+describe('lengthClause (v2.0 verbosity)', () => {
+  it('produces three distinct bands with the expected sentence/second ranges', () => {
+    const short = lengthClause('short');
+    const medium = lengthClause('medium');
+    const long = lengthClause('long');
+    expect(short).toContain('1 to 2 short sentences');
+    expect(short).toMatch(/~2–4 seconds/);
+    expect(medium).toContain('2 to 4 short sentences');
+    expect(medium).toMatch(/~4–9 seconds/);
+    expect(long).toContain('4 to 6 sentences');
+    expect(long).toMatch(/~10–16 seconds/);
+    // all three must be different text
+    expect(new Set([short, medium, long]).size).toBe(3);
+  });
+
+  it('medium reproduces the pre-v2.0 length wording verbatim', () => {
+    expect(lengthClause('medium')).toContain('2 to 4 short sentences (~4–9 seconds spoken)');
+  });
+
+  it('short explicitly permits merging/dropping praise+cue (resolves the ALWAYS-praise conflict)', () => {
+    const short = lengthClause('short');
+    expect(short).toMatch(/merge or drop/i);
+    expect(short).toMatch(/single most useful beat/i);
+  });
+});
+
+describe('buildShotPrompt — verbosity band injection (v2.0)', () => {
+  const s = () => shot({ index: 3, type: 'forehand', captures: [capture('contact', 200)] });
+
+  it('appends the chosen verbosity band to the prompt', () => {
+    expect(buildShotPrompt(s(), 'th', 'right', 'both', 'Ton', undefined, undefined, 'short')).toContain(
+      '1 to 2 short sentences',
+    );
+    expect(buildShotPrompt(s(), 'th', 'right', 'both', 'Ton', undefined, undefined, 'long')).toContain(
+      '4 to 6 sentences',
+    );
+  });
+
+  it('defaults to the medium band when verbosity is omitted (pure-caller back-compat)', () => {
+    expect(buildShotPrompt(s(), 'th', 'right', 'both', 'Ton')).toContain('2 to 4 short sentences');
+  });
+
+  it('the shot-name opener SURVIVES at short verbosity (load-bearing UX)', () => {
+    const p = buildShotPrompt(s(), 'th', 'right', 'both', 'Ton', undefined, undefined, 'short');
+    expect(p).toContain('OPEN your spoken reply by naming this shot first');
+    expect(p).toContain('ช็อตที่ 3 โฟร์แฮนด์');
+  });
+});
+
+describe('buildCoachSystemPrompt — verbosity substitution (v2.0)', () => {
+  it('injects the verbosity band into the {{LENGTH}} placeholder', () => {
+    const shortP = buildCoachSystemPrompt('Ton', 'gentleF', 'encourage', 'short');
+    const longP = buildCoachSystemPrompt('Ton', 'gentleF', 'encourage', 'long');
+    expect(shortP).not.toContain('{{LENGTH}}');
+    expect(shortP).toContain('1 to 2 short sentences');
+    expect(longP).toContain('4 to 6 sentences');
+  });
+
+  it('leaves no {{LENGTH}} placeholder and defaults to medium when omitted', () => {
+    const out = buildCoachSystemPrompt('Ton');
+    expect(out).not.toContain('{{LENGTH}}');
+    expect(out).toContain('2 to 4 short sentences');
   });
 });
 

@@ -29,13 +29,16 @@ if (typeof localStorage === 'undefined') {
 
 const LS_VOICE_TONE = 'tp.voiceTone';
 const LS_COACH_MODE = 'tp.coachMode';
+const LS_VERBOSITY = 'tp.verbosity';
 
 beforeEach(() => {
   localStorage.removeItem(LS_VOICE_TONE);
   localStorage.removeItem(LS_COACH_MODE);
+  localStorage.removeItem(LS_VERBOSITY);
   // Reset to the documented defaults for each test.
   useAppStore.getState().setVoiceTone('gentleF');
   useAppStore.getState().setCoachMode('encourage');
+  useAppStore.getState().setVerbosity('short');
 });
 
 describe('readEnum (read-at-init / legacy-value guard)', () => {
@@ -78,5 +81,34 @@ describe('store voice-tone / coach-mode slice (v1.6)', () => {
     expect(after.userName).toBe(before.userName);
     expect(after.dominantHand).toBe(before.dominantHand);
     expect(after.focusShot).toBe(before.focusShot);
+  });
+});
+
+describe('store verbosity slice (v2.0)', () => {
+  const LEVELS = ['short', 'medium', 'long'] as const;
+
+  it('setVerbosity updates state AND persists to localStorage', () => {
+    useAppStore.getState().setVerbosity('long');
+    expect(useAppStore.getState().settings.verbosity).toBe('long');
+    expect(localStorage.getItem(LS_VERBOSITY)).toBe('long');
+  });
+
+  it('defaults to short when unset, honors a valid stored value, rejects garbage', () => {
+    localStorage.removeItem(LS_VERBOSITY);
+    expect(readEnum(LS_VERBOSITY, LEVELS, 'short')).toBe('short');
+    localStorage.setItem(LS_VERBOSITY, 'medium');
+    expect(readEnum(LS_VERBOSITY, LEVELS, 'short')).toBe('medium');
+    localStorage.setItem(LS_VERBOSITY, 'bogus-legacy');
+    expect(readEnum(LS_VERBOSITY, LEVELS, 'short')).toBe('short');
+  });
+
+  it('does not disturb the voice/mode settings', () => {
+    useAppStore.getState().setVoiceTone('firmM');
+    useAppStore.getState().setCoachMode('hardcore');
+    useAppStore.getState().setVerbosity('medium');
+    const after = useAppStore.getState().settings;
+    expect(after.voiceTone).toBe('firmM');
+    expect(after.coachMode).toBe('hardcore');
+    expect(after.verbosity).toBe('medium');
   });
 });

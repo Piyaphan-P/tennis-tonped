@@ -1,6 +1,6 @@
 # HANDOFF.md — สถานะงาน + สิ่งที่ต้องทำต่อ (branch `SIT`)
 
-> อัปเดตล่าสุด: **2026-07-21** (SIT v1.9 — แยกประวัติรายผู้เล่น + admin daily overview) · อ่านคู่กับ `CLAUDE.md` (session log เต็ม) + `tasksYYYYMMDD.md` ของแต่ละวัน
+> อัปเดตล่าสุด: **2026-07-24** (SIT v2.0 — เลือกความยาวคำโค้ช สั้น/กลาง/ยาว · **โค้ดพร้อม ยังไม่ deploy**) · อ่านคู่กับ `CLAUDE.md` (session log เต็ม) + `tasksYYYYMMDD.md` ของแต่ละวัน
 > **กฎเหล็ก:** ทุกวันทำงานต้องมี `tasksYYYYMMDD.md` และอัพเดทไฟล์นี้ + CLAUDE.md + git ทุกครั้ง
 
 ## TL;DR
@@ -32,6 +32,7 @@
 
 ## งานล่าสุดที่เสร็จ
 
+- **2026-07-24 — SIT v2.0: เลือกความยาวคำโค้ช (verbosity) — โค้ดเสร็จ 414/414 tests, ⚠️ ยังไม่ build/deploy:** feedback สนาม "โค้ชพูดยาวไป" → แกนที่ 3 ในหน้า Home ต่อจาก voice tone/coach mode (v1.6). `settings.verbosity: 'short'|'medium'|'long'` — **default = short** (PO). ความยาวที่เคย hardcode ตายตัว 2–4 ประโยคถูกถอดจาก 5 จุด (`LENGTH_CLAUSE` const + 30 style directive + system prompt ×3 + persona block) → รวมเป็น `lengthClause(verbosity)` แหล่งเดียว ฉีดเข้าทั้ง systemInstruction (`buildCoachSystemPrompt`) และ per-shot (`buildShotPrompt`) โดยส่ง `settings.verbosity` **ทั้งสองจุด**. short = ชื่อช็อต+1 beat (praise/cue merge/drop ได้), medium = เดิม, long = +เหตุผล+วิธีซ้อม. mandate ทำเป็น conditional (opener คงเสมอ), anti-variety guardrail reword เป็น fixed-per-session (ไม่ reopen ปัญหา v1.4). function default = `medium` = text เดิมเป๊ะ → pure callers/tests เดิมไม่พัง. **ไม่แตะ server** (verbosity ไม่ขึ้น wire). ดู `tasks20260724.md`
 - **2026-07-20 — UAM v1.5 SHIPPED (image `app:sit-v8`, revision `00003`, 310/310 tests, E2E ครบบน service จริง):** email = key หลัก · login ต่อคน (`users/{email}` Firestore, scrypt hash, cookie HMAC ต่อคน 90 วัน ผ่าน env `AUTH_SECRET`) · role **admin** (เห็น/แก้/ลบทุก session + จัดการ player ผ่านหน้า Admin + `/api/users*`) / **player** (เห็นเฉพาะของตัวเอง — ของคนอื่นตอบ 404 ไม่ leak) · bootstrap admin ผ่าน env `ADMIN_EMAIL`(=piyaphan.po@gmail.com)+`ADMIN_PASS` ตอน boot (fire-and-forget — login ทันทีหลัง cold start อาจ 401 หนึ่งครั้ง = race ปกติ retry ได้) · `GATE_USER/PASS` ถอดออกแล้ว · AdminScreen (เพิ่ม/ลบ/disable/reset password, กันลบ/disable ตัวเอง) + logout ใน Settings · session ประทับ `ownerEmail` ฝั่ง server · leaderboard เห็นรวมทุกคน (ตามคำสั่ง user) · Postgres path = stub 503 (prod จะย้ายมา Firestore) · **สำคัญ:** listHistory กรอง owner ด้วย equality-only + sort ใน memory — ห้ามใส่ orderBy ควบ where (composite index ไม่มี จะ 503) · หลัง deploy ทุกเครื่องต้อง login ใหม่ (ตั้งใจ) · แผนเต็ม `plan-uam-v15.md`
 - **2026-07-20 — GCP migration:** replace `ton-team`/`ton-phet` ทั้ง repo → `adge-tennis-nonprd` (code defaults, package names, README, CLAUDE.md, HANDOFF.md) · ยืนยัน Firestore index READY · ตั้ง gcloud project ใหม่ · **ยังไม่ได้ build/deploy image ใหม่** (โค้ดที่เปลี่ยนเป็น default fallback — service จริงตั้ง env ครบอยู่แล้ว จึงไม่กระทบ runtime)
 - **SIT v1.4 (2026-07-16, `b698f37`):** แก้บั๊กคะแนน 2 ตัว (stale speed penalty −15 คะแนนถาวร + มุมไหล่เพี้ยนจาก 2D → `angleDeg3D`) ⚠️ คะแนนใหม่สูงขึ้น ~7.5–15 แต้มเทียบยุคเก่า · โค้ช 14→30 เสียง (no-repeat window 5, ยาว 2–4 ประโยค) · ความเร็วสวิง ≈km/h จากส่วนสูงผู้เล่น (Settings, default 170cm) · 286/286 tests
@@ -39,6 +40,7 @@
 
 ## สิ่งที่ต้องทำต่อ / รอเทสสนาม
 
+0. **Deploy v2.0** (ยังไม่ทำ): โค้ด verbosity อยู่ใน git แล้ว แต่ยังไม่ได้ build image → รอบหน้า build `app:sit-v16` แล้ว deploy (image ล่าสุดบน service = `sit-v15` = v1.9 ยังไม่มี verbosity). เทสสนาม: short สั้นพอ/ยังได้ยินชื่อช็อต · long ยาวไปไหม (ยาวขึ้น = pacing queue drop ช็อตมากขึ้น)
 1. **เทสสนาม v1.4:** ชิปมุมไหล่กะพริบจาก z noise ไหม · ตัวเลข km/h ต่ำกว่าจริงไหม (ถ้าใช่ → ตัดสินใจ correction factor = PO decision)
 2. **Deploy รอบหน้า** ใช้ image tag `sit-v8` ขึ้นไป (v1.4 code ยังไม่ได้ deploy — service รัน `sit-v7`) — ตรวจว่า v1.4 อยู่ใน sit-v7 หรือยังก่อน build ซ้ำ
 3. **Prod migration (`adge-tennis-prod`):** enable APIs (run/artifactregistry/secretmanager/firestore/storage) → สร้าง bucket + AR repo + secret + Firestore (อย่าลืม index `shots.id` COLLECTION_GROUP + TTL `expireAt`) → deploy จาก branch `main` (แบรนด์ ต้นและเพชร)

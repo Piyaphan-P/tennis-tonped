@@ -96,6 +96,14 @@ const DICT = {
   'home.coachMode.hardcore': { th: 'ดุ hardcore', en: 'Hardcore' },
   'home.coachMode.polite': { th: 'สุภาพ/เทคนิค', en: 'Polite / technical' },
   'home.coachMode.buddy': { th: 'เพื่อนซี้/ฮึกเหิม', en: 'Buddy / hype' },
+  'home.verbosity.title': { th: 'ความยาวคำโค้ช', en: 'Coach Length' },
+  'home.verbosity.short': { th: 'สั้น', en: 'Short' },
+  'home.verbosity.medium': { th: 'กลาง', en: 'Medium' },
+  'home.verbosity.long': { th: 'ยาว', en: 'Long' },
+  'home.verbosity.hint': {
+    th: 'สั้น = บอกสั้น ๆ ทันใจ · กลาง = ชม+แก้+ย้ำ · ยาว = อธิบายละเอียด',
+    en: 'Short = quick cue · Medium = praise+fix+cue · Long = fuller explanation',
+  },
 
   // --- errors (ALWAYS bilingual, never raw API strings) ---
   // (The manual token field was removed 2026-07-20 — coach auth is provisioned

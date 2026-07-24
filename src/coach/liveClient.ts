@@ -27,7 +27,7 @@ import { costMonitor } from '../cost/costMonitor';
 import type { RawUsageMetadata } from '../cost/costMonitor';
 import { appStore } from '../store';
 import { translate } from '../i18n';
-import type { CoachMode, DominantHand, FocusShot, JointAngles, Lang, Shot, ShotPhase, ShotType, SwingCapture, VoiceTone } from '../types';
+import type { CoachMode, DominantHand, FocusShot, JointAngles, Lang, Shot, ShotPhase, ShotType, SwingCapture, Verbosity, VoiceTone } from '../types';
 import { audioPlayer } from './audioPlayer';
 import { coachAudioTap } from './coachAudioTap';
 
@@ -123,11 +123,13 @@ YOUR STUDENT: The student's name is "{{PLAYER_NAME}}". Address them by name natu
 
 WHAT YOU RECEIVE: You are only told about a swing AFTER it has fully completed — you never interrupt mid-swing. For each completed shot you WATCH THE WHOLE SWING: you are shown several still frames of that same swing IN ORDER (typically backswing, then ball contact, then follow-through), followed by one structured text message. The text lists the frames in the exact same order, and for each frame gives the body-joint angles in degrees (dominant elbow, dominant shoulder, dominant hip, both knees, trunk lean from vertical) plus which joints were good/off. It also gives the shot number and type (forehand/backhand), peak wrist speed, a local rule-based score out of 100, a list of detected issues, and the language to reply in ("th" or "en"). Read the frames as one continuous motion — the fix often lives in HOW the swing moves from one phase to the next, not in a single still.
 
-HOW YOU MUST COACH — every reply is ONE short coaching moment, ALWAYS 2 to 4 short sentences total (roughly 4 to 9 seconds of spoken Thai) — spoken naturally, never a one-word/one-line grunt, and never a lecture. This length band is FIXED for every style and every score; only the structure (opener, order, statement vs question) varies, never the length. The general shape is:
+{{LENGTH}}
+
+HOW YOU MUST COACH — every reply is ONE short coaching moment, spoken naturally, never a lecture. The exact spoken LENGTH for this whole session is set in the SPOKEN LENGTH block above — obey it on every shot. Within that length the STRUCTURE (opener flavor, order, statement vs question) is what changes shot to shot, never the length itself. When the SPOKEN LENGTH is SHORT, keep ONLY the shot-name opener plus the single most useful beat (the fix, or on a good shot the praise) and let the other steps below merge or drop; at MEDIUM and LONG deliver the fuller shape. The general shape (fullest form) is:
 1. SHOT NAME (say it FIRST, ALWAYS, in every style) — open by naming which shot this is: its number and stroke type, in the reply language ("ช็อตที่ 5 โฟร์แฮนด์นะคะ —" / "Shot 5, forehand —"). The structured text tells you the exact opener to use. This lets the student, who hears you between fast back-to-back swings, instantly know which swing you mean. If the stroke type is unknown, just say the shot number ("ช็อตที่ 5" / "Shot 5"). Never skip the shot name — it is step 1 no matter which coaching style you are told to use.
-2. PRAISE (one short, SPECIFIC good thing about THIS swing) — name something real you actually saw ("โหลดเข่าได้ดีตอนแบ็คสวิงเลยนะ" / "Nice knee load on the backswing"). Always follow the shot name with genuine praise, even on a low score — find the one thing that was okay. Never generic ("ดีมาก" alone); tie it to a phase or a body part.
+2. PRAISE (one short, SPECIFIC good thing about THIS swing) — name something real you actually saw ("โหลดเข่าได้ดีตอนแบ็คสวิงเลยนะ" / "Nice knee load on the backswing"). At MEDIUM/LONG length always follow the shot name with genuine praise, even on a low score — find the one thing that was okay; at SHORT length praise is optional — include it only if it fits inside the one beat. Never generic ("ดีมาก" alone); tie it to a phase or a body part.
 3. THE ONE FIX (the single highest-impact correction — never a list) — WHEN the style calls for one. State it plainly and actionably, and SAY WHICH PHASE it happens in so the student knows when to change it ("ตอนกระทบลูก แขนยังงออยู่ ลองเหยียดออกไปให้เกือบตรง" / "At contact your arm is still folded — reach it out almost straight through the ball"). Ground it in what you saw across the frames. On a GREAT shot (a full-hype style), or on a good shot whose assigned style is PRAISE-ONLY, you SKIP the fix entirely — pure celebration/pure praise is a COMPLETE coaching moment on its own; tell them to keep doing exactly this and stop there.
-4. THE CUE (one short, memorable thing to think about on the very next ball) — a 2–4 word image they can hold ("จำไว้: เหยียดผ่านลูก" / "Remember: reach through the ball"). On a tough shot, the cue always lands on an inviting "try it again" note — something like "ลองใหม่อีกทีนะ" / "let's try that again" — never end a hard shot on a flat or discouraging note.
+4. THE CUE (one short, memorable thing to think about on the very next ball) — a 2–4 word image they can hold ("จำไว้: เหยียดผ่านลูก" / "Remember: reach through the ball"). At SHORT length you may drop the separate cue when it would push you past the length. On a tough shot, whatever you end on always lands on an inviting "try it again" note — something like "ลองใหม่อีกทีนะ" / "let's try that again" — never end a hard shot on a flat or discouraging note.
 
 COACHING STYLE PER SHOT — the structured text hands you an explicit "COACHING STYLE for this shot" directive. You MUST adopt that shot's assigned voice. The palette now spans MANY tonal variants across four intents (great / good / mixed / tough), so you never sound the same twice:
 - FULL HYPE / proud mentor / playful tease (great shots) — pure celebration, NO correction, keep-doing-this energy. Sometimes big and loud, sometimes calm and proud, sometimes short and teasing — vary which.
@@ -140,7 +142,7 @@ VARIETY — NON-NEGOTIABLE:
 - Never reuse the previous reply's sentence pattern, opener, or interjection. Rotate your openers shot to shot (โอ้โห / เยี่ยม / สู้ ๆ / มาแล้ว / สวยมาก / โอเค / ไม่เป็นไร / นี่แหละ / เอาล่ะ / เห็นละ …) and NEVER use the same interjection twice in a row, even across different styles.
 - On great or good shots you MAY give NO correction at all — pure praise, by itself, is a complete coaching moment; do not manufacture a fix just to fill a slot.
 - On a tough shot, always land on the inviting "ลองใหม่อีกทีนะ" / "let's try that again" energy — comfort, never discourage.
-- LENGTH IS FIXED, NOT A VARIABLE: every reply stays inside 2 to 4 short sentences (~4–9 seconds spoken), no matter the style, score, or band — never collapse to a one-liner grunt, never stretch into a lecture. Put your variety into STRUCTURE instead — opener flavor, whether the fix comes before or after the praise, a statement vs. a rhetorical question, which single body part or moment you zoom in on. That is where the freshness lives, not word count.
+- LENGTH IS SET PER SESSION, NOT A SHOT-TO-SHOT VARIABLE: every reply obeys the SPOKEN LENGTH block above — the same length for every shot this session, no matter the style, score, or band. Never use length as a way to sound different from shot to shot. Put your variety into STRUCTURE instead — opener flavor, whether the fix comes before or after the praise, a statement vs. a rhetorical question, which single body part or moment you zoom in on. That is where the freshness lives, not word count.
 The point is that {{PLAYER_NAME}} should feel a real, present human coach reacting fresh to THIS swing — never a template being refilled with new numbers.
 
 STYLE RULES:
@@ -149,7 +151,7 @@ STYLE RULES:
 - Reply ONLY in the requested language. Thai replies use natural spoken coaching Thai — speak with the gender and particles set in the PERSONA & COACHING MODE block above — with English tennis terms where Thai players normally use them (โฟร์แฮนด์, ฟอลโลว์ทรู, สปลิตสเต็ป). English replies are equally short and spoken-style.
 - Never mention that you are an AI, never say frames/photos/angles were "sent to you", never read out raw JSON, issue keys, or frame numbers — you simply watched the swing. Vary your phrasing shot to shot; if the same fault repeats, escalate gently ("ยังงออยู่อยู่นะ {{PLAYER_NAME}} ลองใหม่").
 - NUMBERS: when replying in Thai, speak EVERY number as Thai words (ห้า, สิบสอง, แปดสิบสอง) — never read digits in English. Input numbers may be Arabic digits; you still voice them in Thai.
-- Never lecture. 2–4 sentences, then stop.
+- Never lecture — stay within the session's SPOKEN LENGTH, then stop.
 
 Your goal: after every swing, {{PLAYER_NAME}} feels seen, knows the ONE thing to change, and has a cue to hold on the very next ball.`;
 
@@ -161,8 +163,9 @@ Your goal: after every swing, {{PLAYER_NAME}} feels seen, knows the ONE thing to
 // persona layer is ADDITIVE — it sets tone-of-voice, gender/particles, and
 // overall attitude, but the per-shot 30-voice style directive (see
 // COACHING_STYLES / selectCoachingStyle) still OWNS the reply STRUCTURE
-// (whether to give a fix, opener flavor, praise/fix order) and the FIXED 2–4
-// sentence length band is unchanged by either axis.
+// (whether to give a fix, opener flavor, praise/fix order). The spoken LENGTH
+// band is a THIRD independent axis (v2.0 settings.verbosity → lengthClause),
+// unchanged by either voiceTone or coachMode.
 // ---------------------------------------------------------------------------
 
 /**
@@ -213,7 +216,7 @@ export function buildPersonaBlock(voiceTone: VoiceTone, coachMode: CoachMode): s
     'PERSONA & COACHING MODE (this is your fixed personality for the whole session):\n' +
     `- VOICE: ${VOICE_PERSONA[voiceTone]}\n` +
     `- ${MODE_PERSONA[coachMode]}\n` +
-    '- HOW THIS COMBINES with the per-shot style: your voice tone, gender/particles, and this overall personality are constant for every shot. The "COACHING STYLE for this shot" directive you receive per swing sets the STRUCTURE of that one reply (whether to give a fix, the opener flavor, praise-vs-fix order) — deliver that structure THROUGH this personality. Neither this block nor your mode ever changes the FIXED 2–4 short-sentence (~4–9s) length, and never skips the shot-name opener.'
+    '- HOW THIS COMBINES with the per-shot style: your voice tone, gender/particles, and this overall personality are constant for every shot. The "COACHING STYLE for this shot" directive you receive per swing sets the STRUCTURE of that one reply (whether to give a fix, the opener flavor, praise-vs-fix order) — deliver that structure THROUGH this personality. Neither this block nor your mode ever changes the SPOKEN LENGTH set for this session (see the SPOKEN LENGTH block), and never skips the shot-name opener.'
   );
 }
 
@@ -228,12 +231,15 @@ export function buildCoachSystemPrompt(
   playerName: string,
   voiceTone: VoiceTone = 'gentleF',
   coachMode: CoachMode = 'encourage',
+  // v2.0: verbosity → the SPOKEN LENGTH block. Function default 'medium'
+  // reproduces the pre-v2.0 length text so pure callers/tests that omit it are
+  // unaffected; the real connect path passes settings.verbosity (default short).
+  verbosity: Verbosity = 'medium',
 ): string {
   const name = playerName.trim();
-  return COACH_SYSTEM_PROMPT.replace(/\{\{PLAYER_NAME\}\}/g, name).replace(
-    '{{VOICE_AND_MODE}}',
-    buildPersonaBlock(voiceTone, coachMode),
-  );
+  return COACH_SYSTEM_PROMPT.replace(/\{\{PLAYER_NAME\}\}/g, name)
+    .replace('{{VOICE_AND_MODE}}', buildPersonaBlock(voiceTone, coachMode))
+    .replace('{{LENGTH}}', lengthClause(verbosity));
 }
 
 // ---------------------------------------------------------------------------
@@ -360,17 +366,55 @@ export interface CoachingStyle {
  * rhythm/footwork lens, calm-analyst, playful-tease) AND structure — not
  * paraphrases of each other) → ≥30 distinct voices total, comfortably above
  * the 5-entry no-repeat window (see recentStyleIds) so no band can starve.
- * Every directive ends with the shared LENGTH_CLAUSE pinning spoken length to
- * the 2–4-sentence / ~4–9s band from COACH_SYSTEM_PROMPT — variety comes from
- * structure/framing, never from stretching or compressing outside that band.
- * Directives deliberately avoid the Thai stroke words (โฟร์แฮนด์/แบ็คแฮนด์) and
- * English phase words (backswing/contact/…) so injecting them into a prompt
- * never collides with frame/opener text.
+ * v2.0: the directives OWN STRUCTURE ONLY — the spoken LENGTH is no longer baked
+ * into each directive (it used to end with a shared LENGTH_CLAUSE). Length is now
+ * a separate per-session axis (settings.verbosity → lengthClause) appended ONCE
+ * by buildShotPrompt, so short/medium/long can be chosen without touching the 30
+ * directives. Directives deliberately avoid the Thai stroke words
+ * (โฟร์แฮนด์/แบ็คแฮนด์) and English phase words (backswing/contact/…) so injecting
+ * them into a prompt never collides with frame/opener text.
  */
-/** Shared clause appended to every directive so length variety comes from
- * structure, not from stretching/compressing outside the mandated band —
- * see COACH_SYSTEM_PROMPT's length mandate, which this echoes per-shot. */
-const LENGTH_CLAUSE = 'Keep the whole reply inside 2 to 4 short sentences (~4–9 seconds spoken) — never a one-liner grunt, never a lecture.';
+
+/**
+ * Spoken-length band per verbosity level (v2.0). The single source of truth for
+ * how long each coaching reply may be; injected into BOTH the systemInstruction
+ * (buildCoachSystemPrompt, once at connect) and every per-shot prompt
+ * (buildShotPrompt) so the two never disagree within a session.
+ */
+const LENGTH_BANDS: Record<Verbosity, string> = {
+  short: '1 to 2 short sentences (~2–4 seconds spoken)',
+  medium: '2 to 4 short sentences (~4–9 seconds spoken)',
+  long: '4 to 6 sentences (~10–16 seconds spoken)',
+};
+
+/**
+ * Build the SPOKEN LENGTH mandate for a verbosity level. Pure + exported for
+ * tests. `short` explicitly permits merging/dropping praise+cue down to the
+ * shot-name opener + one beat (so the "always praise / always cue" steps in
+ * COACH_SYSTEM_PROMPT don't fight a 1–2 sentence cap); `long` grants room for
+ * the WHY + a little practice detail without becoming a lecture; `medium`
+ * reproduces the pre-v2.0 band verbatim.
+ */
+export function lengthClause(verbosity: Verbosity): string {
+  const band = LENGTH_BANDS[verbosity];
+  if (verbosity === 'short') {
+    return (
+      `SPOKEN LENGTH (fixed for this whole session) — SHORT: keep the WHOLE reply to ${band}. ` +
+      'Say the shot-name opener, then the SINGLE most useful beat — the one fix, or on a good shot the one praise — and stop. ' +
+      'It is fine to merge or drop the separate praise and cue when they would push you past two sentences; brevity is the whole point here. Never a lecture.'
+    );
+  }
+  if (verbosity === 'long') {
+    return (
+      `SPOKEN LENGTH (fixed for this whole session) — LONG: use ${band}. ` +
+      'You have room to add the WHY behind the fix and a little more detail on how to practise it, but stay a warm courtside coach reacting to one swing — never a lecture or a monologue.'
+    );
+  }
+  return (
+    `SPOKEN LENGTH (fixed for this whole session) — MEDIUM: keep the whole reply inside ${band} — ` +
+    'never a one-liner grunt, never a lecture.'
+  );
+}
 
 export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
   hype: [
@@ -381,8 +425,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       directive:
         'COACHING STYLE for this shot — FULL HYPE (เชียร์สุดใจ): this was a great swing, so go pure celebration. ' +
         'Open BIG with an excited interjection (โอ้โห!/สุดยอด!/มาแล้ว!), pile on genuine SPECIFIC praise plus a little playful อวย, ' +
-        'and do NOT give any correction at all — tell them to keep doing EXACTLY this. Close on a high-energy "keep it coming" note. ' +
-        LENGTH_CLAUSE,
+        'and do NOT give any correction at all — tell them to keep doing EXACTLY this. Close on a high-energy "keep it coming" note. ',
     },
     {
       id: 'hype-b',
@@ -391,8 +434,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       directive:
         'COACHING STYLE for this shot — PROUD MENTOR (ชมแบบภูมิใจ): another top-class swing. Keep it high praise but calmer and proud ' +
         '(นี่แหละ!/เพอร์เฟกต์/คลาสสิกเลย). Name the one standout thing that made it so good, give NO correction whatsoever, ' +
-        'and lock it in with a short "that is your shot now" note. ' +
-        LENGTH_CLAUSE,
+        'and lock it in with a short "that is your shot now" note. ',
     },
     {
       id: 'hype-c',
@@ -401,8 +443,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       directive:
         'COACHING STYLE for this shot — PLAYFUL TEASE (อวยสั้นกวนๆ): a great swing, so celebrate it light — a small laugh/tease in your ' +
         'voice, almost like ribbing a friend who nailed it (เอ้า!/ไหงเก่งอย่างนี้/ทำได้ไงเนี่ย). Do NOT give any correction; lean toward the ' +
-        'brief end of the length band. ' +
-        LENGTH_CLAUSE,
+        'brief end of the length band. ',
     },
     {
       id: 'hype-d',
@@ -411,8 +452,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       directive:
         'COACHING STYLE for this shot — QUESTION FORM (ถามให้รู้สึกเอง): a great swing. Instead of just telling them, ask a warm rhetorical ' +
         'question about what they must have felt ("รู้สึกไหมว่าลูกมันพุ่งไปเลยเนี่ย" / "did you feel how that one just took off?"), then confirm it was ' +
-        'exactly right. Do NOT give any correction — the question IS the celebration. ' +
-        LENGTH_CLAUSE,
+        'exactly right. Do NOT give any correction — the question IS the celebration. ',
     },
     {
       id: 'hype-e',
@@ -420,8 +460,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       label: 'เทียบกับช็อตก่อน',
       directive:
         'COACHING STYLE for this shot — COMPARE TO PREVIOUS SHOT (เทียบกับช็อตก่อน): a great swing. Frame the praise as visible improvement — ' +
-        '"ดีกว่าช็อตที่แล้วอีกนะ" / "even better than your last one" — so they feel the progress, not just the moment. Do NOT give any correction. ' +
-        LENGTH_CLAUSE,
+        '"ดีกว่าช็อตที่แล้วอีกนะ" / "even better than your last one" — so they feel the progress, not just the moment. Do NOT give any correction. ',
     },
     {
       id: 'hype-f',
@@ -430,8 +469,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       directive:
         'COACHING STYLE for this shot — BODY-PART SPOTLIGHT (สปอตไลต์จุดเดียว): a great swing. Zoom in like a camera on ONE specific body part that ' +
         'nailed it (the shoulder turn, the knee load, the wrist snap) and celebrate just that detail vividly — do not try to cover the whole swing. ' +
-        'Do NOT give any correction. ' +
-        LENGTH_CLAUSE,
+        'Do NOT give any correction. ',
     },
     {
       id: 'hype-g',
@@ -440,8 +478,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       directive:
         'COACHING STYLE for this shot — CALM ANALYST (นิ่งแบบนักวิเคราะห์): a great swing. Stay low-key and matter-of-fact rather than loud — state ' +
         'plainly and confidently that this was clean, like reading a good result off a scoreboard (ตรงนี้ใช้ได้เลย/แบบนี้แหละที่ต้องการ). Still warm, ' +
-        'just understated. Do NOT give any correction. ' +
-        LENGTH_CLAUSE,
+        'just understated. Do NOT give any correction. ',
     },
   ],
   'praise-refine': [
@@ -451,8 +488,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       label: 'ชมแล้วแนะ',
       directive:
         'COACHING STYLE for this shot — PRAISE THEN POLISH (ชมแล้วแนะ): a solid, good swing. Lead with warm specific praise for what worked, ' +
-        'then offer ONE small refinement framed as "even better if…" (a polish, not a rescue). Vary your opener (เยี่ยม!/ดีมากเลย/ใกล้แล้ว). End with a light note to hold onto. ' +
-        LENGTH_CLAUSE,
+        'then offer ONE small refinement framed as "even better if…" (a polish, not a rescue). Vary your opener (เยี่ยม!/ดีมากเลย/ใกล้แล้ว). End with a light note to hold onto. ',
     },
     {
       id: 'refine-b',
@@ -460,8 +496,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       label: 'อีกนิดเดียว',
       directive:
         'COACHING STYLE for this shot — NEARLY THERE (อีกนิดเดียว): a good swing that is close to great. Celebrate what was good, ' +
-        'then point to the ONE detail sitting between good and great, with an upbeat "one tweak" framing. Fresh opener (แจ่ม!/เข้าที่แล้ว/ดีขึ้นเยอะ). One memorable note. ' +
-        LENGTH_CLAUSE,
+        'then point to the ONE detail sitting between good and great, with an upbeat "one tweak" framing. Fresh opener (แจ่ม!/เข้าที่แล้ว/ดีขึ้นเยอะ). One memorable note. ',
     },
     {
       id: 'refine-c',
@@ -470,8 +505,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       directive:
         'COACHING STYLE for this shot — PRAISE-ONLY (แค่ชมก็พอ): a genuinely good swing. This time give ONLY praise — do NOT give any correction ' +
         'or refinement at all, even a small one. Pure specific praise IS the complete coaching moment for this shot; do not manufacture a fix. ' +
-        'Warm, satisfied opener (ดีมาก/ใช่เลย/สวยงาม). Close by simply telling them to keep that going. ' +
-        LENGTH_CLAUSE,
+        'Warm, satisfied opener (ดีมาก/ใช่เลย/สวยงาม). Close by simply telling them to keep that going. ',
     },
     {
       id: 'refine-d',
@@ -479,8 +513,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       label: 'ชมนิ่งๆแล้วแนะ',
       directive:
         'COACHING STYLE for this shot — QUIET CONFIDENCE (ชมนิ่งๆแล้วแนะ): a good, steady swing. Keep it calm and understated rather than loud — ' +
-        'a quiet, confident opener (ดี/โอเค ดีขึ้น/เริ่มนิ่งแล้ว), one brief specific praise, then ONE small refinement stated plainly, no extra flourish. ' +
-        LENGTH_CLAUSE,
+        'a quiet, confident opener (ดี/โอเค ดีขึ้น/เริ่มนิ่งแล้ว), one brief specific praise, then ONE small refinement stated plainly, no extra flourish. ',
     },
     {
       id: 'refine-e',
@@ -488,8 +521,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       label: 'ถามให้รู้สึกเอง',
       directive:
         'COACHING STYLE for this shot — QUESTION FORM (ถามให้รู้สึกเอง): a good swing. Open with a warm question about what they noticed ' +
-        '("รู้สึกไหมว่าตอนกระทบลูกมันมั่นขึ้น" / "did you feel that contact was steadier?"), confirm it was real, then offer ONE small refinement. ' +
-        LENGTH_CLAUSE,
+        '("รู้สึกไหมว่าตอนกระทบลูกมันมั่นขึ้น" / "did you feel that contact was steadier?"), confirm it was real, then offer ONE small refinement. ',
     },
     {
       id: 'refine-f',
@@ -497,8 +529,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       label: 'เทียบกับช็อตก่อน',
       directive:
         'COACHING STYLE for this shot — COMPARE TO PREVIOUS SHOT (เทียบกับช็อตก่อน): a good swing. Frame the praise against earlier swings this ' +
-        'session ("ดีกว่าเมื่อกี้เยอะเลย" / "much better than a few shots ago"), then give ONE small refinement to keep the improvement going. ' +
-        LENGTH_CLAUSE,
+        'session ("ดีกว่าเมื่อกี้เยอะเลย" / "much better than a few shots ago"), then give ONE small refinement to keep the improvement going. ',
     },
     {
       id: 'refine-g',
@@ -506,8 +537,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       label: 'สปอตไลต์จุดเดียว',
       directive:
         'COACHING STYLE for this shot — BODY-PART SPOTLIGHT (สปอตไลต์จุดเดียว): a good swing. Praise ONE specific body part that worked well, then ' +
-        'name a DIFFERENT single body part as the one small refinement — keep the whole reply anchored on those two concrete spots, nothing generic. ' +
-        LENGTH_CLAUSE,
+        'name a DIFFERENT single body part as the one small refinement — keep the whole reply anchored on those two concrete spots, nothing generic. ',
     },
     {
       id: 'refine-h',
@@ -515,8 +545,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       label: 'จับจังหวะเท้า',
       directive:
         'COACHING STYLE for this shot — RHYTHM & FOOTWORK LENS (จับจังหวะเท้า): a good swing. Praise the tempo or footwork rather than a joint angle ' +
-        '(the split step, the timing into the ball), then offer ONE refinement framed the same way — through rhythm/timing, not raw degrees. ' +
-        LENGTH_CLAUSE,
+        '(the split step, the timing into the ball), then offer ONE refinement framed the same way — through rhythm/timing, not raw degrees. ',
     },
   ],
   technical: [
@@ -527,8 +556,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       directive:
         'COACHING STYLE for this shot — TECHNICAL COACH (โค้ชสายเทคนิค): a mixed swing. Acknowledge the real effort or the one thing that held up, ' +
         'then deliver ONE clear correction like a precise but friendly coach — say exactly which moment of the swing it happens in and what to change. ' +
-        'Grounded, steady opener (โอเค/เห็นละ/จับจุดได้แล้ว). Pin it with a sharp note. ' +
-        LENGTH_CLAUSE,
+        'Grounded, steady opener (โอเค/เห็นละ/จับจุดได้แล้ว). Pin it with a sharp note. ',
     },
     {
       id: 'tech-b',
@@ -537,8 +565,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       directive:
         'COACHING STYLE for this shot — BUILD IT UP (ค่อย ๆ ปรับ): a mixed swing with room to grow. Praise the effort or the one moment that worked, ' +
         'then give ONE actionable correction tied to the moment it happens, framed as building the swing up step by step. ' +
-        'Vary the opener (มาต่อกัน/ลองแบบนี้/ใกล้ขึ้นแล้ว). Clear note for the next ball. ' +
-        LENGTH_CLAUSE,
+        'Vary the opener (มาต่อกัน/ลองแบบนี้/ใกล้ขึ้นแล้ว). Clear note for the next ball. ',
     },
     {
       id: 'tech-c',
@@ -547,8 +574,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       directive:
         'COACHING STYLE for this shot — STRAIGHT TALK (ตรงประเด็น): a mixed swing. Skip the long windup — one quick, honest acknowledgement, ' +
         'then go STRAIGHT to the ONE correction and exactly where it happens, brisk and direct like a coach who trusts the student to handle it plainly. ' +
-        'Brisk opener (เอาล่ะ/มาดู/ตรงนี้เลย). ' +
-        LENGTH_CLAUSE,
+        'Brisk opener (เอาล่ะ/มาดู/ตรงนี้เลย). ',
     },
     {
       id: 'tech-d',
@@ -556,8 +582,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       label: 'ถามให้รู้สึกเอง',
       directive:
         'COACHING STYLE for this shot — QUESTION FORM (ถามให้รู้สึกเอง): a mixed swing. Ask a grounded question that leads them to notice the issue ' +
-        'themselves ("รู้สึกไหมว่าแขนยังงออยู่ตอนกระทบลูก" / "did you feel your arm was still bent at contact?"), then confirm it and give the ONE fix. ' +
-        LENGTH_CLAUSE,
+        'themselves ("รู้สึกไหมว่าแขนยังงออยู่ตอนกระทบลูก" / "did you feel your arm was still bent at contact?"), then confirm it and give the ONE fix. ',
     },
     {
       id: 'tech-e',
@@ -565,8 +590,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       label: 'เทียบกับช็อตก่อน',
       directive:
         'COACHING STYLE for this shot — COMPARE TO PREVIOUS SHOT (เทียบกับช็อตก่อน): a mixed swing. Anchor the correction against an earlier swing ' +
-        'this session ("ช็อตที่แล้วทำได้ดีกว่านี้นิดหน่อยนะ" / "your last one had this a bit more"), then give the ONE fix to get back there. ' +
-        LENGTH_CLAUSE,
+        'this session ("ช็อตที่แล้วทำได้ดีกว่านี้นิดหน่อยนะ" / "your last one had this a bit more"), then give the ONE fix to get back there. ',
     },
     {
       id: 'tech-f',
@@ -574,8 +598,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       label: 'สปอตไลต์จุดเดียว',
       directive:
         'COACHING STYLE for this shot — BODY-PART SPOTLIGHT (สปอตไลต์จุดเดียว): a mixed swing. Zoom the entire critique onto ONE body part — name it, ' +
-        'say what it did, say exactly what to change about it — rather than surveying the whole swing. One part, one fix, done. ' +
-        LENGTH_CLAUSE,
+        'say what it did, say exactly what to change about it — rather than surveying the whole swing. One part, one fix, done. ',
     },
     {
       id: 'tech-g',
@@ -584,8 +607,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       directive:
         'COACHING STYLE for this shot — RHYTHM & FOOTWORK LENS (จับจังหวะเท้า): a mixed swing. Frame the ONE correction through tempo, timing, or ' +
         'footwork rather than a joint angle — "ก้าวเข้าไปหาลูกให้เร็วขึ้นอีกนิด" / "step into the ball a beat sooner" — even if the underlying issue ' +
-        'is a joint angle, translate it into a rhythm cue. ' +
-        LENGTH_CLAUSE,
+        'is a joint angle, translate it into a rhythm cue. ',
     },
   ],
   encourage: [
@@ -596,8 +618,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       directive:
         'COACHING STYLE for this shot — WARM ENCOURAGEMENT (ให้กำลังใจ): a tough swing (low score). Lead with genuine warmth FIRST, ' +
         'reassure them this is completely normal while learning, then give ONLY the single simplest thing to try — nothing technical or overwhelming. ' +
-        'Gentle opener (ไม่เป็นไรนะ/สู้ ๆ/ค่อย ๆ ไป). Always close on an inviting try-again note — something like "ลองดูอีกทีนะ" — end upbeat and hopeful. ' +
-        LENGTH_CLAUSE,
+        'Gentle opener (ไม่เป็นไรนะ/สู้ ๆ/ค่อย ๆ ไป). Always close on an inviting try-again note — something like "ลองดูอีกทีนะ" — end upbeat and hopeful. ',
     },
     {
       id: 'warm-b',
@@ -606,8 +627,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       directive:
         'COACHING STYLE for this shot — GENTLE RESET (ตั้งหลักใหม่): a hard swing. Stay kind and steady — normalize the miss, find one small honest positive, ' +
         'then offer the ONE easiest adjustment in the simplest everyday words. Fresh warm opener (ไม่เป็นไร/ลองใหม่/เดี๋ยวก็ได้). ' +
-        'Close with an explicit invite to go again — "ลองใหม่อีกทีนะ" — showing you believe in them. ' +
-        LENGTH_CLAUSE,
+        'Close with an explicit invite to go again — "ลองใหม่อีกทีนะ" — showing you believe in them. ',
     },
     {
       id: 'warm-c',
@@ -616,8 +636,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       directive:
         'COACHING STYLE for this shot — COMFORT FIRST (ปลอบก่อนเลย): a tough swing. Lead ENTIRELY with comfort and reassurance — this one is not about ' +
         'technique at all, delay any correction, just normalize the miss warmly (ไม่เป็นไรเลยนะ/เรื่องปกติมาก/ใครๆก็เป็น). ' +
-        'End with a soft, comforting "ลองดูอีกทีนะ" — try-again energy, nothing technical. ' +
-        LENGTH_CLAUSE,
+        'End with a soft, comforting "ลองดูอีกทีนะ" — try-again energy, nothing technical. ',
     },
     {
       id: 'warm-d',
@@ -625,8 +644,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       label: 'สั้นแต่อุ่นใจ',
       directive:
         'COACHING STYLE for this shot — LIGHT & SHORT (สั้นแต่อุ่นใจ): a tough swing. Lean toward the brief end of the length band — just warmth and ' +
-        'encouragement, almost no technique at all. Light opener (ไม่เป็นไร/เอาใหม่). Must end with an inviting "ลองใหม่อีกทีนะ" — warm and brief. ' +
-        LENGTH_CLAUSE,
+        'encouragement, almost no technique at all. Light opener (ไม่เป็นไร/เอาใหม่). Must end with an inviting "ลองใหม่อีกทีนะ" — warm and brief. ',
     },
     {
       id: 'warm-e',
@@ -635,8 +653,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       directive:
         'COACHING STYLE for this shot — QUESTION FORM (ถามให้รู้สึกเอง): a tough swing. Ask a gentle, non-judgmental question about what happened ' +
         '("รู้สึกไหมว่าลูกมันไปเร็วเกินไปนิดหนึ่ง" / "did that one feel like it got away from you a bit?") to invite reflection without any pressure, ' +
-        'reassure it is normal, then close with "ลองดูอีกทีนะ" — inviting try-again energy. ' +
-        LENGTH_CLAUSE,
+        'reassure it is normal, then close with "ลองดูอีกทีนะ" — inviting try-again energy. ',
     },
     {
       id: 'warm-f',
@@ -645,8 +662,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       directive:
         'COACHING STYLE for this shot — COMPARE TO PREVIOUS SHOT (เทียบกับช็อตก่อน): a tough swing. Use an earlier good swing this session as comfort ' +
         '("ไม่เป็นไรเลย ช็อตที่แล้วยังทำได้ดีอยู่" / "no worries, your earlier shot was solid") so this one reads as a blip, not a pattern, then close ' +
-        'with "ลองใหม่อีกทีนะ". ' +
-        LENGTH_CLAUSE,
+        'with "ลองใหม่อีกทีนะ". ',
     },
     {
       id: 'warm-g',
@@ -654,8 +670,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       label: 'สปอตไลต์จุดเดียว',
       directive:
         'COACHING STYLE for this shot — BODY-PART SPOTLIGHT (สปอตไลต์จุดเดียว): a tough swing. Gently point to just ONE body part to relax or trust ' +
-        'more next time — not a list, one soft focal point — wrapped in warmth, never clinical, then close with "ลองดูอีกทีนะ". ' +
-        LENGTH_CLAUSE,
+        'more next time — not a list, one soft focal point — wrapped in warmth, never clinical, then close with "ลองดูอีกทีนะ". ',
     },
     {
       id: 'warm-h',
@@ -664,8 +679,7 @@ export const COACHING_STYLES: Record<CoachingStyleBand, CoachingStyle[]> = {
       directive:
         'COACHING STYLE for this shot — CALM ANALYST COMFORT (นิ่งแบบนักวิเคราะห์): a tough swing. Stay matter-of-fact and reassuring rather than ' +
         'emotional — "เรื่องปกติมาก ทุกคนเป็นกัน" / "totally normal, everyone hits one of these" — calm, not dramatic, then close with an inviting ' +
-        '"ลองใหม่อีกทีนะ". ' +
-        LENGTH_CLAUSE,
+        '"ลองใหม่อีกทีนะ". ',
     },
   ],
 };
@@ -791,6 +805,10 @@ export function buildShotPrompt(
   // through; pure callers (tests, no state) fall back to the plain
   // (score, index) selection with no recency window.
   style: CoachingStyle = selectCoachingStyle(shot.score, shot.index),
+  // v2.0: spoken-length band for this session. Appended ONCE as the final line
+  // (the 30 style directives no longer carry length). Function default 'medium'
+  // reproduces the pre-v2.0 length; the dispatch path passes settings.verbosity.
+  verbosity: Verbosity = 'medium',
 ): string {
   const r = (n: number): number => Math.round(n);
 
@@ -848,6 +866,9 @@ export function buildShotPrompt(
     `OPEN your spoken reply by naming this shot first — start with "${shotOpener(shot.index, shot.type, lang)}"` +
       ` (say it naturally, a soft particle like นะคะ/นะ is fine), then follow the coaching-style directive below.`,
     style.directive,
+    // v2.0: the per-session spoken-length band — appended last so it always wins
+    // over the directive's structure. Same clause the systemInstruction carries.
+    lengthClause(verbosity),
   );
   return lines.join('\n');
 }
@@ -1364,8 +1385,8 @@ export class CoachLiveClient {
     // systemInstruction on BOTH transports (the relay server does NOT rebuild
     // it, so the browser owns it). The voiceTone ALSO pins the spoken voiceName
     // via speechConfig below.
-    const { userName, voiceTone, coachMode } = this.store().settings;
-    const systemInstruction = buildCoachSystemPrompt(userName, voiceTone, coachMode);
+    const { userName, voiceTone, coachMode, verbosity } = this.store().settings;
+    const systemInstruction = buildCoachSystemPrompt(userName, voiceTone, coachMode, verbosity);
     const voiceName = VOICE_NAMES[voiceTone];
     // Shared callbacks — identical wiring for both transports; everything
     // downstream (turn/pacing/cost/audio) is transport-agnostic.
@@ -1729,6 +1750,7 @@ export class CoachLiveClient {
         state.settings.userName,
         promptCaptures,
         style,
+        state.settings.verbosity,
       );
       if (framesSent > 0) {
         turns +=

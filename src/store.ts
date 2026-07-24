@@ -49,6 +49,7 @@ import type {
   PoseState,
   PricingRates,
   CoachMode,
+  Verbosity,
   Screen,
   SessionImprovement,
   SessionState,
@@ -75,6 +76,7 @@ const LS_PLAYER_HEIGHT = 'tp.playerHeightCm';
 const LS_PLAYER_WEIGHT = 'tp.playerWeightKg';
 const LS_VOICE_TONE = 'tp.voiceTone';
 const LS_COACH_MODE = 'tp.coachMode';
+const LS_VERBOSITY = 'tp.verbosity';
 const LS_SPEED_FACTOR = 'tp.speedFactor'; // km/h calibration multiplier (PO-tunable on court)
 const LS_HISTORY = 'tp.history';
 
@@ -303,6 +305,8 @@ export const DEFAULT_RATES: PricingRates = {
 const VOICE_TONES: readonly VoiceTone[] = ['gentleF', 'firmF', 'firmM', 'friendlyM'];
 /** Valid coach modes — a stored value outside this set falls back to default. */
 const COACH_MODES: readonly CoachMode[] = ['encourage', 'hardcore', 'polite', 'buddy'];
+/** Valid verbosity levels — a stored value outside this set falls back to default. */
+const VERBOSITY_LEVELS: readonly Verbosity[] = ['short', 'medium', 'long'];
 
 /**
  * Read a persisted union-typed setting, guarding any unknown/legacy value: a
@@ -335,6 +339,9 @@ const DEFAULT_SETTINGS: Settings = {
   focusShot: 'forehand',
   voiceTone: readEnum(LS_VOICE_TONE, VOICE_TONES, 'gentleF'),
   coachMode: readEnum(LS_COACH_MODE, COACH_MODES, 'encourage'),
+  // v2.0: default 'short' — answers the on-court "coach talks too long" feedback;
+  // players who want the fuller coach pick medium/long on Home.
+  verbosity: readEnum(LS_VERBOSITY, VERBOSITY_LEVELS, 'short'),
   // km/h calibration multiplier — clamped 0.5–3.0, default 1.0 (= no change).
   // Tunable on court to correct the anisotropic under/over-read without redeploy.
   speedCorrectionFactor: clampSpeedFactor(
@@ -570,6 +577,8 @@ export interface AppState {
   setVoiceTone: (tone: VoiceTone) => void;
   /** Sets the coach mode (settings.coachMode) and persists it. */
   setCoachMode: (mode: CoachMode) => void;
+  /** Sets the coach verbosity (settings.verbosity) and persists it. */
+  setVerbosity: (level: Verbosity) => void;
   /**
    * Set (or clear, on logout) the signed-in identity. On sign-in, if
    * settings.userName is still empty, it is initialized from displayName (or
@@ -730,6 +739,10 @@ export const useAppStore = create<AppState>()((set) => ({
   setCoachMode: (coachMode) => {
     lsSet(LS_COACH_MODE, coachMode);
     set((s) => ({ settings: { ...s.settings, coachMode } }));
+  },
+  setVerbosity: (verbosity) => {
+    lsSet(LS_VERBOSITY, verbosity);
+    set((s) => ({ settings: { ...s.settings, verbosity } }));
   },
   setAuth: (auth) => {
     set({ auth });

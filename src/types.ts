@@ -553,6 +553,20 @@ export type VoiceTone = 'gentleF' | 'firmF' | 'firmM' | 'friendlyM';
  */
 export type CoachMode = 'encourage' | 'hardcore' | 'polite' | 'buddy';
 
+/**
+ * Coach VERBOSITY (v2.0). Independent of voice TONE and coach MODE. Sets the
+ * fixed spoken LENGTH of every coaching reply for the whole session — the one
+ * thing that varies is the length band, injected into the coach prompt. Answers
+ * on-court feedback that the coach talks too long:
+ *   short  → 1–2 sentences (~2–4s): shot name + the single most useful beat.
+ *            DEFAULT (settings) — new players get the terse coach.
+ *   medium → 2–4 sentences (~4–9s): the pre-v2.0 shape (name→praise→fix→cue).
+ *   long   → 4–6 sentences (~10–16s): adds the WHY + a bit more practice detail.
+ * Never goes on the wire — like coachMode it shapes only the browser-built
+ * systemInstruction + per-shot prompt text. Persisted (tp.verbosity).
+ */
+export type Verbosity = 'short' | 'medium' | 'long';
+
 export interface Settings {
   rates: PricingRates;
   /**
@@ -590,6 +604,8 @@ export interface Settings {
   voiceTone: VoiceTone;
   /** Coach mode (v1.6): system-prompt persona layer / delivery personality. */
   coachMode: CoachMode;
+  /** Coach verbosity (v2.0): fixed spoken LENGTH band for the whole session. */
+  verbosity: Verbosity;
 }
 
 // ---------------------------------------------------------------------------

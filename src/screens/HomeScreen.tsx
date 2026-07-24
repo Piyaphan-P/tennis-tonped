@@ -7,7 +7,7 @@ import LangToggle from '../components/LangToggle';
 import StatsCard from '../components/StatsCard';
 import HistoryList from '../components/HistoryList';
 import AdminDailyStats from '../components/AdminDailyStats';
-import type { CoachMode, FocusShot, VoiceTone } from '../types';
+import type { CoachMode, FocusShot, Verbosity, VoiceTone } from '../types';
 
 const FOCUS_OPTIONS: Array<{ value: FocusShot; labelKey: I18nKey }> = [
   { value: 'forehand', labelKey: 'home.forehand' },
@@ -29,6 +29,12 @@ const COACH_MODE_OPTIONS: Array<{ value: CoachMode; labelKey: I18nKey }> = [
   { value: 'buddy', labelKey: 'home.coachMode.buddy' },
 ];
 
+const VERBOSITY_OPTIONS: Array<{ value: Verbosity; labelKey: I18nKey }> = [
+  { value: 'short', labelKey: 'home.verbosity.short' },
+  { value: 'medium', labelKey: 'home.verbosity.medium' },
+  { value: 'long', labelKey: 'home.verbosity.long' },
+];
+
 /** Landing screen: brand, session setup, start CTA, stats + history. */
 export default function HomeScreen() {
   const t = useT();
@@ -40,6 +46,7 @@ export default function HomeScreen() {
   const setUserName = useAppStore((s) => s.setUserName);
   const setVoiceTone = useAppStore((s) => s.setVoiceTone);
   const setCoachMode = useAppStore((s) => s.setCoachMode);
+  const setVerbosity = useAppStore((s) => s.setVerbosity);
   const isAdmin = useAppStore((s) => s.auth?.role === 'admin');
 
   const start = () => {
@@ -160,6 +167,27 @@ export default function HomeScreen() {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* --- coach verbosity / reply length (v2.0) --- */}
+      <div className="card col" style={{ gap: 8 }}>
+        <h3>{t('home.verbosity.title')}</h3>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          {VERBOSITY_OPTIONS.map((o) => (
+            <button
+              key={o.value}
+              className={`btn tap${settings.verbosity === o.value ? ' btn-primary' : ' btn-ghost'}`}
+              style={{ flex: '1 1 30%', padding: '12px 8px' }}
+              onClick={() => setVerbosity(o.value)}
+              aria-pressed={settings.verbosity === o.value}
+            >
+              {t(o.labelKey)}
+            </button>
+          ))}
+        </div>
+        <span className="faint" style={{ fontSize: '0.8rem' }}>
+          {t('home.verbosity.hint')}
+        </span>
       </div>
 
       <div className="col">
