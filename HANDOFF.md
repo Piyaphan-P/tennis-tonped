@@ -2,7 +2,7 @@
 
 > อัปเดตล่าสุด: **2026-07-28** (SIT **v2.3** — auto-save + coach cue in History · **v2.2** scale-invariant detection (แก้มือถือจับช็อตไม่ได้) · v2.1 LINE identity + ext API + ROOM login · + **Admin Portal** แยกแอป) · image `app:sit-v19` rev `00014` · 439 tests · อ่านคู่กับ `CLAUDE.md` (session log เต็ม)
 >
-> **⏳ ค้างรอ ท่านต้น:** (1) **OAuth Client ID** ของ admin portal (Web app, origins = URL หลัง deploy) → ผม deploy portal ต่อได้ทันที (ยังไม่ deploy เพราะ fail-open + DB จริง = ข้อมูลหลุด). (2) เทสสนาม v2.2 (ปรับ `captureSensitivity` ใน Settings ถ้ายังจับยาก/ง่ายไป). (3) hard-gate บังคับสแกน LINE ก่อนเริ่ม (ยัง optional).
+> **⏳ ค้างรอ ท่านต้น:** (1) **admin portal DEPLOYED** https://adge-admin-portal-sit-441370880467.asia-southeast1.run.app — เหลือ **เพิ่ม origin URL นี้ใน OAuth console** (Authorized JavaScript origins) ไม่งั้น Google login error. (2) เทสสนาม v2.2 (ปรับ `captureSensitivity` ใน Settings ถ้ายังจับยาก/ง่ายไป). (3) hard-gate บังคับสแกน LINE ก่อนเริ่ม (ยัง optional).
 > **กฎเหล็ก:** ทุกวันทำงานต้องมี `tasksYYYYMMDD.md` และอัพเดทไฟล์นี้ + CLAUDE.md + git ทุกครั้ง
 
 ## TL;DR
