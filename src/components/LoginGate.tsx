@@ -5,12 +5,13 @@ import * as api from '../data/api';
 import BrandMark from './BrandMark';
 
 // ============================================================================
-// LoginGate — per-user email+password gate in front of the whole app (UAM v1.5).
-// On mount it probes GET /api/gate:
-//   200 {email,role,…} → already signed in (cookie) → store auth → render app
-//   401                → show the login form; POST /api/login sets the cookie
-//   404 / network      → server has no gate (e.g. `npm run dev` without backend)
-//                        → FAIL OPEN so local dev keeps working (auth stays null)
+// LoginGate — per-ROOM login (roomUser+password) in front of the whole app (v2.1).
+// The club logs into a ROOM (e.g. room1); the individual player is identified
+// per-session by their LINE profile on Home. On mount it probes GET /api/gate:
+//   200 {roomUser,role,…} → already signed in (cookie) → store auth → render app
+//   401                   → show the login form; POST /api/login sets the cookie
+//   404 / network         → server has no gate (e.g. `npm run dev` without backend)
+//                           → FAIL OPEN so local dev keeps working (auth stays null)
 // The cookie is httpOnly + 90 days, so a device logs in once. Logout anywhere
 // (SettingsSheet / AdminScreen) clears store.auth → the form reappears here.
 // ============================================================================
@@ -28,7 +29,7 @@ export default function LoginGate({ children }: { children: ReactNode }) {
   const [checking, setChecking] = useState(true);
   /** True once /api/gate proved a gate exists (401 or a contract 200). */
   const [gateExists, setGateExists] = useState(false);
-  const [email, setEmail] = useState('');
+  const [room, setRoom] = useState('');
   const [pass, setPass] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<LoginError | null>(null);
@@ -56,7 +57,7 @@ export default function LoginGate({ children }: { children: ReactNode }) {
     if (busy) return;
     setBusy(true);
     setError(null);
-    const res = await api.login(email.trim().toLowerCase(), pass);
+    const res = await api.login(room.trim().toLowerCase(), pass);
     if (res.ok) {
       setAuth(res.user);
     } else if (res.error === 'bad_credentials') {
@@ -107,14 +108,13 @@ export default function LoginGate({ children }: { children: ReactNode }) {
           <p style={{ color: 'var(--text-dim)', fontSize: '0.85rem', margin: 0 }}>{t('login.subtitle')}</p>
           <input
             type="text"
-            inputMode="email"
             autoComplete="username"
             autoCapitalize="none"
             spellCheck={false}
-            placeholder={t('login.email')}
-            aria-label={t('login.email')}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            placeholder={t('login.room')}
+            aria-label={t('login.room')}
+            value={room}
+            onChange={(e) => setRoom(e.target.value)}
           />
           <input
             type="password"
@@ -129,7 +129,7 @@ export default function LoginGate({ children }: { children: ReactNode }) {
               {error.serverMsg ?? t(error.key)}
             </p>
           )}
-          <button className="btn btn-primary" type="submit" disabled={busy || !email || !pass}>
+          <button className="btn btn-primary" type="submit" disabled={busy || !room || !pass}>
             {busy ? t('login.checking') : t('login.submit')}
           </button>
         </form>

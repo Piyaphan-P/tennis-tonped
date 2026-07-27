@@ -13,7 +13,8 @@ import {
   verifyPasswordAsync,
   signCookie,
   verifyCookie,
-  isValidEmail,
+  isValidRoomUser,
+  apiKeyMatches,
   parseCookies,
   safeEqual,
   getAuthSecret,
@@ -114,13 +115,13 @@ describe('getAuthSecret — production hard-fail', () => {
 });
 
 describe('evaluateGuard — per-request store re-check (UAM revocation)', () => {
-  const player = { email: 'p@b.co', role: 'player' };
-  const admin = { email: 'a@b.co', role: 'admin' };
+  const player = { roomUser: 'room1', role: 'player' };
+  const admin = { roomUser: 'admin', role: 'admin' };
 
   it('allows a present, non-disabled, role-matching user (role from STORE)', () => {
     const out = evaluateGuard({
       identity: player,
-      user: { email: 'p@b.co', role: 'player', displayName: 'Player One' },
+      user: { roomUser: 'room1', role: 'player', displayName: 'Player One' },
       lookupFailed: false,
     });
     expect(out).toEqual({ allow: true, role: 'player', displayName: 'Player One' });
@@ -149,12 +150,12 @@ describe('evaluateGuard — per-request store re-check (UAM revocation)', () => 
     expect(evaluateGuard({ identity: admin, user: null, lookupFailed: true })).toEqual({
       allow: true,
       role: 'admin',
-      displayName: 'a@b.co',
+      displayName: 'admin',
     });
   });
-  it('falls back to email as displayName when the stored user has none', () => {
+  it('falls back to roomUser as displayName when the stored user has none', () => {
     const out = evaluateGuard({ identity: player, user: { role: 'player' }, lookupFailed: false });
-    expect(out).toEqual({ allow: true, role: 'player', displayName: 'p@b.co' });
+    expect(out).toEqual({ allow: true, role: 'player', displayName: 'room1' });
   });
 });
 
@@ -179,26 +180,26 @@ describe('clientIpFromForwarded — rate-limit key uses the RIGHTMOST hop', () =
 describe('signCookie / verifyCookie', () => {
   const now = 1_800_000_000; // fixed "current" unix seconds for determinism
 
-  it('roundtrips email/role/exp', () => {
-    const v = signCookie({ email: 'a@b.co', role: 'player', exp: now + 60 }, SECRET);
+  it('roundtrips roomUser/role/exp', () => {
+    const v = signCookie({ roomUser: 'room1', role: 'player', exp: now + 60 }, SECRET);
     expect(v).toMatch(/^v1\.[A-Za-z0-9_-]+\.[0-9a-f]{64}$/);
-    expect(verifyCookie(v, SECRET, now)).toEqual({ email: 'a@b.co', role: 'player', exp: now + 60 });
+    expect(verifyCookie(v, SECRET, now)).toEqual({ roomUser: 'room1', role: 'player', exp: now + 60 });
   });
   it('rejects a tampered payload (role escalation attempt)', () => {
-    const v = signCookie({ email: 'a@b.co', role: 'player', exp: now + 60 }, SECRET);
+    const v = signCookie({ roomUser: 'room1', role: 'player', exp: now + 60 }, SECRET);
     const [, , sig] = v.split('.');
-    const forged = `v1.${Buffer.from(`a@b.co|admin|${now + 60}`).toString('base64url')}.${sig}`;
+    const forged = `v1.${Buffer.from(`room1|admin|${now + 60}`).toString('base64url')}.${sig}`;
     expect(verifyCookie(forged, SECRET, now)).toBeNull();
   });
   it('rejects a tampered signature and a wrong secret', () => {
-    const v = signCookie({ email: 'a@b.co', role: 'admin', exp: now + 60 }, SECRET);
+    const v = signCookie({ roomUser: 'admin', role: 'admin', exp: now + 60 }, SECRET);
     expect(verifyCookie(v.slice(0, -1) + (v.endsWith('0') ? '1' : '0'), SECRET, now)).toBeNull();
     expect(verifyCookie(v, 'other-secret', now)).toBeNull();
   });
   it('rejects an expired cookie (exp <= now)', () => {
-    const v = signCookie({ email: 'a@b.co', role: 'player', exp: now - 1 }, SECRET);
+    const v = signCookie({ roomUser: 'room1', role: 'player', exp: now - 1 }, SECRET);
     expect(verifyCookie(v, SECRET, now)).toBeNull();
-    const atNow = signCookie({ email: 'a@b.co', role: 'player', exp: now }, SECRET);
+    const atNow = signCookie({ roomUser: 'room1', role: 'player', exp: now }, SECRET);
     expect(verifyCookie(atNow, SECRET, now)).toBeNull();
   });
   it('rejects malformed values and unknown roles', () => {
@@ -206,28 +207,50 @@ describe('signCookie / verifyCookie', () => {
     expect(verifyCookie('v2.abc.def', SECRET, now)).toBeNull();
     expect(verifyCookie('garbage', SECRET, now)).toBeNull();
     expect(verifyCookie(undefined, SECRET, now)).toBeNull();
-    const weird = signCookie({ email: 'a@b.co', role: 'superuser', exp: now + 60 }, SECRET);
+    const weird = signCookie({ roomUser: 'room1', role: 'superuser', exp: now + 60 }, SECRET);
     expect(verifyCookie(weird, SECRET, now)).toBeNull();
   });
-  it('a pipe in the email cannot smuggle a role (split from the end)', () => {
-    const v = signCookie({ email: 'evil|admin@b.co', role: 'player', exp: now + 60 }, SECRET);
+  it('a pipe in the roomUser cannot smuggle a role (split from the end)', () => {
+    const v = signCookie({ roomUser: 'evil|admin', role: 'player', exp: now + 60 }, SECRET);
     const out = verifyCookie(v, SECRET, now);
-    expect(out).toEqual({ email: 'evil|admin@b.co', role: 'player', exp: now + 60 });
+    expect(out).toEqual({ roomUser: 'evil|admin', role: 'player', exp: now + 60 });
   });
 });
 
-describe('isValidEmail', () => {
-  it('accepts normal emails', () => {
-    expect(isValidEmail('a@b.co')).toBe(true);
-    expect(isValidEmail('piyaphan.p@infinitaskt.com')).toBe(true);
+describe('isValidRoomUser', () => {
+  it('accepts short lowercased room handles', () => {
+    expect(isValidRoomUser('room1')).toBe(true);
+    expect(isValidRoomUser('admin')).toBe(true);
+    expect(isValidRoomUser('court-2')).toBe(true);
+    expect(isValidRoomUser('a.b_c')).toBe(true);
   });
   it('rejects malformed ones', () => {
-    expect(isValidEmail('nope')).toBe(false);
-    expect(isValidEmail('a@b')).toBe(false);
-    expect(isValidEmail('a b@c.co')).toBe(false);
-    expect(isValidEmail('@b.co')).toBe(false);
-    expect(isValidEmail('')).toBe(false);
-    expect(isValidEmail(undefined)).toBe(false);
+    expect(isValidRoomUser('a')).toBe(false); // too short
+    expect(isValidRoomUser('Room1')).toBe(false); // uppercase
+    expect(isValidRoomUser('has space')).toBe(false);
+    expect(isValidRoomUser('bad|pipe')).toBe(false);
+    expect(isValidRoomUser('')).toBe(false);
+    expect(isValidRoomUser(undefined)).toBe(false);
+    expect(isValidRoomUser('x'.repeat(41))).toBe(false); // too long
+  });
+});
+
+describe('apiKeyMatches — external history API x-api-key (v2.1)', () => {
+  it('matches the exact configured key', () => {
+    expect(apiKeyMatches('secret-abc-123', 'secret-abc-123')).toBe(true);
+    expect(apiKeyMatches('  secret-abc-123  ', 'secret-abc-123')).toBe(true); // trims
+  });
+  it('rejects a wrong key', () => {
+    expect(apiKeyMatches('nope', 'secret-abc-123')).toBe(false);
+    expect(apiKeyMatches('secret-abc-124', 'secret-abc-123')).toBe(false);
+  });
+  it('never accepts empty == empty (missing header or unconfigured key)', () => {
+    expect(apiKeyMatches('', '')).toBe(false);
+    expect(apiKeyMatches('', 'secret')).toBe(false);
+    expect(apiKeyMatches('secret', '')).toBe(false);
+    expect(apiKeyMatches(undefined, 'secret')).toBe(false);
+    expect(apiKeyMatches('secret', undefined)).toBe(false);
+    expect(apiKeyMatches('   ', 'secret')).toBe(false); // whitespace-only header
   });
 });
 

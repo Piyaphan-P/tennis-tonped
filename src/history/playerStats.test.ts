@@ -92,10 +92,10 @@ describe('deriveAdminDaily', () => {
     expect(days[1]).toMatchObject({ dayKey: '2026-07-20', players: 1, sessions: 1, shots: 8 });
   });
 
-  it('falls back to ownerEmail for unnamed rows and skips unparseable dates', () => {
+  it('falls back to roomUser for unnamed rows and skips unparseable dates', () => {
     const rows: AdminHistoryRow[] = [
-      { userName: '', ownerEmail: 'a@x.com', startedAt: isoLocal(2026, 7, 21, 9), shotCount: 1 },
-      { userName: '', ownerEmail: 'b@x.com', startedAt: isoLocal(2026, 7, 21, 9), shotCount: 1 },
+      { userName: '', roomUser: 'room1', startedAt: isoLocal(2026, 7, 21, 9), shotCount: 1 },
+      { userName: '', roomUser: 'room2', startedAt: isoLocal(2026, 7, 21, 9), shotCount: 1 },
       { userName: 'c', startedAt: null, shotCount: 99 },
     ];
     const days = deriveAdminDaily(rows);

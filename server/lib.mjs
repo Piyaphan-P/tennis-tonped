@@ -55,8 +55,13 @@ export function sessionRowToJson(row) {
     avgScore: Number(row.avg_score) || 0,
     shotCount: Number(row.shot_count) || 0,
     summary: row.summary ?? null,
-    // UAM v1.5: session owner (null on legacy rows → admin-visible only).
-    ownerEmail: row.owner_email ?? null,
+    // v2.1: owning ROOM (null on legacy rows → admin-visible only). pg path is a
+    // stub; the column stays owner_email but the wire key is roomUser now.
+    roomUser: row.owner_email ?? null,
+    // v2.1 player LINE identity — pg path never stores these (Firestore-only),
+    // kept null so the wire shape stays identical to sessionDocToJson.
+    lineUserId: row.line_user_id ?? null,
+    lineEmail: row.line_email ?? null,
   };
 }
 
@@ -95,20 +100,75 @@ export function sessionDocToJson(id, data) {
     avgScore: Number(d.avgScore) || 0,
     shotCount: Number(d.shotCount) || 0,
     summary: d.summary ?? null,
-    // UAM v1.5: session owner (null/absent on legacy docs → admin-visible only).
-    ownerEmail: d.ownerEmail ?? null,
+    // v2.1: owning ROOM (null/absent on legacy docs → admin-visible only).
+    roomUser: d.roomUser ?? null,
+    // v2.1: the individual player's LINE identity (null on pre-v2.1 rows). The
+    // external history API queries by these; roomUser is the shared room account.
+    lineUserId: d.lineUserId ?? null,
+    lineEmail: d.lineEmail ?? null,
   };
 }
 
 /**
- * Firestore `users/{email}` doc → the /api/users wire shape. NEVER includes
+ * Firestore `leaderboard_records/{sessionId}` doc → the external-API row shape
+ * (v2.1). Durable board record; carries the player LINE identity so the ext
+ * /stats route can query it past the 3-day session TTL.
+ */
+export function leaderboardDocToJson(sessionId, data) {
+  const d = data ?? {};
+  return {
+    sessionId,
+    userName: d.userName ?? '',
+    lineUserId: d.lineUserId ?? null,
+    lineEmail: d.lineEmail ?? null,
+    avgScore: Number(d.avgScore) || 0,
+    maxScore: Number(d.maxScore) || 0,
+    shotCount: Number(d.shotCount) || 0,
+    playedAt: isoOrNull(d.playedAt),
+  };
+}
+
+/**
+ * Fold durable leaderboard rows into the ext /stats `totals` block (pure).
+ * sessions = row count, shots = Σ shotCount, avgScore = shot-weighted mean
+ * (matches how the app weights per-player stats), maxScore = overall max,
+ * bestSession = the row with the highest maxScore (ties → first seen).
+ */
+export function foldLeaderboardStats(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (list.length === 0) {
+    return { sessions: 0, shots: 0, avgScore: 0, maxScore: 0, bestSession: null };
+  }
+  let shots = 0;
+  let weighted = 0;
+  let maxScore = 0;
+  let best = null;
+  for (const r of list) {
+    const sc = Number(r.shotCount) || 0;
+    shots += sc;
+    weighted += (Number(r.avgScore) || 0) * sc;
+    const mx = Number(r.maxScore) || 0;
+    if (mx > maxScore) maxScore = mx;
+    if (!best || mx > (Number(best.maxScore) || 0)) best = r;
+  }
+  return {
+    sessions: list.length,
+    shots,
+    avgScore: shots > 0 ? Math.round((weighted / shots) * 100) / 100 : 0,
+    maxScore,
+    bestSession: best,
+  };
+}
+
+/**
+ * Firestore `users/{roomUser}` doc → the /api/users wire shape. NEVER includes
  * passSalt/passHash — this mapper is the only thing user-management responses
  * go through, so credentials can't leak by construction.
  */
 export function userDocToJson(data) {
   const d = data ?? {};
   return {
-    email: d.email ?? '',
+    roomUser: d.roomUser ?? '',
     displayName: d.displayName ?? '',
     role: d.role === 'admin' ? 'admin' : 'player',
     disabled: Boolean(d.disabled),
@@ -224,23 +284,23 @@ function round2(n) {
 /**
  * Fold `usage_records` rows into the GET /api/usage response (admin cost
  * visibility). PURE — the Firestore backend feeds it plain doc data; rows
- * are `{ ownerEmail, userName, thb, tokensIn, tokensOut, playedAt }` where
+ * are `{ roomUser, userName, thb, tokensIn, tokensOut, playedAt }` where
  * playedAt may be a Date, ISO string or Firestore Timestamp (duck-typed —
- * this file stays import-free). Group key = ownerEmail (null → "(legacy)");
+ * this file stays import-free). Group key = roomUser (null → "(legacy)");
  * each group's userName is the MOST RECENT record's (by playedAt). Users
  * are sorted by thb desc; thb is rounded to 2 decimals in the response.
  *
- * Response: { users: [{ email, userName, thb, tokensIn, tokensOut,
+ * Response: { users: [{ roomUser, userName, thb, tokensIn, tokensOut,
  * sessions }], total: { thb, tokensIn, tokensOut, sessions } }
  */
 export function aggregateUsageRows(rows) {
-  const byEmail = new Map();
+  const byRoom = new Map();
   for (const row of rows ?? []) {
-    const email = row?.ownerEmail ?? '(legacy)';
-    let g = byEmail.get(email);
+    const roomUser = row?.roomUser ?? '(legacy)';
+    let g = byRoom.get(roomUser);
     if (!g) {
-      g = { email, userName: '', thb: 0, tokensIn: 0, tokensOut: 0, sessions: 0, latestMs: -Infinity };
-      byEmail.set(email, g);
+      g = { roomUser, userName: '', thb: 0, tokensIn: 0, tokensOut: 0, sessions: 0, latestMs: -Infinity };
+      byRoom.set(roomUser, g);
     }
     g.thb += Number(row?.thb) || 0;
     g.tokensIn += Number(row?.tokensIn) || 0;
@@ -256,10 +316,10 @@ export function aggregateUsageRows(rows) {
       g.userName = row?.userName ?? '';
     }
   }
-  const users = [...byEmail.values()]
+  const users = [...byRoom.values()]
     .sort((a, b) => b.thb - a.thb)
-    .map(({ email, userName, thb, tokensIn, tokensOut, sessions }) => ({
-      email,
+    .map(({ roomUser, userName, thb, tokensIn, tokensOut, sessions }) => ({
+      roomUser,
       userName,
       thb: round2(thb),
       tokensIn,

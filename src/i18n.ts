@@ -35,13 +35,14 @@ const DICT = {
   'common.times': { th: 'ครั้ง', en: 'x' },
 
   // --- login gate (UAM v1.5: per-user email+password) ---
-  'login.title': { th: 'เข้าสู่ระบบ', en: 'Sign in' },
-  'login.subtitle': { th: 'กรอกอีเมลและรหัสผ่านเพื่อเริ่มใช้งาน', en: 'Enter your email and password to continue' },
+  'login.title': { th: 'เข้าสู่ระบบห้อง', en: 'Room sign in' },
+  'login.subtitle': { th: 'กรอกชื่อห้องและรหัสผ่านเพื่อเริ่มใช้งาน', en: 'Enter your room and password to continue' },
   'login.email': { th: 'อีเมล', en: 'Email' },
+  'login.room': { th: 'ชื่อห้อง (เช่น room1)', en: 'Room (e.g. room1)' },
   'login.pass': { th: 'รหัสผ่าน', en: 'Password' },
   'login.submit': { th: 'เข้าสู่ระบบ', en: 'Sign in' },
   'login.checking': { th: 'กำลังตรวจสอบ…', en: 'Checking…' },
-  'login.wrong': { th: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง', en: 'Wrong email or password' },
+  'login.wrong': { th: 'ชื่อห้องหรือรหัสผ่านไม่ถูกต้อง', en: 'Wrong room or password' },
   'login.tooMany': {
     th: 'ลองเข้าสู่ระบบผิดหลายครั้งเกินไป รอสักครู่แล้วลองใหม่',
     en: 'Too many attempts — wait a moment and try again',
@@ -104,6 +105,30 @@ const DICT = {
     th: 'สั้น = บอกสั้น ๆ ทันใจ · กลาง = ชม+แก้+ย้ำ · ยาว = อธิบายละเอียด',
     en: 'Short = quick cue · Medium = praise+fix+cue · Long = fuller explanation',
   },
+
+  // --- LINE player identity (v2.1) ---
+  'home.player.title': { th: 'ผู้เล่น (LINE)', en: 'Player (LINE)' },
+  'home.player.none': { th: 'ยังไม่ได้ระบุตัว — แตะเพื่อสแกน QR', en: 'Not identified — tap to scan QR' },
+  'home.player.change': { th: 'เปลี่ยน', en: 'Change' },
+  'home.player.set': { th: 'ระบุผู้เล่น', en: 'Identify player' },
+  'line.title': { th: 'ระบุตัวผู้เล่น', en: 'Identify player' },
+  'line.subtitle': {
+    th: 'สแกน QR โปรไฟล์ LINE หรือกรอกเอง ก่อนเริ่มตี',
+    en: 'Scan your LINE profile QR, or enter it manually, before you play',
+  },
+  'line.tabScan': { th: 'สแกน QR', en: 'Scan QR' },
+  'line.tabManual': { th: 'กรอกเอง', en: 'Manual' },
+  'line.scanHint': { th: 'เล็ง QR ให้อยู่ในกรอบ', en: 'Point the QR code inside the frame' },
+  'line.camError': {
+    th: 'เปิดกล้องไม่ได้ — ลองกรอกเองแทน',
+    en: "Can't open the camera — try manual entry",
+  },
+  'line.rescan': { th: 'สแกนใหม่', en: 'Rescan' },
+  'line.confirm': { th: 'ยืนยัน', en: 'Confirm' },
+  'line.fieldId': { th: 'LINE User ID', en: 'LINE User ID' },
+  'line.fieldName': { th: 'ชื่อที่แสดง', en: 'Display name' },
+  'line.fieldEmail': { th: 'อีเมล', en: 'Email' },
+  'line.fieldPicture': { th: 'ลิงก์รูปโปรไฟล์ (ถ้ามี)', en: 'Picture URL (optional)' },
 
   // --- errors (ALWAYS bilingual, never raw API strings) ---
   // (The manual token field was removed 2026-07-20 — coach auth is provisioned
@@ -195,7 +220,7 @@ const DICT = {
   'admin.added': { th: 'เพิ่มผู้เล่นแล้ว', en: 'Player added' },
   'admin.updated': { th: 'บันทึกแล้ว', en: 'Saved' },
   'admin.deleted': { th: 'ลบผู้เล่นแล้ว', en: 'Player deleted' },
-  'admin.errInvalidEmail': { th: 'รูปแบบอีเมลไม่ถูกต้อง', en: 'Invalid email format' },
+  'admin.errInvalidEmail': { th: 'ชื่อห้องไม่ถูกต้อง (a–z 0–9 . _ - 2–40 ตัว)', en: 'Invalid room name (a–z 0–9 . _ - , 2–40 chars)' },
   'admin.errPassShort': {
     th: 'รหัสผ่านต้องมีอย่างน้อย 4 ตัวอักษร',
     en: 'Password must be at least 4 characters',

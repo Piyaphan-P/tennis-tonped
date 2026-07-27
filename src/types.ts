@@ -21,17 +21,35 @@ export type Screen = 'home' | 'live' | 'summary' | 'devplan' | 'compare' | 'hist
 /** Server-side role. Admins see everyone's data + manage players. */
 export type UserRole = 'admin' | 'player';
 
-/** The signed-in identity (from POST /api/login or GET /api/gate). */
+/** The signed-in identity (from POST /api/login or GET /api/gate). v2.1: the
+ *  club logs into a ROOM (roomUser), not an email. */
 export interface AuthUser {
-  /** Lowercase email — the primary key of the account. */
-  email: string;
+  /** Lowercase room handle (e.g. room1) — the primary key of the account. */
+  roomUser: string;
   role: UserRole;
   displayName: string;
 }
 
-/** One user row from GET /api/users (admin only). */
-export interface AdminUserRow {
+/**
+ * LINE profile of the player currently at the machine (SIT v2.1). The club logs
+ * into ONE ROOM account, so `roomUser` on a session identifies the ROOM, not the
+ * player — this captures the individual. Bound on Home before a session (QR scan
+ * or manual), persisted to localStorage (tp.lineProfile), and stamped onto the
+ * session so the external history API can query by lineUserId/lineEmail.
+ * `email` is the player's PERSONAL email (≠ the room account) — always
+ * lowercased on capture so query-by-email matches.
+ */
+export interface LineProfile {
+  lineUserId: string;
+  displayName: string;
+  pictureUrl: string;
+  /** Lowercased personal email (distinct from the room account). */
   email: string;
+}
+
+/** One room row from GET /api/users (admin only). */
+export interface AdminUserRow {
+  roomUser: string;
   displayName: string;
   role: UserRole;
   disabled: boolean;
@@ -411,9 +429,13 @@ export interface CloudSessionSummary {
   avgScore: number;
   shotCount: number;
   summary: SessionSummaryJson | null;
-  /** Owning account (UAM v1.5). The SERVER filters history by it — players get
-   *  their own rows only, admins get everyone's. Optional: pre-UAM rows lack it. */
-  ownerEmail?: string;
+  /** Owning ROOM (v2.1). The SERVER filters history by it — a room gets its own
+   *  rows only, admins get everyone's. Optional: pre-v2.1 rows lack it. */
+  roomUser?: string;
+  /** Player LINE id / personal email (v2.1). Stamped at session create so the
+   *  external history API can query by them. Null/absent on pre-v2.1 rows. */
+  lineUserId?: string | null;
+  lineEmail?: string | null;
 }
 
 /** One shot row from the cloud (metadata only; clip streamed separately). */
@@ -606,6 +628,12 @@ export interface Settings {
   coachMode: CoachMode;
   /** Coach verbosity (v2.0): fixed spoken LENGTH band for the whole session. */
   verbosity: Verbosity;
+  /**
+   * LINE profile of the current player (v2.1), or null when unbound. Set on Home
+   * (QR/manual); when set, seeds `userName = displayName`. Its lineUserId/email
+   * are stamped onto sessions for the external history API. Persisted (tp.lineProfile).
+   */
+  lineProfile: LineProfile | null;
 }
 
 // ---------------------------------------------------------------------------

@@ -19,11 +19,22 @@ export const COOKIE_MAX_AGE_S = 90 * 24 * 60 * 60; // 90 days — log in once pe
 const SCRYPT_KEYLEN = 64; // bytes
 const SALT_BYTES = 16;
 
-/** Frozen-contract email shape (lowercased before storage/lookup by callers). */
+/** Frozen-contract email shape (used only for the player's LINE email now). */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function isValidEmail(email) {
   return typeof email === 'string' && EMAIL_RE.test(email);
+}
+
+/**
+ * Room login name (v2.1): the club logs into a "room" (e.g. room1..room4), not
+ * an email. A roomUser is a short lowercased handle: letters/digits/._- , 2..40
+ * chars. Callers lowercase before validate/store/lookup.
+ */
+const ROOM_USER_RE = /^[a-z0-9._-]{2,40}$/;
+
+export function isValidRoomUser(roomUser) {
+  return typeof roomUser === 'string' && ROOM_USER_RE.test(roomUser);
 }
 
 // ---------------------------------------------------------------------------
@@ -122,17 +133,30 @@ export function safeEqual(a, b) {
 }
 
 /**
+ * True when the presented external-API key matches the configured one (v2.1
+ * history API, x-api-key). Constant-time; a missing/empty configured key or a
+ * missing header is ALWAYS false (never accept "" == ""). Pure — kept here (not
+ * extApi.mjs) so the root vitest can unit-test it without the express deps.
+ */
+export function apiKeyMatches(provided, expected) {
+  const got = typeof provided === 'string' ? provided.trim() : '';
+  const want = typeof expected === 'string' ? expected.trim() : '';
+  if (!want || !got) return false;
+  return safeEqual(got, want);
+}
+
+/**
  * Sign an identity cookie value. `exp` = unix seconds; defaults to
  * now + COOKIE_MAX_AGE_S so login and cookie expiry stay in lockstep.
  */
-export function signCookie({ email, role, exp }, secret = getAuthSecret()) {
+export function signCookie({ roomUser, role, exp }, secret = getAuthSecret()) {
   const expSec = exp ?? Math.floor(Date.now() / 1000) + COOKIE_MAX_AGE_S;
-  const payload = Buffer.from(`${email}|${role}|${expSec}`).toString('base64url');
+  const payload = Buffer.from(`${roomUser}|${role}|${expSec}`).toString('base64url');
   return `v1.${payload}.${hmacHex(payload, secret)}`;
 }
 
 /**
- * Verify a cookie value → { email, role, exp } or null (bad shape, bad
+ * Verify a cookie value → { roomUser, role, exp } or null (bad shape, bad
  * signature, or expired). `nowSec` is injectable for tests.
  */
 export function verifyCookie(value, secret = getAuthSecret(), nowSec = Math.floor(Date.now() / 1000)) {
@@ -147,17 +171,17 @@ export function verifyCookie(value, secret = getAuthSecret(), nowSec = Math.floo
   } catch {
     return null;
   }
-  // email|role|exp — split from the END so an email containing '|' (regex
-  // permits it) can never smuggle a role.
+  // roomUser|role|exp — split from the END so a roomUser containing '|' can
+  // never smuggle a role (the validator forbids '|' anyway; defence in depth).
   const i2 = decoded.lastIndexOf('|');
   const i1 = decoded.lastIndexOf('|', i2 - 1);
   if (i1 <= 0 || i2 <= i1) return null;
-  const email = decoded.slice(0, i1);
+  const roomUser = decoded.slice(0, i1);
   const role = decoded.slice(i1 + 1, i2);
   const exp = Number(decoded.slice(i2 + 1));
-  if (!email || (role !== 'admin' && role !== 'player')) return null;
+  if (!roomUser || (role !== 'admin' && role !== 'player')) return null;
   if (!Number.isFinite(exp) || exp <= nowSec) return null;
-  return { email, role, exp };
+  return { roomUser, role, exp };
 }
 
 // ---------------------------------------------------------------------------
@@ -182,7 +206,7 @@ export function verifyCookie(value, secret = getAuthSecret(), nowSec = Math.floo
 export function evaluateGuard({ identity, user, lookupFailed }) {
   if (lookupFailed) {
     // Transient store error — trust the cookie (do not lock everyone out).
-    return { allow: true, role: identity.role, displayName: identity.email };
+    return { allow: true, role: identity.role, displayName: identity.roomUser };
   }
   if (!user) return { allow: false }; // deleted
   if (user.disabled) return { allow: false }; // disabled
@@ -190,7 +214,7 @@ export function evaluateGuard({ identity, user, lookupFailed }) {
   return {
     allow: true,
     role: user.role, // authoritative — never above the current stored role
-    displayName: user.displayName || identity.email,
+    displayName: user.displayName || identity.roomUser,
   };
 }
 

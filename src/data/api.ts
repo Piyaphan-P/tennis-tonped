@@ -107,15 +107,22 @@ export function isCloudAvailable(): boolean {
   return !isOffline();
 }
 
-/** POST /api/sessions — returns the new session id, or null when offline. */
+/** POST /api/sessions — returns the new session id, or null when offline.
+ *  Optionally stamps the current player's LINE identity (v2.1) so the external
+ *  history API can query the session by lineUserId / lineEmail. */
 export async function createSession(
   userName: string,
   startedAtIso: string,
+  line?: { lineUserId: string; lineEmail: string } | null,
 ): Promise<string | null> {
   const res = await safeFetch('/api/sessions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userName, startedAt: startedAtIso }),
+    body: JSON.stringify({
+      userName,
+      startedAt: startedAtIso,
+      ...(line?.lineUserId ? { lineUserId: line.lineUserId, lineEmail: line.lineEmail } : {}),
+    }),
   });
   if (!res) return null;
   try {
@@ -329,9 +336,9 @@ async function jsonOf(res: Response): Promise<Record<string, unknown>> {
 }
 
 function userOf(body: Record<string, unknown>): AuthUser | null {
-  if (typeof body.email !== 'string' || body.email === '') return null;
+  if (typeof body.roomUser !== 'string' || body.roomUser === '') return null;
   return {
-    email: body.email,
+    roomUser: body.roomUser,
     role: body.role === 'admin' ? 'admin' : 'player',
     displayName: typeof body.displayName === 'string' ? body.displayName : '',
   };
@@ -349,13 +356,13 @@ async function failureOf(res: Response): Promise<AuthFailure> {
 }
 
 /** POST /api/login — sets the httpOnly cookie on success. */
-export async function login(email: string, password: string): Promise<LoginResult> {
+export async function login(roomUser: string, password: string): Promise<LoginResult> {
   try {
     const res = await fetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ roomUser, password }),
     });
     if (res.ok) {
       const user = userOf(await jsonOf(res));
@@ -408,12 +415,12 @@ export async function listUsers(): Promise<AdminUserRow[] | null> {
 }
 
 export interface CreateUserInput {
-  email: string;
+  roomUser: string;
   password: string;
   displayName?: string;
 }
 
-/** POST /api/users — add a player (admin only). */
+/** POST /api/users — add a room (admin only). */
 export async function createUser(input: CreateUserInput): Promise<UserMutationResult> {
   try {
     const res = await fetch('/api/users', {
@@ -428,13 +435,13 @@ export async function createUser(input: CreateUserInput): Promise<UserMutationRe
   }
 }
 
-/** PATCH /api/users/:email — reset password / rename / enable-disable. */
+/** PATCH /api/users/:roomUser — reset password / rename / enable-disable. */
 export async function patchUser(
-  email: string,
+  roomUser: string,
   patch: { password?: string; displayName?: string; disabled?: boolean },
 ): Promise<UserMutationResult> {
   try {
-    const res = await fetch(`/api/users/${encodeURIComponent(email)}`, {
+    const res = await fetch(`/api/users/${encodeURIComponent(roomUser)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
@@ -446,10 +453,10 @@ export async function patchUser(
   }
 }
 
-/** DELETE /api/users/:email — remove a player (cannot delete self). */
-export async function deleteUser(email: string): Promise<UserMutationResult> {
+/** DELETE /api/users/:roomUser — remove a room (cannot delete self). */
+export async function deleteUser(roomUser: string): Promise<UserMutationResult> {
   try {
-    const res = await fetch(`/api/users/${encodeURIComponent(email)}`, {
+    const res = await fetch(`/api/users/${encodeURIComponent(roomUser)}`, {
       method: 'DELETE',
       credentials: 'same-origin',
     });
@@ -467,7 +474,7 @@ export async function deleteUser(email: string): Promise<UserMutationResult> {
 // ---------------------------------------------------------------------------
 
 export interface UsageUserRow {
-  email: string;
+  roomUser: string;
   userName: string;
   thb: number;
   tokensIn: number;

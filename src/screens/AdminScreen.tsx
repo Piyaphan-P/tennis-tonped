@@ -16,7 +16,9 @@ import type { AdminUserRow } from '../types';
 import './admin.css';
 
 /** Client-side mirrors of the server's invalid_input rules. */
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Mirrors the server's isValidRoomUser (authCore.mjs): lowercased handle,
+// a–z 0–9 . _ - , 2..40 chars.
+const ROOM_USER_RE = /^[a-z0-9._-]{2,40}$/;
 const MIN_PASS_LEN = 4;
 
 interface Msg {
@@ -51,8 +53,8 @@ export default function AdminScreen() {
   // first opened, so opening Admin (Players default) never touches the endpoint.
   const usageRequested = useRef(false);
 
-  // --- add-player form ---
-  const [email, setEmail] = useState('');
+  // --- add-room form ---
+  const [roomUser, setRoomUser] = useState('');
   const [pass, setPass] = useState('');
   const [displayName, setDisplayName] = useState('');
 
@@ -94,9 +96,9 @@ export default function AdminScreen() {
 
   async function addPlayer(e: FormEvent) {
     e.preventDefault();
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanRoom = roomUser.trim().toLowerCase();
     // Client-side validation mirrors the server's invalid_input rules.
-    if (!EMAIL_RE.test(cleanEmail)) {
+    if (!ROOM_USER_RE.test(cleanRoom)) {
       setMsg({ kind: 'err', key: 'admin.errInvalidEmail' });
       return;
     }
@@ -106,33 +108,33 @@ export default function AdminScreen() {
     }
     const name = displayName.trim();
     const ok = await run(
-      () => api.createUser({ email: cleanEmail, password: pass, ...(name ? { displayName: name } : {}) }),
+      () => api.createUser({ roomUser: cleanRoom, password: pass, ...(name ? { displayName: name } : {}) }),
       'admin.added',
     );
     if (ok) {
-      setEmail('');
+      setRoomUser('');
       setPass('');
       setDisplayName('');
     }
   }
 
   function resetPassword(u: AdminUserRow) {
-    const entered = window.prompt(t('admin.resetPrompt').replace('{email}', u.email));
+    const entered = window.prompt(t('admin.resetPrompt').replace('{email}', u.roomUser));
     if (entered == null) return; // cancelled
     if (entered.length < MIN_PASS_LEN) {
       setMsg({ kind: 'err', key: 'admin.errPassShort' });
       return;
     }
-    void run(() => api.patchUser(u.email, { password: entered }), 'admin.updated');
+    void run(() => api.patchUser(u.roomUser, { password: entered }), 'admin.updated');
   }
 
   function toggleDisabled(u: AdminUserRow) {
-    void run(() => api.patchUser(u.email, { disabled: !u.disabled }), 'admin.updated');
+    void run(() => api.patchUser(u.roomUser, { disabled: !u.disabled }), 'admin.updated');
   }
 
   function deletePlayer(u: AdminUserRow) {
-    if (!window.confirm(t('admin.deleteConfirm').replace('{email}', u.email))) return;
-    void run(() => api.deleteUser(u.email), 'admin.deleted');
+    if (!window.confirm(t('admin.deleteConfirm').replace('{email}', u.roomUser))) return;
+    void run(() => api.deleteUser(u.roomUser), 'admin.deleted');
   }
 
   async function handleLogout() {
@@ -160,7 +162,7 @@ export default function AdminScreen() {
           <span className="faint" style={{ fontSize: '0.72rem' }}>
             {t('admin.signedInAs')}
           </span>
-          <span className="admin-email">{auth?.email ?? '—'}</span>
+          <span className="admin-email">{auth?.roomUser ?? '—'}</span>
         </div>
         <button className="btn btn-ghost tap" onClick={handleLogout}>
           {t('admin.logout')}
@@ -205,14 +207,13 @@ export default function AdminScreen() {
         <form className="admin-form" onSubmit={addPlayer}>
           <input
             type="text"
-            inputMode="email"
             autoComplete="off"
             autoCapitalize="none"
             spellCheck={false}
-            placeholder={t('login.email')}
-            aria-label={t('login.email')}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            placeholder={t('login.room')}
+            aria-label={t('login.room')}
+            value={roomUser}
+            onChange={(e) => setRoomUser(e.target.value)}
           />
           <input
             type="password"
@@ -230,7 +231,7 @@ export default function AdminScreen() {
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
           />
-          <button className="btn btn-primary" type="submit" disabled={busy || !email || !pass}>
+          <button className="btn btn-primary" type="submit" disabled={busy || !roomUser || !pass}>
             {t('admin.add')}
           </button>
         </form>
@@ -253,11 +254,11 @@ export default function AdminScreen() {
         ) : (
           <div className="admin-user-list">
             {users.map((u) => {
-              const self = u.email === auth?.email;
+              const self = u.roomUser === auth?.roomUser;
               return (
-                <div key={u.email} className={`user-row${u.disabled ? ' user-row--disabled' : ''}`}>
+                <div key={u.roomUser} className={`user-row${u.disabled ? ' user-row--disabled' : ''}`}>
                   <div className="user-row-main">
-                    <span className="user-email">{u.email}</span>
+                    <span className="user-email">{u.roomUser}</span>
                     <span className="row" style={{ gap: 6 }}>
                       {self && <span className="user-badge user-badge--you">{t('admin.you')}</span>}
                       {u.role === 'admin' && <span className="user-badge">{t('admin.roleAdmin')}</span>}
@@ -343,8 +344,8 @@ export default function AdminScreen() {
                   </thead>
                   <tbody>
                     {usage.users.map((u) => (
-                      <tr key={u.email}>
-                        <td className="usage-email">{u.email}</td>
+                      <tr key={u.roomUser}>
+                        <td className="usage-email">{u.roomUser}</td>
                         <td>{u.userName || '—'}</td>
                         <td className="num usage-num">≈{formatTHB(u.thb)}</td>
                         <td className="num usage-num">{formatTokens(u.tokensIn)}</td>

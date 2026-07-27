@@ -50,8 +50,10 @@ function ensureSession(): Promise<string | null> {
   }
   const userName = st.settings.userName;
   const startedAtIso = new Date(st.session.startedAtMs || Date.now()).toISOString();
+  const lp = st.settings.lineProfile;
+  const line = lp ? { lineUserId: lp.lineUserId, lineEmail: lp.email } : null;
   const p = api
-    .createSession(userName, startedAtIso)
+    .createSession(userName, startedAtIso, line)
     .then((id) => {
       if (id) {
         useAppStore.getState().setCloudSessionId(id);

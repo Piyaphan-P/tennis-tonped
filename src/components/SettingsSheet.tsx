@@ -232,7 +232,7 @@ export default function SettingsSheet() {
                   whiteSpace: 'nowrap',
                 }}
               >
-                {auth.email}
+                {auth.roomUser}
               </span>
               <button className="btn btn-ghost tap" onClick={handleLogout}>
                 {t('settings.logout')}

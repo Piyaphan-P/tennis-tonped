@@ -268,7 +268,7 @@ export const pgBackend = {
   /**
    * Single-lookup resolver for the clip/audio routes (mirrors the Firestore
    * getShotAccess): ONE SELECT returns session_id + existing clip/audio refs.
-   * ownerEmail is always null on the Postgres path (legacy/admin-only, like
+   * roomUser is always null on the Postgres path (legacy/admin-only, like
    * getShotOwner). Returns null when the shot does not exist.
    */
   async getShotAccess(shotId) {
@@ -280,7 +280,7 @@ export const pgBackend = {
     const r = rows[0];
     return {
       sessionId: r.session_id,
-      ownerEmail: null,
+      roomUser: null,
       clipPath: r.clip_path ?? null,
       clipMime: r.clip_mime ?? null,
       audioPath: r.audio_path ?? null,
@@ -324,11 +324,11 @@ export const pgBackend = {
     return { audioPath: rows[0].audio_path, audioMime: rows[0].audio_mime };
   },
 
-  async listHistory(days, { ownerEmail } = {}) {
+  async listHistory(days, { roomUser } = {}) {
     // UAM v1.5 is Firestore-only (user decision — SIT and future prod both run
     // Firestore). The owner-filtered path has no SQL implementation; routes
     // turn this into their bilingual 503.
-    if (ownerEmail) throw new Error('listHistory(ownerEmail) not implemented on postgres path');
+    if (roomUser) throw new Error('listHistory(roomUser) not implemented on postgres path');
     const { rows } = await query(
       `SELECT * FROM sessions
         WHERE started_at >= now() - ($1 || ' days')::interval
@@ -359,7 +359,7 @@ export const pgBackend = {
   // prod both run DB_BACKEND=firestore). These stubs exist so the interface is
   // complete and DB_BACKEND=postgres still boots: user-management methods
   // throw a clear error (routes → 503); the ownership helpers reuse EXISTING
-  // queries and report ownerEmail=null, i.e. every pg session behaves like a
+  // queries and report roomUser=null, i.e. every pg session behaves like a
   // legacy row (admin-visible only). No new SQL here by design.
   // ==========================================================================
 
@@ -387,15 +387,24 @@ export const pgBackend = {
     throw new Error('usage aggregation not implemented on postgres path (Firestore-only)');
   },
 
+  /** External history API (v2.1) — Firestore-only (lineUserId isn't stored on
+   *  the pg path). The ext route maps this throw to its bilingual 503. */
+  async listHistoryByLine() {
+    throw new Error('listHistoryByLine not implemented on postgres path (Firestore-only)');
+  },
+  async getStatsByLine() {
+    throw new Error('getStatsByLine not implemented on postgres path (Firestore-only)');
+  },
+
   /** Ownership stub: session exists → legacy owner (null → admin-only). */
   async getSessionOwner(id) {
     const detail = await this.getSessionDetail(id);
-    return detail ? { ownerEmail: detail.ownerEmail ?? null } : null;
+    return detail ? { roomUser: detail.roomUser ?? null } : null;
   },
 
   /** Ownership stub: resolves the shot's session, owner always legacy-null. */
   async getShotOwner(shotId) {
     const sessionId = await this.getShotSession(shotId);
-    return sessionId ? { sessionId, ownerEmail: null } : null;
+    return sessionId ? { sessionId, roomUser: null } : null;
   },
 };

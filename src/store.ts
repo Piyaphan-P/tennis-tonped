@@ -45,6 +45,7 @@ import type {
   JointAngles,
   JointStatus,
   Lang,
+  LineProfile,
   PoseFrame,
   PoseState,
   PricingRates,
@@ -78,6 +79,7 @@ const LS_VOICE_TONE = 'tp.voiceTone';
 const LS_COACH_MODE = 'tp.coachMode';
 const LS_VERBOSITY = 'tp.verbosity';
 const LS_SPEED_FACTOR = 'tp.speedFactor'; // km/h calibration multiplier (PO-tunable on court)
+const LS_LINE_PROFILE = 'tp.lineProfile'; // current player's LINE identity (v2.1, JSON)
 const LS_HISTORY = 'tp.history';
 
 function lsGet(key: string): string | null {
@@ -323,6 +325,30 @@ export function readEnum<T extends string>(
   return raw != null && (allowed as readonly string[]).includes(raw) ? (raw as T) : fallback;
 }
 
+/**
+ * Read the persisted LINE profile (v2.1), guarding malformed JSON / legacy
+ * shapes: anything that isn't an object with a non-empty lineUserId → null
+ * (an unbound player). Kept lenient — a broken LS value must never crash boot.
+ */
+function readLineProfile(): LineProfile | null {
+  const raw = lsGet(LS_LINE_PROFILE);
+  if (!raw) return null;
+  try {
+    const p = JSON.parse(raw) as Partial<LineProfile>;
+    if (!p || typeof p !== 'object' || typeof p.lineUserId !== 'string' || !p.lineUserId.trim()) {
+      return null;
+    }
+    return {
+      lineUserId: p.lineUserId,
+      displayName: typeof p.displayName === 'string' ? p.displayName : '',
+      pictureUrl: typeof p.pictureUrl === 'string' ? p.pictureUrl : '',
+      email: typeof p.email === 'string' ? p.email.toLowerCase() : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
 const DEFAULT_SETTINGS: Settings = {
   rates: DEFAULT_RATES,
   userName: lsGet(LS_USER_NAME) ?? '',
@@ -347,6 +373,7 @@ const DEFAULT_SETTINGS: Settings = {
   speedCorrectionFactor: clampSpeedFactor(
     lsGet(LS_SPEED_FACTOR) != null ? Number(lsGet(LS_SPEED_FACTOR)) : undefined,
   ),
+  lineProfile: readLineProfile(),
 };
 
 const ZERO_TOKENS: TokenTotals = {
@@ -580,6 +607,13 @@ export interface AppState {
   /** Sets the coach verbosity (settings.verbosity) and persists it. */
   setVerbosity: (level: Verbosity) => void;
   /**
+   * Bind the current player's LINE profile (v2.1) and persist it. Also seeds
+   * settings.userName from displayName (falling back to email) so the coach
+   * greets by name and v1.9's on-device per-player history keys correctly.
+   * Pass null to unbind (clears LS).
+   */
+  setLineProfile: (profile: LineProfile | null) => void;
+  /**
    * Set (or clear, on logout) the signed-in identity. On sign-in, if
    * settings.userName is still empty, it is initialized from displayName (or
    * the email local-part) via setUserName so the coach greets by name.
@@ -744,19 +778,37 @@ export const useAppStore = create<AppState>()((set) => ({
     lsSet(LS_VERBOSITY, verbosity);
     set((s) => ({ settings: { ...s.settings, verbosity } }));
   },
+  setLineProfile: (profile) => {
+    if (profile) {
+      lsSet(LS_LINE_PROFILE, JSON.stringify(profile));
+      set((s) => ({ settings: { ...s.settings, lineProfile: profile } }));
+      // Seed the coach-greeting name from the LINE display name so the coach
+      // addresses the player and v1.9's per-player history keys on userName.
+      const name = profile.displayName.trim() || profile.email.trim();
+      if (name) useAppStore.getState().setUserName(name);
+    } else {
+      try {
+        localStorage.removeItem(LS_LINE_PROFILE);
+      } catch {
+        /* private mode / storage disabled */
+      }
+      set((s) => ({ settings: { ...s.settings, lineProfile: null } }));
+    }
+  },
   setAuth: (auth) => {
     set({ auth });
     if (auth) {
       const s = useAppStore.getState();
       const prevAccount = lsGet(LS_AUTH_EMAIL);
       // Seed the coach-greeting name on first sign-in on this device, and
-      // RE-seed whenever a DIFFERENT account signs in — a shared phone must
-      // not keep greeting the previous player. Default = ชื่อเล่น (displayName),
-      // else the full email (user rule, 2026-07-20).
-      if (!s.settings.userName.trim() || prevAccount !== auth.email) {
-        s.setUserName(auth.displayName.trim() || auth.email);
+      // RE-seed whenever a DIFFERENT room signs in — a shared phone must not
+      // keep greeting the previous player. Default = ชื่อเล่น (displayName),
+      // else the room handle. NOTE: v2.1 the individual player is normally set
+      // via the LINE profile (setLineProfile) which overrides this.
+      if (!s.settings.userName.trim() || prevAccount !== auth.roomUser) {
+        s.setUserName(auth.displayName.trim() || auth.roomUser);
       }
-      lsSet(LS_AUTH_EMAIL, auth.email);
+      lsSet(LS_AUTH_EMAIL, auth.roomUser);
     }
   },
   setAuthToken: (authToken) => set({ authToken: authToken.trim() }),

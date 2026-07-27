@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSession, fetchGate, isCloudAvailable } from './api';
 import { useAppStore } from '../store';
 
-const USER = { email: 'coach@adge.club', role: 'admin' as const, displayName: 'Coach A' };
+const USER = { roomUser: 'admin', role: 'admin' as const, displayName: 'Coach A' };
 
 function mockFetchStatus(status: number, body: unknown = {}) {
   vi.stubGlobal(

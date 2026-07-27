@@ -14,10 +14,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GoogleGenAI } from '@google/genai';
 import { mountCloudRoutes } from './routes.mjs';
+import { mountExtApi } from './extApi.mjs';
 import { backend, initDb } from './store.mjs';
 import { mountLiveRelay } from './liveRelay.mjs';
 import { mountAuthGate } from './authGate.mjs';
-import { hashPassword } from './authCore.mjs';
+import { hashPassword, isValidRoomUser } from './authCore.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -75,18 +76,31 @@ app.get('/api/token', async (_req, res) => {
 initDb();
 mountCloudRoutes(app);
 
-// UAM v1.5 bootstrap admin (idempotent recovery path): when ADMIN_EMAIL +
+// External history API (v2.1): /api/ext/* — authed by x-api-key (HISTORY_API_KEY),
+// NOT the cookie gate (which skips the /ext prefix). 503s when the key is unset.
+mountExtApi(app);
+
+// v2.1 bootstrap admin room (idempotent recovery path): when ADMIN_USER +
 // ADMIN_PASS are both set AND the Firestore backend is selected, upsert that
-// user as role=admin and reset its password — the first admin (or a locked-out
+// room as role=admin and reset its password — the first admin (or a locked-out
 // one) never depends on the UI. Fire-and-forget: must never block boot.
-const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+// NOTE: ADMIN_USER MUST be a valid room handle (a–z 0–9 . _ - , 2–40 chars),
+// e.g. `admin`. The old ADMIN_EMAIL is deliberately NOT a fallback — an email
+// fails isValidRoomUser at login, so bootstrapping from it would write an
+// admin nobody can ever sign in as (total lockout). Only ADMIN_USER is read.
+const ADMIN_USER = (process.env.ADMIN_USER || '').trim().toLowerCase();
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
-if (ADMIN_EMAIL && ADMIN_PASS && backend.name === 'firestore') {
+if (ADMIN_USER && ADMIN_PASS && isValidRoomUser(ADMIN_USER) && backend.name === 'firestore') {
   const { passSalt, passHash } = hashPassword(ADMIN_PASS);
   backend
-    .ensureAdmin({ email: ADMIN_EMAIL, passSalt, passHash })
-    .then(() => console.log(`[auth] bootstrap admin ensured: ${ADMIN_EMAIL}`))
+    .ensureAdmin({ roomUser: ADMIN_USER, passSalt, passHash })
+    .then(() => console.log(`[auth] bootstrap admin room ensured: ${ADMIN_USER}`))
     .catch((err) => console.error('[auth] bootstrap admin failed (non-fatal):', err?.message || err));
+} else if (ADMIN_USER && !isValidRoomUser(ADMIN_USER)) {
+  console.error(
+    `[auth] ADMIN_USER "${ADMIN_USER}" is not a valid room handle (a–z 0–9 . _ - , 2–40) — ` +
+      'admin NOT bootstrapped. Set ADMIN_USER=admin (or similar).',
+  );
 }
 
 // Static frontend + SPA fallback.

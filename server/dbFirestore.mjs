@@ -21,6 +21,8 @@ import { Firestore, Timestamp } from '@google-cloud/firestore';
 import { randomUUID } from 'node:crypto';
 import {
   aggregateUsageRows,
+  foldLeaderboardStats,
+  leaderboardDocToJson,
   leaderboardScores,
   sessionDocToJson,
   shotDocToJson,
@@ -85,19 +87,23 @@ export const firestoreBackend = {
     );
   },
 
-  async createSession({ userName, startedAt, ownerEmail }) {
+  async createSession({ userName, startedAt, roomUser, lineUserId, lineEmail }) {
     const id = randomUUID();
     const startedTs = Timestamp.fromDate(startedAt);
     // Every contract field initialized up front: /api/history can list an
     // in-progress session BEFORE its PATCH, so a pre-patch read must already
-    // match the Postgres column defaults. ownerEmail (UAM v1.5) is stamped by
+    // match the Postgres column defaults. roomUser (UAM v1.5) is stamped by
     // the route from the auth cookie — never from the client body.
+    // lineUserId/lineEmail (v2.1) identify the individual PLAYER (roomUser is
+    // the shared CLUB account) so the external history API can query by them.
     await db()
       .collection('sessions')
       .doc(id)
       .set({
         userName,
-        ownerEmail: ownerEmail ?? null,
+        roomUser: roomUser ?? null,
+        lineUserId: lineUserId ?? null,
+        lineEmail: lineEmail ?? null,
         startedAt: startedTs,
         endedAt: null,
         avgScore: 0,
@@ -138,6 +144,11 @@ export const firestoreBackend = {
             .doc(id)
             .set({
               userName: data.userName ?? '',
+              // Player identity copied from the session doc (client set it once
+              // at create — not re-trusted here) so the durable board is
+              // queryable by lineUserId/lineEmail past the 3-day session TTL.
+              lineUserId: data.lineUserId ?? null,
+              lineEmail: data.lineEmail ?? null,
               avgScore: recomputed.avgScore,
               maxScore: recomputed.maxScore,
               shotCount: Number(shotCount) || 0,
@@ -161,7 +172,7 @@ export const firestoreBackend = {
           .collection('usage_records')
           .doc(id)
           .set({
-            ownerEmail: data.ownerEmail ?? null, // null on legacy sessions
+            roomUser: data.roomUser ?? null, // null on legacy sessions
             userName: data.userName ?? '',
             thb: usage.thb,
             tokensIn: usage.tokensIn,
@@ -231,7 +242,7 @@ export const firestoreBackend = {
     const sess = await db().collection('sessions').doc(sessionId).get();
     return {
       sessionId,
-      ownerEmail: sess.exists ? sess.get('ownerEmail') ?? null : null,
+      roomUser: sess.exists ? sess.get('roomUser') ?? null : null,
       clipPath: doc.get('clipPath') ?? null,
       clipMime: doc.get('clipMime') ?? null,
       audioPath: doc.get('audioPath') ?? null,
@@ -275,16 +286,16 @@ export const firestoreBackend = {
     return { audioPath, audioMime: doc.get('audioMime') ?? null };
   },
 
-  async listHistory(days, { ownerEmail } = {}) {
+  async listHistory(days, { roomUser } = {}) {
     const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;
-    if (ownerEmail) {
+    if (roomUser) {
       // Owner-filtered path (player, or admin ?email=). Query ONLY the equality
-      // on ownerEmail (COLLECTION scope → auto-indexed) and do the startedAt
+      // on roomUser (COLLECTION scope → auto-indexed) and do the startedAt
       // cutoff + DESC sort in memory — the 3-day TTL keeps result sets tiny.
-      // NEVER combine where(ownerEmail)+orderBy(startedAt) in one query: that
+      // NEVER combine where(roomUser)+orderBy(startedAt) in one query: that
       // needs a composite index which does not exist and would 503 (this repo
       // already paid that lesson with shots.id).
-      const snap = await db().collection('sessions').where('ownerEmail', '==', ownerEmail).get();
+      const snap = await db().collection('sessions').where('roomUser', '==', roomUser).get();
       return snap.docs
         .map((d) => sessionDocToJson(d.id, d.data()))
         .filter((s) => s.startedAt && Date.parse(s.startedAt) >= cutoffMs)
@@ -301,22 +312,22 @@ export const firestoreBackend = {
   },
 
   /** Owner of a session (for PATCH/DELETE authorization without pulling all
-   *  shots). Returns { ownerEmail } (null on legacy docs) or null if missing. */
+   *  shots). Returns { roomUser } (null on legacy docs) or null if missing. */
   async getSessionOwner(id) {
     const snap = await db().collection('sessions').doc(id).get();
     if (!snap.exists) return null;
-    return { ownerEmail: snap.get('ownerEmail') ?? null };
+    return { roomUser: snap.get('roomUser') ?? null };
   },
 
   /** Resolve a bare shotId → its parent session's owner (clip/audio routes
    *  carry no sessionId). collectionGroup id lookup (same index requirement as
-   *  findShot) then one session read. Returns { sessionId, ownerEmail } | null. */
+   *  findShot) then one session read. Returns { sessionId, roomUser } | null. */
   async getShotOwner(shotId) {
     const doc = await findShot(shotId);
     if (!doc) return null;
     const sessionId = doc.get('sessionId');
     const sess = await db().collection('sessions').doc(sessionId).get();
-    return { sessionId, ownerEmail: sess.exists ? sess.get('ownerEmail') ?? null : null };
+    return { sessionId, roomUser: sess.exists ? sess.get('roomUser') ?? null : null };
   },
 
   async getSessionDetail(id) {
@@ -328,6 +339,54 @@ export const firestoreBackend = {
       ...sessionDocToJson(snap.id, snap.data()),
       shots: shotsSnap.docs.map((d) => shotDocToJson(d.id, d.data())),
     };
+  },
+
+  /**
+   * External history API (v2.1): live (≤`days`) sessions WITH shots for one
+   * player, keyed by lineUserId (preferred) or lineEmail. Equality-where ONLY
+   * (COLLECTION scope auto-indexed) + in-memory cutoff/sort — same
+   * no-composite-index rule as listHistory (NEVER add orderBy to the filtered
+   * query). Returns [] when neither key is given. Result sets stay tiny (3-day
+   * TTL) so the per-session shots read loop is bounded.
+   */
+  async listHistoryByLine(days, { lineUserId, lineEmail } = {}) {
+    const value = lineUserId || lineEmail;
+    if (!value) return [];
+    const field = lineUserId ? 'lineUserId' : 'lineEmail';
+    const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;
+    const snap = await db().collection('sessions').where(field, '==', value).get();
+    const summaries = snap.docs
+      .map((d) => sessionDocToJson(d.id, d.data()))
+      .filter((s) => s.startedAt && Date.parse(s.startedAt) >= cutoffMs)
+      .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
+    const out = [];
+    for (const s of summaries) {
+      const shotsSnap = await db()
+        .collection('sessions')
+        .doc(s.id)
+        .collection('shots')
+        .orderBy('idx', 'asc')
+        .get();
+      out.push({ ...s, shots: shotsSnap.docs.map((d) => shotDocToJson(d.id, d.data())) });
+    }
+    return out;
+  },
+
+  /**
+   * External stats API (v2.1): DURABLE leaderboard rows (survive past the 3-day
+   * session TTL) for one player + folded totals. Equality-where on lineUserId
+   * or lineEmail (COLLECTION scope auto-indexed). Returns
+   * { leaderboard: [], totals } — empty leaderboard when neither key is given.
+   */
+  async getStatsByLine({ lineUserId, lineEmail } = {}) {
+    const value = lineUserId || lineEmail;
+    if (!value) return { leaderboard: [], totals: foldLeaderboardStats([]) };
+    const field = lineUserId ? 'lineUserId' : 'lineEmail';
+    const snap = await db().collection('leaderboard_records').where(field, '==', value).get();
+    const leaderboard = snap.docs
+      .map((d) => leaderboardDocToJson(d.id, d.data()))
+      .sort((a, b) => Date.parse(b.playedAt || 0) - Date.parse(a.playedAt || 0));
+    return { leaderboard, totals: foldLeaderboardStats(leaderboard) };
   },
 
   async deleteSession(id) {
@@ -349,21 +408,22 @@ export const firestoreBackend = {
   },
 
   // ==========================================================================
-  // Users (UAM v1.5) — collection `users/{email}` (doc id = lowercased email),
-  // fields { email, passSalt, passHash, role, displayName, disabled,
-  // createdAt:Timestamp }. NO expireAt — accounts are durable (like the
-  // leaderboard). Passwords are scrypt hashes only (authCore.mjs) — plaintext
-  // never reaches this file.
+  // Rooms (v2.1) — collection `users/{roomUser}` (doc id = lowercased roomUser),
+  // fields { roomUser, passSalt, passHash, role, displayName, disabled,
+  // createdAt:Timestamp }. The club logs into a ROOM (roomUser, e.g. room1); the
+  // individual player is identified per-session by their LINE profile. NO
+  // expireAt — accounts are durable. Passwords are scrypt hashes only
+  // (authCore.mjs) — plaintext never reaches this file.
   // ==========================================================================
 
-  /** Full user doc (INCLUDING passSalt/passHash — login needs them) or null.
+  /** Full room doc (INCLUDING passSalt/passHash — login needs them) or null.
    *  Callers must never serialize this to the wire; listUsers is the safe one. */
-  async getUser(email) {
-    const snap = await db().collection('users').doc(String(email).toLowerCase()).get();
+  async getUser(roomUser) {
+    const snap = await db().collection('users').doc(String(roomUser).toLowerCase()).get();
     return snap.exists ? snap.data() : null;
   },
 
-  /** All users in the SAFE wire shape (no credential fields), newest first. */
+  /** All rooms in the SAFE wire shape (no credential fields), newest first. */
   async listUsers() {
     const snap = await db().collection('users').get();
     return snap.docs
@@ -371,13 +431,13 @@ export const firestoreBackend = {
       .sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
   },
 
-  /** Create a user (role decided by the route — always 'player' via the API).
+  /** Create a room (role decided by the route — always 'player' via the API).
    *  Caller (route) pre-checks existence for the 409; `create()` still throws
    *  ALREADY_EXISTS on a race, which the route surfaces as its 503. */
-  async createUser({ email, passSalt, passHash, displayName, role }) {
-    const key = String(email).toLowerCase();
+  async createUser({ roomUser, passSalt, passHash, displayName, role }) {
+    const key = String(roomUser).toLowerCase();
     await db().collection('users').doc(key).create({
-      email: key,
+      roomUser: key,
       passSalt,
       passHash,
       role: role === 'admin' ? 'admin' : 'player',
@@ -388,9 +448,9 @@ export const firestoreBackend = {
   },
 
   /** Patch allowed fields (passSalt/passHash/displayName/disabled). Returns
-   *  false when the user does not exist (route → 404) — never upserts. */
-  async updateUser(email, patch) {
-    const ref = db().collection('users').doc(String(email).toLowerCase());
+   *  false when the room does not exist (route → 404) — never upserts. */
+  async updateUser(roomUser, patch) {
+    const ref = db().collection('users').doc(String(roomUser).toLowerCase());
     const snap = await ref.get();
     if (!snap.exists) return false;
     const allowed = {};
@@ -402,22 +462,22 @@ export const firestoreBackend = {
     return true;
   },
 
-  /** Delete the account doc ONLY — sessions (TTL cleans up) and leaderboard
+  /** Delete the room doc ONLY — sessions (TTL cleans up) and leaderboard
    *  rows are deliberately left alone (frozen contract). */
-  async deleteUser(email) {
-    await db().collection('users').doc(String(email).toLowerCase()).delete();
+  async deleteUser(roomUser) {
+    await db().collection('users').doc(String(roomUser).toLowerCase()).delete();
   },
 
-  /** Boot-time admin upsert (env ADMIN_EMAIL/ADMIN_PASS): idempotent recovery
+  /** Boot-time admin upsert (env ADMIN_USER/ADMIN_PASS): idempotent recovery
    *  path — always (re)sets role=admin + the password, re-enables the account,
    *  and fills createdAt/displayName only on first creation. */
-  async ensureAdmin({ email, passSalt, passHash }) {
-    const key = String(email).toLowerCase();
+  async ensureAdmin({ roomUser, passSalt, passHash }) {
+    const key = String(roomUser).toLowerCase();
     const ref = db().collection('users').doc(key);
     const snap = await ref.get();
     await ref.set(
       {
-        email: key,
+        roomUser: key,
         passSalt,
         passHash,
         role: 'admin',

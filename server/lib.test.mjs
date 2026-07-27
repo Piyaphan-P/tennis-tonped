@@ -17,6 +17,8 @@ import {
   sanitizeUsage,
   aggregateUsageRows,
   leaderboardScores,
+  leaderboardDocToJson,
+  foldLeaderboardStats,
   unavailableBody,
 } from './lib.mjs';
 
@@ -82,16 +84,18 @@ describe('sessionRowToJson', () => {
       avgScore: 82.5,
       shotCount: 12,
       summary: { goodFormPct: 50 },
-      ownerEmail: null, // no owner_email column value → legacy row
+      roomUser: null, // no owner_email column value → legacy row
+      lineUserId: null,
+      lineEmail: null,
     });
   });
-  it('passes owner_email through as ownerEmail (UAM v1.5)', () => {
+  it('passes owner_email through as roomUser (v2.1)', () => {
     const out = sessionRowToJson({
       id: 'c',
       started_at: '2026-07-05T10:00:00.000Z',
-      owner_email: 'player@adge.co',
+      owner_email: 'room1',
     });
-    expect(out.ownerEmail).toBe('player@adge.co');
+    expect(out.roomUser).toBe('room1');
   });
   it('tolerates null ended_at / summary and missing user_name', () => {
     const out = sessionRowToJson({
@@ -182,21 +186,21 @@ describe('sessionDocToJson (Firestore)', () => {
     expect(out.summary).toBeNull();
     expect(out.userName).toBe('');
     expect(out.startedAt).toBe('2026-07-05T10:00:00.000Z');
-    expect(out.ownerEmail).toBeNull(); // legacy doc without ownerEmail
+    expect(out.roomUser).toBeNull(); // legacy doc without roomUser
   });
-  it('passes ownerEmail through (UAM v1.5)', () => {
+  it('passes roomUser through (v2.1)', () => {
     const out = sessionDocToJson('c', {
       startedAt: ts('2026-07-05T10:00:00.000Z'),
-      ownerEmail: 'player@adge.co',
+      roomUser: 'room1',
     });
-    expect(out.ownerEmail).toBe('player@adge.co');
+    expect(out.roomUser).toBe('room1');
   });
 });
 
-describe('userDocToJson (Firestore, UAM v1.5)', () => {
+describe('userDocToJson (Firestore, v2.1 rooms)', () => {
   it('maps to the /api/users wire shape and NEVER leaks credential fields', () => {
     const out = userDocToJson({
-      email: 'player@adge.co',
+      roomUser: 'room1',
       passSalt: 'aa'.repeat(16),
       passHash: 'bb'.repeat(64),
       role: 'player',
@@ -205,7 +209,7 @@ describe('userDocToJson (Firestore, UAM v1.5)', () => {
       createdAt: ts('2026-07-20T10:00:00.000Z'),
     });
     expect(out).toEqual({
-      email: 'player@adge.co',
+      roomUser: 'room1',
       displayName: 'Ton',
       role: 'player',
       disabled: false,
@@ -215,7 +219,7 @@ describe('userDocToJson (Firestore, UAM v1.5)', () => {
     expect('passSalt' in out).toBe(false);
   });
   it('defaults missing fields and coerces unknown roles to player', () => {
-    const out = userDocToJson({ email: 'x@y.co', role: 'superuser' });
+    const out = userDocToJson({ roomUser: 'x1', role: 'superuser' });
     expect(out.role).toBe('player');
     expect(out.displayName).toBe('');
     expect(out.disabled).toBe(false);
@@ -344,10 +348,67 @@ describe('sanitizeUsage', () => {
   });
 });
 
+describe('leaderboardDocToJson (external stats API, v2.1)', () => {
+  it('maps a durable board doc → ext row shape incl LINE identity', () => {
+    const out = leaderboardDocToJson('sess-1', {
+      userName: 'Ton',
+      lineUserId: 'U4af',
+      lineEmail: 'hello@gmail.com',
+      avgScore: 71.5,
+      maxScore: 100,
+      shotCount: 12,
+      playedAt: ts('2026-07-24T10:00:00.000Z'),
+    });
+    expect(out).toEqual({
+      sessionId: 'sess-1',
+      userName: 'Ton',
+      lineUserId: 'U4af',
+      lineEmail: 'hello@gmail.com',
+      avgScore: 71.5,
+      maxScore: 100,
+      shotCount: 12,
+      playedAt: '2026-07-24T10:00:00.000Z',
+    });
+  });
+  it('defaults missing LINE identity to null', () => {
+    const out = leaderboardDocToJson('s', { avgScore: 1, maxScore: 2, shotCount: 1 });
+    expect(out.lineUserId).toBeNull();
+    expect(out.lineEmail).toBeNull();
+    expect(out.userName).toBe('');
+    expect(out.playedAt).toBeNull();
+  });
+});
+
+describe('foldLeaderboardStats (external stats totals, v2.1)', () => {
+  it('returns the empty shape on no rows', () => {
+    expect(foldLeaderboardStats([])).toEqual({
+      sessions: 0,
+      shots: 0,
+      avgScore: 0,
+      maxScore: 0,
+      bestSession: null,
+    });
+    expect(foldLeaderboardStats(undefined).sessions).toBe(0);
+  });
+  it('sums shots, shot-weights avgScore, takes overall max + best session', () => {
+    const rows = [
+      { sessionId: 'a', avgScore: 80, maxScore: 90, shotCount: 10 },
+      { sessionId: 'b', avgScore: 60, maxScore: 100, shotCount: 30 },
+    ];
+    const out = foldLeaderboardStats(rows);
+    expect(out.sessions).toBe(2);
+    expect(out.shots).toBe(40);
+    // shot-weighted mean = (80*10 + 60*30) / 40 = 2600/40 = 65
+    expect(out.avgScore).toBe(65);
+    expect(out.maxScore).toBe(100);
+    expect(out.bestSession.sessionId).toBe('b'); // highest maxScore
+  });
+});
+
 describe('aggregateUsageRows', () => {
   // Fake Firestore Timestamp playedAt — exercises the import-free duck-typing.
-  const row = (ownerEmail, userName, thb, tokensIn, tokensOut, playedAtIso) => ({
-    ownerEmail,
+  const row = (roomUser, userName, thb, tokensIn, tokensOut, playedAtIso) => ({
+    roomUser,
     userName,
     thb,
     tokensIn,
@@ -363,16 +424,16 @@ describe('aggregateUsageRows', () => {
     expect(aggregateUsageRows(undefined).users).toEqual([]);
   });
 
-  it('groups by ownerEmail, sums, sorts by thb desc, rounds thb to 2 decimals', () => {
+  it('groups by roomUser, sums, sorts by thb desc, rounds thb to 2 decimals', () => {
     const out = aggregateUsageRows([
-      row('a@x.com', 'A', 1.005, 100, 10, '2026-07-18T10:00:00Z'),
-      row('a@x.com', 'A2', 2.001, 200, 20, '2026-07-19T10:00:00Z'),
-      row('b@x.com', 'B', 9.999, 50, 5, '2026-07-17T10:00:00Z'),
+      row('room1', 'A', 1.005, 100, 10, '2026-07-18T10:00:00Z'),
+      row('room1', 'A2', 2.001, 200, 20, '2026-07-19T10:00:00Z'),
+      row('room2', 'B', 9.999, 50, 5, '2026-07-17T10:00:00Z'),
     ]);
-    expect(out.users.map((u) => u.email)).toEqual(['b@x.com', 'a@x.com']);
+    expect(out.users.map((u) => u.roomUser)).toEqual(['room2', 'room1']);
     const a = out.users[1];
     expect(a).toEqual({
-      email: 'a@x.com',
+      roomUser: 'room1',
       userName: 'A2', // most recent record names the group
       thb: 3.01,
       tokensIn: 300,
@@ -383,21 +444,21 @@ describe('aggregateUsageRows', () => {
     expect(out.total).toEqual({ thb: 13.01, tokensIn: 350, tokensOut: 35, sessions: 3 });
   });
 
-  it('buckets null ownerEmail under "(legacy)" and tolerates missing playedAt', () => {
+  it('buckets null roomUser under "(legacy)" and tolerates missing playedAt', () => {
     const out = aggregateUsageRows([
       row(null, 'Old Phone', 0.5, 10, 1, null),
       row(null, 'Older Phone', 0.25, 5, 1, null),
     ]);
     expect(out.users).toHaveLength(1);
-    expect(out.users[0].email).toBe('(legacy)');
+    expect(out.users[0].roomUser).toBe('(legacy)');
     expect(out.users[0].sessions).toBe(2);
     expect(out.users[0].thb).toBe(0.75);
   });
 
   it('most-recent userName wins regardless of row order', () => {
     const out = aggregateUsageRows([
-      row('a@x.com', 'Newest', 1, 1, 1, '2026-07-20T00:00:00Z'),
-      row('a@x.com', 'Oldest', 1, 1, 1, '2026-07-01T00:00:00Z'),
+      row('room1', 'Newest', 1, 1, 1, '2026-07-20T00:00:00Z'),
+      row('room1', 'Oldest', 1, 1, 1, '2026-07-01T00:00:00Z'),
     ]);
     expect(out.users[0].userName).toBe('Newest');
   });

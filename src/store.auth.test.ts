@@ -31,7 +31,7 @@ if (typeof localStorage === 'undefined') {
   } as Storage;
 }
 
-const ADMIN = { email: 'coach@adge.club', role: 'admin' as const, displayName: 'Coach A' };
+const ADMIN = { roomUser: 'admin', role: 'admin' as const, displayName: 'Coach A' };
 
 beforeEach(() => {
   localStorage.removeItem('tp.authEmail');
@@ -51,9 +51,9 @@ describe('store auth slice', () => {
     expect(s.settings.userName).toBe('Coach A');
   });
 
-  it('falls back to the FULL email when displayName is blank', () => {
-    useAppStore.getState().setAuth({ email: 'nid@adge.club', role: 'player', displayName: '  ' });
-    expect(useAppStore.getState().settings.userName).toBe('nid@adge.club');
+  it('falls back to the roomUser when displayName is blank', () => {
+    useAppStore.getState().setAuth({ roomUser: 'room2', role: 'player', displayName: '  ' });
+    expect(useAppStore.getState().settings.userName).toBe('room2');
   });
 
   it('keeps a hand-edited userName when the SAME account signs in again', () => {
@@ -66,7 +66,7 @@ describe('store auth slice', () => {
   it('re-seeds userName when a DIFFERENT account signs in', () => {
     useAppStore.getState().setAuth(ADMIN);
     expect(useAppStore.getState().settings.userName).toBe('Coach A');
-    useAppStore.getState().setAuth({ email: 'nid@adge.club', role: 'player', displayName: 'Nid' });
+    useAppStore.getState().setAuth({ roomUser: 'room2', role: 'player', displayName: 'Nid' });
     expect(useAppStore.getState().settings.userName).toBe('Nid');
   });
 

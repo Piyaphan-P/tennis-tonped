@@ -79,7 +79,7 @@ export function derivePlayerBreakdown(history: History): PlayerBreakdownRow[] {
  *  tests don't have to fabricate full CloudSessionSummary objects). */
 export interface AdminHistoryRow {
   userName?: string;
-  ownerEmail?: string | null;
+  roomUser?: string | null;
   /** ISO string (nullable on malformed rows — skipped). */
   startedAt: string | null;
   shotCount: number;
@@ -107,10 +107,10 @@ export interface AdminDayRow {
   hours: AdminHourRow[];
 }
 
-/** Player identity for admin rows: name first, else owning account, else a
+/** Player identity for admin rows: name first, else owning room, else a
  *  shared "unknown" bucket (legacy rows with neither). */
 function adminIdentity(r: AdminHistoryRow): string {
-  return playerKey(r.userName) || (r.ownerEmail ?? '').trim().toLowerCase() || '(unknown)';
+  return playerKey(r.userName) || (r.roomUser ?? '').trim().toLowerCase() || '(unknown)';
 }
 
 /** Group cloud history rows into per-local-day / per-hour admin stats,

@@ -23,14 +23,14 @@ import {
   sanitizeUsage,
   unavailableBody,
 } from './lib.mjs';
-import { hashPasswordAsync, isValidEmail } from './authCore.mjs';
+import { hashPasswordAsync, isValidRoomUser } from './authCore.mjs';
 
 const CLIP_MAX_BYTES = 8 * 1024 * 1024; // ~8MB cap (413 beyond)
 
 // --- UAM v1.5 authorization helpers ----------------------------------------
-// req.user = { email, role } is attached by the auth gate before these routes
-// run. Ownership rule: admin sees everything; a player only their own
-// sessions. Legacy sessions without ownerEmail are admin-visible ONLY. A
+// req.user = { roomUser, role } is attached by the auth gate before these
+// routes run. Ownership rule: admin sees everything; a room only its own
+// sessions. Legacy sessions without roomUser are admin-visible ONLY. A
 // denied session read returns the SAME 404 as a missing one — never leak that
 // the id exists.
 
@@ -39,10 +39,10 @@ const FORBIDDEN_BODY = {
   message: 'Admin only / สำหรับผู้ดูแลระบบเท่านั้น',
 };
 
-/** True when `user` may touch a session owned by `ownerEmail` (null = legacy). */
-function canAccess(user, ownerEmail) {
+/** True when `user` may touch a session owned by `roomUser` (null = legacy). */
+function canAccess(user, roomUser) {
   if (user?.role === 'admin') return true;
-  return ownerEmail != null && ownerEmail === user?.email;
+  return roomUser != null && roomUser === user?.roomUser;
 }
 
 /** 403 unless the caller is an admin. */
@@ -63,7 +63,7 @@ function sessionNotFound(res) {
  */
 async function authorizeSession(req, res, sessionId) {
   const owner = await backend.getSessionOwner(sessionId);
-  if (!owner || !canAccess(req.user, owner.ownerEmail)) {
+  if (!owner || !canAccess(req.user, owner.roomUser)) {
     sessionNotFound(res);
     return false;
   }
@@ -85,7 +85,7 @@ async function authorizeShotAccess(req, res, shotId) {
     res.status(404).json({ error: 'shot_not_found' });
     return null;
   }
-  if (!canAccess(req.user, access.ownerEmail)) {
+  if (!canAccess(req.user, access.roomUser)) {
     sessionNotFound(res);
     return null;
   }
@@ -121,9 +121,26 @@ export function mountCloudRoutes(app) {
     try {
       const userName = typeof req.body?.userName === 'string' ? req.body.userName : '';
       const startedAt = req.body?.startedAt ? new Date(req.body.startedAt) : new Date();
-      // Owner is stamped from the auth cookie — any client-sent value ignored.
-      const ownerEmail = req.user?.email ?? null;
-      const { id } = await backend.createSession({ userName, startedAt, ownerEmail });
+      // Owning ROOM is stamped from the auth cookie — any client-sent value
+      // ignored. The individual player is identified per-session by their LINE
+      // identity: lineUserId (the key) + lineEmail (lowercased), sent once at
+      // create; the external history API queries sessions by them.
+      const roomUser = req.user?.roomUser ?? null;
+      const lineUserId =
+        typeof req.body?.lineUserId === 'string' && req.body.lineUserId.trim()
+          ? req.body.lineUserId.trim()
+          : null;
+      const lineEmail =
+        typeof req.body?.lineEmail === 'string' && req.body.lineEmail.trim()
+          ? req.body.lineEmail.trim().toLowerCase()
+          : null;
+      const { id } = await backend.createSession({
+        userName,
+        startedAt,
+        roomUser,
+        lineUserId,
+        lineEmail,
+      });
       res.json({ id });
     } catch (err) {
       console.error('[routes] create session:', err?.message || err);
@@ -234,15 +251,15 @@ export function mountCloudRoutes(app) {
     if (!requireDb(res)) return;
     try {
       const days = Math.min(3, Math.max(1, Number(req.query.days) || 3));
-      // Player → own sessions only. Admin → everything, optional ?email= filter.
+      // Room → own sessions only. Admin → everything, optional ?room= filter.
       let rows;
       if (req.user?.role === 'admin') {
-        const filter = String(req.query.email ?? '').trim().toLowerCase();
+        const filter = String(req.query.room ?? req.query.email ?? '').trim().toLowerCase();
         rows = filter
-          ? await backend.listHistory(days, { ownerEmail: filter })
+          ? await backend.listHistory(days, { roomUser: filter })
           : await backend.listHistory(days);
       } else {
-        rows = await backend.listHistory(days, { ownerEmail: req.user?.email });
+        rows = await backend.listHistory(days, { roomUser: req.user?.roomUser });
       }
       res.json(rows);
     } catch (err) {
@@ -257,7 +274,7 @@ export function mountCloudRoutes(app) {
     try {
       const detail = await backend.getSessionDetail(req.params.id);
       // Missing and foreign look IDENTICAL (don't leak existence).
-      if (!detail || !canAccess(req.user, detail.ownerEmail)) {
+      if (!detail || !canAccess(req.user, detail.roomUser)) {
         return sessionNotFound(res);
       }
       res.json(detail);
@@ -326,8 +343,8 @@ export function mountCloudRoutes(app) {
   const INVALID_INPUT = {
     error: 'invalid_input',
     message:
-      'Email must be valid and password at least 4 characters. / ' +
-      'อีเมลต้องถูกต้องและรหัสผ่านอย่างน้อย 4 ตัวอักษร',
+      'Room name must be 2–40 chars (a–z 0–9 . _ -) and password at least 4 characters. / ' +
+      'ชื่อห้องต้อง 2–40 ตัว (a–z 0–9 . _ -) และรหัสผ่านอย่างน้อย 4 ตัวอักษร',
   };
 
   // --- GET /api/users — list (safe wire shape, no credential fields) -------
@@ -342,41 +359,41 @@ export function mountCloudRoutes(app) {
     }
   });
 
-  // --- POST /api/users — create a player (role is ALWAYS 'player') ---------
+  // --- POST /api/users — create a room (role is ALWAYS 'player') -----------
   app.post('/api/users', json, async (req, res) => {
     if (!requireAdmin(req, res)) return;
     if (!requireDb(res)) return;
-    const email = String(req.body?.email ?? '').trim().toLowerCase();
+    const roomUser = String(req.body?.roomUser ?? '').trim().toLowerCase();
     const password = String(req.body?.password ?? '');
     const displayName = typeof req.body?.displayName === 'string' ? req.body.displayName : '';
-    if (!isValidEmail(email) || password.length < 4) {
+    if (!isValidRoomUser(roomUser) || password.length < 4) {
       return res.status(400).json(INVALID_INPUT);
     }
     try {
-      if (await backend.getUser(email)) {
+      if (await backend.getUser(roomUser)) {
         return res.status(409).json({ error: 'user_exists' });
       }
       const { passSalt, passHash } = await hashPasswordAsync(password);
-      await backend.createUser({ email, passSalt, passHash, displayName, role: 'player' });
-      res.status(201).json({ ok: true, email });
+      await backend.createUser({ roomUser, passSalt, passHash, displayName, role: 'player' });
+      res.status(201).json({ ok: true, roomUser });
     } catch (err) {
       console.error('[routes] create user:', err?.message || err);
       res.status(503).json(unavailableBody('cloud'));
     }
   });
 
-  // --- PATCH /api/users/:email — reset password / rename / disable ---------
+  // --- PATCH /api/users/:roomUser — reset password / rename / disable ------
   // An admin may PATCH their own password/displayName but can NOT disable
   // themselves (lockout guard).
-  app.patch('/api/users/:email', json, async (req, res) => {
+  app.patch('/api/users/:roomUser', json, async (req, res) => {
     if (!requireAdmin(req, res)) return;
     if (!requireDb(res)) return;
-    const email = String(req.params.email ?? '').trim().toLowerCase();
+    const roomUser = String(req.params.roomUser ?? '').trim().toLowerCase();
     const { password, displayName, disabled } = req.body ?? {};
     if (password != null && (typeof password !== 'string' || password.length < 4)) {
       return res.status(400).json(INVALID_INPUT);
     }
-    if (disabled === true && email === req.user.email) {
+    if (disabled === true && roomUser === req.user.roomUser) {
       return res.status(400).json({
         error: 'cannot_disable_self',
         message: 'You cannot disable your own account. / ปิดการใช้งานบัญชีตัวเองไม่ได้',
@@ -387,7 +404,7 @@ export function mountCloudRoutes(app) {
       if (password != null) Object.assign(patch, await hashPasswordAsync(password));
       if (typeof displayName === 'string') patch.displayName = displayName;
       if (typeof disabled === 'boolean') patch.disabled = disabled;
-      const found = await backend.updateUser(email, patch);
+      const found = await backend.updateUser(roomUser, patch);
       if (!found) return res.status(404).json({ error: 'user_not_found' });
       res.json({ ok: true });
     } catch (err) {
@@ -396,20 +413,20 @@ export function mountCloudRoutes(app) {
     }
   });
 
-  // --- DELETE /api/users/:email — remove the account ONLY (204) ------------
+  // --- DELETE /api/users/:roomUser — remove the account ONLY (204) ---------
   // Sessions expire via TTL and leaderboard rows are durable — untouched.
-  app.delete('/api/users/:email', async (req, res) => {
+  app.delete('/api/users/:roomUser', async (req, res) => {
     if (!requireAdmin(req, res)) return;
     if (!requireDb(res)) return;
-    const email = String(req.params.email ?? '').trim().toLowerCase();
-    if (email === req.user.email) {
+    const roomUser = String(req.params.roomUser ?? '').trim().toLowerCase();
+    if (roomUser === req.user.roomUser) {
       return res.status(400).json({
         error: 'cannot_delete_self',
         message: 'You cannot delete your own account. / ลบบัญชีตัวเองไม่ได้',
       });
     }
     try {
-      await backend.deleteUser(email);
+      await backend.deleteUser(roomUser);
       res.status(204).end();
     } catch (err) {
       console.error('[routes] delete user:', err?.message || err);
@@ -417,9 +434,9 @@ export function mountCloudRoutes(app) {
     }
   });
 
-  // --- GET /api/usage — per-user Gemini cost aggregate, ADMIN ONLY ---------
+  // --- GET /api/usage — per-room Gemini cost aggregate, ADMIN ONLY ---------
   // Aggregated over ALL durable usage_records (tiny scale — whole-collection
-  // read is deliberate). Shape: { users: [{ email, userName, thb, tokensIn,
+  // read is deliberate). Shape: { users: [{ roomUser, userName, thb, tokensIn,
   // tokensOut, sessions }], total: {...} } — built by lib.aggregateUsageRows.
   app.get('/api/usage', async (req, res) => {
     if (!requireAdmin(req, res)) return;

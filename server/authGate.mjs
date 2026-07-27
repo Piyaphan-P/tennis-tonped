@@ -1,26 +1,28 @@
-// ADGE Tennis (SIT) — per-user auth gate in front of the app's APIs (UAM v1.5).
+// ADGE Tennis (SIT) — per-room auth gate in front of the app's APIs (v2.1).
 // -----------------------------------------------------------------------------
-// Email is the primary identity. POST /api/login checks the users collection
-// (backend.getUser — scrypt hash verify) and sets a signed httpOnly cookie
-// carrying `email|role|exp` (see authCore.mjs). Every other /api/* route (and
-// the /api/live WS upgrade in liveRelay.mjs) requires that cookie; the guard
-// attaches req.user = { email, role, displayName } for the ownership checks in
-// routes.mjs. Static assets stay public — the frontend shows login on 401.
+// The club logs into a "ROOM" (roomUser, e.g. room1..room4) — roomUser is the
+// primary identity (v2.1 replaced the email login). POST /api/login checks the
+// users collection (backend.getUser — scrypt hash verify) and sets a signed
+// httpOnly cookie carrying `roomUser|role|exp` (see authCore.mjs). Every other
+// /api/* route (and the /api/live WS upgrade in liveRelay.mjs) requires that
+// cookie; the guard attaches req.user = { roomUser, role, displayName } for the
+// ownership checks in routes.mjs. Static assets stay public — the frontend shows
+// login on 401. The individual PLAYER is identified per-session by their LINE
+// profile (lineUserId), not by the room.
 //
-// The /api guard now re-checks the store per request (cached ≤1h): a
-// disabled/deleted/demoted user is revoked within the TTL, not only at the next
-// /api/gate probe. The cookie's role is superseded by the STORED role when the
-// lookup succeeds; a transient store error falls back to trusting the cookie
+// The /api guard re-checks the store per request (cached ≤1h): a disabled/
+// deleted/demoted room is revoked within the TTL, not only at the next /api/gate
+// probe. The cookie's role is superseded by the STORED role when the lookup
+// succeeds; a transient store error falls back to trusting the cookie
 // (best-effort — never locks everyone out). The WS /api/live upgrade stays
-// cookie-only for now (see isGateAuthorized). The old shared GATE_USER/GATE_PASS
-// login is retired — users collection only.
+// cookie-only for now (see isGateAuthorized).
 // -----------------------------------------------------------------------------
 import express from 'express';
 import { backend } from './store.mjs';
 import {
   COOKIE_NAME,
   COOKIE_MAX_AGE_S,
-  isValidEmail,
+  isValidRoomUser,
   verifyPasswordAsync,
   signCookie,
   verifyCookie,
@@ -44,27 +46,27 @@ const OPEN_PATHS = new Set(['/api/login', '/api/logout', '/healthz']);
 // AND we don't re-hit a flapping store on every request. Resolved entries hold
 // the user (or null = deleted).
 const USER_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
-const userCache = new Map(); // email → { at, user, failed }
+const userCache = new Map(); // roomUser → { at, user, failed }
 
 /**
- * Best-effort store read for a cookie's email, cached ≤1h. Returns
+ * Best-effort store read for a cookie's roomUser, cached ≤1h. Returns
  * { user } (user may be null = definitively deleted) or { failed: true } on a
  * transient store error (caller then trusts the cookie). Never throws.
  */
-async function lookupUserCached(email) {
+async function lookupUserCached(roomUser) {
   const now = Date.now();
-  const hit = userCache.get(email);
+  const hit = userCache.get(roomUser);
   if (hit && now - hit.at < USER_CACHE_TTL_MS) {
     return hit.failed ? { failed: true } : { user: hit.user };
   }
   try {
-    const user = await backend.getUser(email);
-    userCache.set(email, { at: now, user: user ?? null, failed: false });
+    const user = await backend.getUser(roomUser);
+    userCache.set(roomUser, { at: now, user: user ?? null, failed: false });
     return { user: user ?? null };
   } catch (err) {
     // Mirror /api/gate: a transient store error must not lock users out.
     console.error('[auth] guard lookup (non-fatal):', err?.message || err);
-    userCache.set(email, { at: now, user: null, failed: true });
+    userCache.set(roomUser, { at: now, user: null, failed: true });
     return { failed: true };
   }
 }
@@ -75,13 +77,13 @@ const LOGIN_WINDOW_MS = 60_000;
 const LOGIN_MAX_FAILURES = 10;
 const loginFailures = new Map(); // key → { count, windowStart }
 
-function limiterKey(req, email) {
+function limiterKey(req, roomUser) {
   // Cloud Run APPENDS the real client IP as the RIGHTMOST x-forwarded-for
   // entry; the leftmost entries are client-supplied and trivially spoofable
   // (an attacker could rotate them to dodge the per-IP limit). See
   // clientIpFromForwarded — take the last hop, socket peer as fallback.
   const ip = clientIpFromForwarded(req.headers['x-forwarded-for'], req.socket?.remoteAddress);
-  return `${ip}|${email}`;
+  return `${ip}|${roomUser}`;
 }
 
 function isRateLimited(key) {
@@ -120,7 +122,7 @@ function setAuthCookie(res, value, maxAgeS = COOKIE_MAX_AGE_S) {
   );
 }
 
-/** The verified cookie identity { email, role, exp } or null. Works for plain
+/** The verified cookie identity { roomUser, role, exp } or null. Works for plain
  *  HTTP requests AND raw WS upgrade requests (both expose headers.cookie). */
 export function identityFromRequest(req) {
   const cookies = parseCookies(req.headers?.cookie);
@@ -142,7 +144,7 @@ export function isGateAuthorized(req) {
 
 const BAD_CREDENTIALS = {
   error: 'bad_credentials',
-  message: 'Wrong email or password / อีเมลหรือรหัสผ่านไม่ถูกต้อง',
+  message: 'Wrong room or password / ชื่อห้องหรือรหัสผ่านไม่ถูกต้อง',
 };
 
 const AUTH_UNAVAILABLE = {
@@ -159,9 +161,9 @@ const AUTH_UNAVAILABLE = {
 export function mountAuthGate(app) {
   // Login: verify against the users collection, set the per-user cookie.
   app.post('/api/login', express.json({ limit: '2kb' }), async (req, res) => {
-    const email = String(req.body?.email ?? '').trim().toLowerCase();
+    const roomUser = String(req.body?.roomUser ?? '').trim().toLowerCase();
     const password = String(req.body?.password ?? '');
-    const key = limiterKey(req, email);
+    const key = limiterKey(req, roomUser);
     if (isRateLimited(key)) {
       return res.status(429).json({
         error: 'too_many_attempts',
@@ -169,14 +171,20 @@ export function mountAuthGate(app) {
       });
     }
     if (!backend.ready()) return res.status(503).json(AUTH_UNAVAILABLE);
+    // Reject malformed room names before a store hit (no enumeration signal —
+    // an invalid shape can't be a real room anyway → same 401 as bad creds).
+    if (!isValidRoomUser(roomUser)) {
+      recordFailure(key);
+      return res.status(401).json(BAD_CREDENTIALS);
+    }
     let user;
     try {
-      user = await backend.getUser(email);
+      user = await backend.getUser(roomUser);
     } catch (err) {
       console.error('[auth] login lookup:', err?.message || err);
       return res.status(503).json(AUTH_UNAVAILABLE);
     }
-    // Same 401 for unknown email / disabled / wrong password — no enumeration.
+    // Same 401 for unknown room / disabled / wrong password — no enumeration.
     // Async scrypt (verifyPasswordAsync) keeps the event loop free under load.
     if (
       !user ||
@@ -186,8 +194,8 @@ export function mountAuthGate(app) {
       recordFailure(key);
       return res.status(401).json(BAD_CREDENTIALS);
     }
-    setAuthCookie(res, signCookie({ email: user.email, role: user.role }));
-    res.json({ ok: true, email: user.email, role: user.role, displayName: user.displayName ?? '' });
+    setAuthCookie(res, signCookie({ roomUser: user.roomUser, role: user.role }));
+    res.json({ ok: true, roomUser: user.roomUser, role: user.role, displayName: user.displayName ?? '' });
   });
 
   // Logout: clear the cookie. Open path — works even with an expired cookie.
@@ -207,18 +215,18 @@ export function mountAuthGate(app) {
     // (null) or disabled user → 401; a role change also bounces them so the
     // frontend re-derives the current role. A transient store error trusts the
     // cookie (never log everyone out).
-    const { user, failed } = await lookupUserCached(id.email);
+    const { user, failed } = await lookupUserCached(id.roomUser);
     if (!failed) {
       const decision = evaluateGuard({ identity: id, user, lookupFailed: false });
       if (!decision.allow) return res.status(401).json({ ok: false });
       return res.json({
         ok: true,
-        email: id.email,
+        roomUser: id.roomUser,
         role: decision.role,
         displayName: user?.displayName ?? '',
       });
     }
-    res.json({ ok: true, email: id.email, role: id.role, displayName: '' });
+    res.json({ ok: true, roomUser: id.roomUser, role: id.role, displayName: '' });
   });
 
   // Guard every other /api/* route; attach the identity for ownership checks.
@@ -233,22 +241,26 @@ export function mountAuthGate(app) {
   app.use('/api', async (req, res, next) => {
     if (OPEN_PATHS.has(`/api${req.path}`) || OPEN_PATHS.has(req.path)) return next();
     if (req.path === '/login' || req.path === '/logout' || req.path === '/gate') return next();
+    // External history API (v2.1): the ONLY sub-tree the cookie gate skips. It
+    // is authed by its own x-api-key middleware (extApi.mjs), never the cookie.
+    // req.path is mount-relative here, so /api/ext/* arrives as /ext/*.
+    if (req.path === '/ext' || req.path.startsWith('/ext/')) return next();
     const id = identityFromRequest(req);
     if (!id) return res.status(401).json(UNAUTHORIZED);
     try {
-      const { user, failed } = await lookupUserCached(id.email);
+      const { user, failed } = await lookupUserCached(id.roomUser);
       const decision = evaluateGuard({ identity: id, user, lookupFailed: failed });
       if (!decision.allow) return res.status(401).json(UNAUTHORIZED);
       // role from the STORE when available so a stale cookie can't act above
-      // its current role; displayName is not required per request (email stands
-      // in) but we use the stored one when the lookup succeeded.
-      req.user = { email: id.email, role: decision.role, displayName: decision.displayName };
+      // its current role; displayName is not required per request (roomUser
+      // stands in) but we use the stored one when the lookup succeeded.
+      req.user = { roomUser: id.roomUser, role: decision.role, displayName: decision.displayName };
       next();
     } catch (err) {
       // Defensive: evaluateGuard/lookup should never throw, but if anything
       // does, do not 500 the whole API — trust the cookie identity.
       console.error('[auth] guard (non-fatal):', err?.message || err);
-      req.user = { email: id.email, role: id.role, displayName: id.email };
+      req.user = { roomUser: id.roomUser, role: id.role, displayName: id.roomUser };
       next();
     }
   });

@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { useAppStore } from '../store';
 import { useT } from '../i18n';
 import type { I18nKey } from '../i18n';
 import { audioPlayer } from '../coach/audioPlayer';
 import BrandMark from '../components/BrandMark';
+import LineProfileSheet from '../components/LineProfileSheet';
 import LangToggle from '../components/LangToggle';
 import StatsCard from '../components/StatsCard';
 import HistoryList from '../components/HistoryList';
@@ -48,6 +50,8 @@ export default function HomeScreen() {
   const setCoachMode = useAppStore((s) => s.setCoachMode);
   const setVerbosity = useAppStore((s) => s.setVerbosity);
   const isAdmin = useAppStore((s) => s.auth?.role === 'admin');
+  const lineProfile = settings.lineProfile;
+  const [lineOpen, setLineOpen] = useState(false);
 
   const start = () => {
     // Unlock the AudioContext INSIDE this tap gesture so iOS Safari will play
@@ -67,6 +71,56 @@ export default function HomeScreen() {
       <div className="col" style={{ gap: 8, marginTop: 8 }}>
         <p className="dim">{t('home.tagline')}</p>
       </div>
+
+      {/* --- LINE player identity (v2.1): who is at the machine this session --- */}
+      <div className="card col" style={{ gap: 8 }}>
+        <h3>{t('home.player.title')}</h3>
+        {lineProfile ? (
+          <div className="row" style={{ gap: 12, alignItems: 'center' }}>
+            {lineProfile.pictureUrl ? (
+              <img
+                src={lineProfile.pictureUrl}
+                alt=""
+                width={44}
+                height={44}
+                style={{ borderRadius: '50%', objectFit: 'cover', flex: '0 0 auto' }}
+                onError={(e) => (e.currentTarget.style.display = 'none')}
+              />
+            ) : null}
+            <div className="col" style={{ gap: 2, flex: 1, minWidth: 0 }}>
+              <strong style={{ fontSize: '1.05rem' }}>
+                {lineProfile.displayName || lineProfile.lineUserId}
+              </strong>
+              {lineProfile.email ? (
+                <span
+                  className="faint"
+                  style={{ fontSize: '0.75rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                >
+                  {lineProfile.email}
+                </span>
+              ) : null}
+            </div>
+            <button className="btn btn-ghost tap" onClick={() => setLineOpen(true)}>
+              {t('home.player.change')}
+            </button>
+          </div>
+        ) : (
+          <button
+            className="btn btn-primary tap"
+            style={{ width: '100%', padding: '14px 8px' }}
+            onClick={() => setLineOpen(true)}
+          >
+            {t('home.player.set')}
+          </button>
+        )}
+        {!lineProfile ? (
+          <span className="faint" style={{ fontSize: '0.75rem' }}>
+            {t('home.player.none')}
+          </span>
+        ) : null}
+      </div>
+
+      {lineOpen ? <LineProfileSheet onClose={() => setLineOpen(false)} /> : null}
 
       {/* --- dominant hand: prominent, must be explicit before playing --- */}
       <div className="card col" style={{ gap: 8 }}>
