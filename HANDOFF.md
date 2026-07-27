@@ -46,7 +46,7 @@
 ## สิ่งที่ต้องทำต่อ / รอเทสสนาม
 
 - **[x] ลบ leaderboard record เสียแล้ว** (2026-07-27): `"Player One"` (avg=75/max=0/1ช็อต — max<avg เป็นไปไม่ได้, record ยุคก่อน v1.5.2 recompute) id `736508c7-2933-4df5-a40f-fc4929b69c72` — user รัน DELETE ผ่าน Firestore REST เอง (Claude ถูก harness บล็อก) → **200**. Verify live API: board สะอาด 3 entries เรียงถูก (avg 71.02 > 71.00 > 59.41), record เสียเหลือ 0. Ranking sort algorithm เองถูกต้องมาแต่ต้น (ยืนยันด้วย live API) — ที่ดู "เรียงผิด" คือ record เสียตัวนี้ค้างอันดับ 1.
-- **[BACKLOG] normalize wrist speed ให้เป็น scale-invariant** (2026-07-27, user จัดเป็น backlog): มือถือจับช็อตได้น้อยกว่า MacBook เพราะ detector วัดความเร็วเป็น "สัดส่วนของเฟรม" (`angles.ts:207` `hypot(dx,dy)/dt`, พิกัด 0–1) → ผู้เล่นยืนไกล/ตัวเล็กในเฟรม = ความเร็วต่ำ = มักไม่ถึง `contactMinPeakSpeed=1.1`. แก้ราก = หารด้วยความยาวลำตัว/ช่วงไหล่-สะโพก (เหมือน `swingSpeed.ts` km/h) ให้ระยะกล้องหมดผล → ต้อง retune threshold + เทสสนาม. ทางลัดชั่วคราว: จัดเฟรมให้ผู้เล่นเต็มเฟรมขึ้น หรือลด threshold.
+- **[x] scale-invariant wrist speed = DONE (v2.2, 2026-07-28)**: หาร `hypot(dx,dy)` ด้วยความยาวลำตัว (nose→ankle, smoothed) → body-lengths/s ไม่ขึ้นกับระยะกล้องแล้ว; gate ×1.8; + ปุ่ม `captureSensitivity` ใน Settings ปรับสด. **เทสสนาม:** ถ้ายังจับยาก/ง่ายไป ปรับ `captureSensitivity` (ลด = จับง่ายขึ้น).
 - **[BACKLOG-minor] เพิ่ม pose-quality/visibility gate ใน scoring**: ตอนนี้ได้ 100 ฟรีได้ถ้า MediaPipe จับไม่ชัดแล้วมุมบังเอิญตกในกรอบทุกข้อ (เฟรมฟลุค) — ไม่มี gate เช็คว่า pose valid จริง.
 
 0. **เทสสนาม v2.0** (deployed `sit-v16` แล้ว): short สั้นพอ/ยังได้ยินชื่อช็อตไหม · long ยาวไปไหม (ยาวขึ้น = pacing queue drop ช็อตมากขึ้น) · ยืนยัน player ไม่เห็น section ราคาแล้ว (admin ยังเห็น)
