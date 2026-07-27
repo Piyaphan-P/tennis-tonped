@@ -42,7 +42,7 @@ import type {
 } from '../types';
 import { appStore, evaluateAngleStatuses } from '../store';
 import { scoreShot } from './scoring';
-import { estimateSpeedKmh } from './swingSpeed';
+import { estimateSpeedKmh, clampCaptureSensitivity } from './swingSpeed';
 
 // ---------------------------------------------------------------------------
 // Swing keyframe capture
@@ -156,20 +156,28 @@ function buildLocalCritique(
 // duration, 10-frame return-to-idle streak, and 800ms cooldown together keep
 // casual movement from ever completing a shot.
 export const SHOT_THRESHOLDS = {
+  // ⚠️ v2.2 UNIT CHANGE: wristSpeed is now SCALE-INVARIANT (body-lengths/s, see
+  // angles.ts) instead of raw normalized-frame-units/s. Every speed threshold
+  // below was multiplied by ~1.8 (= 1 / a typical nose→ankle frame fraction
+  // ≈0.55) so the detector triggers at the SAME real swing speed it used to for
+  // a normally-framed player — but now CONSISTENTLY at any camera distance
+  // (fixes the phone-misses-shots report, where a small-in-frame player used to
+  // read below the raw gate). The exact contact gate is empirical: tune live via
+  // settings.captureSensitivity (multiplier applied at construction) — no redeploy.
   /** Speed above which idle starts counting toward entering 'preparation'. */
-  prepEnterSpeed: 0.3,
+  prepEnterSpeed: 0.55,
   /** Consecutive frames above prepEnterSpeed required to leave idle. */
   prepEnterFrames: 3,
   /** Above this speed while in 'preparation', move to 'backswing'. */
-  backswingMinSpeed: 0.5,
+  backswingMinSpeed: 0.9,
   /** Above this speed once velX flips sign, move to 'forward-swing'. */
-  forwardSwingMinSpeed: 0.7,
+  forwardSwingMinSpeed: 1.27,
   /** A local speed peak must reach at least this to count as 'contact'. */
-  contactMinPeakSpeed: 1.1,
+  contactMinPeakSpeed: 2.0,
   /** Consecutive rising frames required before a drop is treated as a peak. */
   contactMinRisingFrames: 1,
   /** Below this speed, frames count toward the return-to-idle streak. */
-  idleReturnSpeed: 0.3,
+  idleReturnSpeed: 0.55,
   /** Consecutive low-speed frames required to fall back to 'idle'. */
   idleReturnFrames: 10,
   /** Discard swings shorter than this (ms) — almost certainly noise. */
@@ -208,10 +216,23 @@ export const SHOT_THRESHOLDS = {
    * anyway. Handles vertical/camera-axis swings where velX (horizontal
    * velocity) never flips even though a real swing is happening.
    */
-  forwardBypassSpeed: 1.0,
+  forwardBypassSpeed: 1.8,
   /** Consecutive above-forwardBypassSpeed frames (no sign flip) required to bypass. */
   forwardBypassFrames: 2,
 };
+
+/** Speed-type threshold keys scaled by settings.captureSensitivity at detector
+ *  construction (v2.2). Non-speed keys (frames/durations/visibility/spans) are
+ *  left untouched. (clampCaptureSensitivity lives in swingSpeed.ts — a pure,
+ *  store-free module — to avoid a store↔shotDetector import cycle.) */
+const SENSITIVITY_SCALED_KEYS = [
+  'prepEnterSpeed',
+  'backswingMinSpeed',
+  'forwardSwingMinSpeed',
+  'contactMinPeakSpeed',
+  'idleReturnSpeed',
+  'forwardBypassSpeed',
+] as const;
 
 // ---------------------------------------------------------------------------
 // Shot classification
@@ -331,6 +352,13 @@ export interface ShotDetectorOptions {
    * Absence (or coach offline) = never hold — existing callers unaffected.
    */
   holdArm?: () => boolean;
+  /**
+   * Capture-sensitivity multiplier (v2.2, settings.captureSensitivity). Scales
+   * ONLY the speed-type thresholds at construction (see SENSITIVITY_SCALED_KEYS)
+   * so on-court sensitivity can be tuned without a redeploy. Default/absent =
+   * 1.0 = the SHOT_THRESHOLDS defaults unchanged. Clamped to [0.3, 2.0].
+   */
+  captureSensitivity?: number;
 }
 
 /**
@@ -395,7 +423,15 @@ export class ShotDetector {
 
   constructor(opts: ShotDetectorOptions) {
     this.opts = opts;
-    this.th = { ...SHOT_THRESHOLDS, ...opts.thresholds };
+    const merged = { ...SHOT_THRESHOLDS, ...opts.thresholds };
+    // v2.2: scale ONLY the speed-type gates by the capture-sensitivity knob (the
+    // exported SHOT_THRESHOLDS + scoring's SPEED_GOOD base stay put, so the
+    // drift-lock test still holds — the knob only shifts this instance's gates).
+    const sens = clampCaptureSensitivity(opts.captureSensitivity);
+    if (sens !== 1.0) {
+      for (const k of SENSITIVITY_SCALED_KEYS) merged[k] = merged[k] * sens;
+    }
+    this.th = merged;
   }
 
   /** Reset the state machine (e.g. on session start). Also resets phase in the store. */

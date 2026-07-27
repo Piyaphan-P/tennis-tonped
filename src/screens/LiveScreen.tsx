@@ -149,6 +149,10 @@ export default function LiveScreen() {
       // than a critique, and piled-up shots were unreadable on court. Coach
       // offline → never holds (isBusyCoaching is false when disconnected).
       holdArm: () => coachLive.isBusyCoaching(),
+      // v2.2: PO-tunable capture sensitivity (scales the detector's speed gates
+      // at construction). Read once here — mid-session changes take effect on the
+      // next camera (re)open, like the other physical calibration settings.
+      captureSensitivity: useAppStore.getState().settings.captureSensitivity,
       // idle→preparation: arm a fresh clip recording.
       onSwingStarted: () => recorder?.startSwing(),
       // finalize(): completed → finish + attach the clip; discarded → drop it.
@@ -303,6 +307,24 @@ export default function LiveScreen() {
 
       <div className="live-overlay">
         <div className="live-top">
+          {/* Controls pinned to the TOP (2026-07-28): on a phone the swing
+              CaptureGallery grows along the bottom and used to cover the
+              flip/End buttons mid-session. Keep them reachable up here. */}
+          <div className="row live-controls live-controls-top" style={{ justifyContent: 'space-between' }}>
+            <button
+              className="btn btn-ghost tap"
+              onClick={flipCamera}
+              disabled={cameraBusy}
+              aria-label={t('live.flipCamera')}
+              title={t('live.flipCamera')}
+            >
+              <span aria-hidden>🔄</span> {t('live.flipCamera')}
+            </button>
+            <button className="btn btn-danger tap" onClick={end}>
+              {t('live.end')}
+            </button>
+          </div>
+
           <div className="live-banner">
             <span className="brand-dot" aria-hidden />
             <span className="live-banner-name">{t('brand.name')}</span>
@@ -352,23 +374,8 @@ export default function LiveScreen() {
               rail was too small to read — reverted in v0.3.2). */}
           <CaptureGallery />
           <CoachBubble />
-          {/* v0.6: mic input removed — only End Session remains here, so
-              center it (was a left-aligned .row with MicControl as the
-              first child) to keep the bottom row visually balanced. */}
-          <div className="row live-controls" style={{ justifyContent: 'center' }}>
-            <button
-              className="btn btn-ghost"
-              onClick={flipCamera}
-              disabled={cameraBusy}
-              aria-label={t('live.flipCamera')}
-              title={t('live.flipCamera')}
-            >
-              <span aria-hidden>🔄</span> {t('live.flipCamera')}
-            </button>
-            <button className="btn btn-danger" onClick={end}>
-              {t('live.end')}
-            </button>
-          </div>
+          {/* Flip/End controls moved to .live-top (2026-07-28) so the growing
+              CaptureGallery can't cover them on a phone. */}
         </div>
       </div>
 

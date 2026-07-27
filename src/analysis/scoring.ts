@@ -36,12 +36,15 @@ import type { DominantHand, JointAngles, ShotIssue, ShotType } from '../types';
 // and history/derive.ts imports it as the radar's speed target.
 // ---------------------------------------------------------------------------
 
-/** No speed penalty at/above this. Anchored to the detector's contact gate. */
-export const SPEED_GOOD = 1.1;
+/** No speed penalty at/above this. Anchored to the detector's contact gate.
+ *  v2.2: 1.1 → 2.0 with the scale-invariant unit change (body-lengths/s); still
+ *  == SHOT_THRESHOLDS.contactMinPeakSpeed (drift-lock asserted by scoring.test),
+ *  so a completed shot's peak is ALWAYS ≥ this and no false speed penalty fires. */
+export const SPEED_GOOD = 2.0;
 /** Below this = full "swing-faster" fault (a genuinely limp swing / glitch). */
-export const SPEED_WARN = 0.8;
+export const SPEED_WARN = 1.45;
 /** Human-readable good-speed target string reused in RULES + issue payloads. */
-export const SPEED_TARGET_LABEL = '≥1.1 units/s';
+export const SPEED_TARGET_LABEL = '≥2.0 body-lengths/s';
 
 // ---------------------------------------------------------------------------
 // Rule table (display metadata — DevPlan/Settings render this)

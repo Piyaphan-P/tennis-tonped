@@ -23,6 +23,49 @@ function frame(overrides: Record<number, Landmark>): PoseFrame {
   return { timestampMs: 0, landmarks: lm };
 }
 
+describe('wristSpeed scale-invariance (v2.2 — the phone-misses-shots fix)', () => {
+  // Build a 2-frame sequence where the wrist moves the SAME FRACTION of the
+  // body, but the body is drawn at two different on-screen sizes (nose→ankle
+  // length 0.8 = "MacBook close-up" vs 0.4 = "phone, small in frame"). Because
+  // wristSpeed is now divided by the body length, both must read the SAME speed
+  // — the whole point of the fix. (Pre-v2.2 the raw metric would differ 2×.)
+  function twoFrames(bodyLen: 0.8 | 0.4, wristDx: number) {
+    const yNose = 0.5 - bodyLen / 2;
+    const yAnkle = 0.5 + bodyLen / 2;
+    const build = (wristX: number, ts: number): PoseFrame => {
+      const f = frame({
+        0: { x: 0.5, y: yNose, z: 0, visibility: 1 }, // NOSE
+        [LM.LEFT_ANKLE]: { x: 0.5, y: yAnkle, z: 0, visibility: 1 },
+        [LM.RIGHT_ANKLE]: { x: 0.5, y: yAnkle, z: 0, visibility: 1 },
+        [LM.RIGHT_WRIST]: { x: wristX, y: 0.5, z: 0, visibility: 1 },
+      });
+      return { ...f, timestampMs: ts };
+    };
+    const f0 = build(0.5, 0);
+    const f1 = build(0.5 + wristDx, 100); // dt = 0.1s
+    return { f0, f1 };
+  }
+
+  function speedOf(bodyLen: 0.8 | 0.4, wristDx: number): number {
+    const { f0, f1 } = twoFrames(bodyLen, wristDx);
+    const a0 = computeJointAngles(f0, null, 'right');
+    const a1 = computeJointAngles(f1, { frame: f0, angles: a0 }, 'right');
+    return a1.wristSpeed;
+  }
+
+  it('reads the same speed at 2× different body scales (same body-fraction move)', () => {
+    const big = speedOf(0.8, 0.16); // wrist moves 0.16 / body 0.8 = 0.20 of body
+    const small = speedOf(0.4, 0.08); // wrist moves 0.08 / body 0.4 = 0.20 of body
+    expect(big).toBeGreaterThan(0);
+    expect(small).toBeCloseTo(big, 6); // scale-invariant
+  });
+
+  it('records the smoothed body scale on the frame', () => {
+    const { f0 } = twoFrames(0.8, 0.16);
+    expect(computeJointAngles(f0, null, 'right').bodyScale).toBeCloseTo(0.8, 6);
+  });
+});
+
 describe('angleDeg3D', () => {
   it('reduces EXACTLY to the 2D angleDeg when all z are 0 (graceful degradation)', () => {
     const a = { x: 0.4, y: 0.2, z: 0 };

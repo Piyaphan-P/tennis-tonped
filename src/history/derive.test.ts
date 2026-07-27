@@ -83,10 +83,11 @@ describe('radarData normalization', () => {
     expect(d.find((x) => x.key === 'speed')!.value).toBe(1);
   });
 
-  it('REGRESSION: a real EMA-smoothed swing peak (1.3) reads full on the speed axis', () => {
-    // Old SPEED_TARGET was 2.5, so a real peak (~0.8–1.6) read ~0.5 for EVERYONE.
-    // Retuned to the detector gate (1.1) → a normal swing now reads on-target.
-    const d = radarData(angles(), 1.3, 'right');
+  it('REGRESSION: a normal completed-swing peak reads full on the speed axis', () => {
+    // The speed axis target = the detector contact gate (SPEED_GOOD). v2.2: in
+    // the scale-invariant unit a completed swing peaks ≥ the gate (2.0) by
+    // construction, so it reads on-target — never the pre-v1.0.4 ~0.5-for-everyone.
+    const d = radarData(angles(), 2.4, 'right');
     expect(d.find((x) => x.key === 'speed')!.value).toBe(1);
   });
 

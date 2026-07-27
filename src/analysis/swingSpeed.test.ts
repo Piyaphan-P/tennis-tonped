@@ -103,12 +103,13 @@ describe('normalizedBodyLength', () => {
 });
 
 describe('estimateSpeedKmh', () => {
-  it('applies scaleMeters = heightM × fraction / bodyLen, ×3.6', () => {
-    // bodyLen 0.8, height 170cm=1.7m, peak 1.1 units/s
-    const bodyLen = 0.8;
+  it('v2.2: km/h = peak[body-lengths/s] × (heightM × fraction) × 3.6 (no ÷bodyLen)', () => {
+    // peak is ALREADY body-normalized, so km/h just multiplies by the real
+    // nose→ankle length in meters — the frame body length is used ONLY as a
+    // visibility guard, never for scale (no double-divide).
     const heightM = 1.7;
-    const peak = 1.1;
-    const expected = Math.round(peak * ((heightM * NOSE_ANKLE_FRACTION) / bodyLen) * 3.6);
+    const peak = 2.0; // body-lengths/s
+    const expected = Math.round(peak * (heightM * NOSE_ANKLE_FRACTION) * 3.6);
     expect(estimateSpeedKmh(standingFrame(0.1, 0.9), peak, 170)).toBe(expected);
   });
 

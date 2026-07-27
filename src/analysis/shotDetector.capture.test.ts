@@ -79,27 +79,29 @@ function mkFrame(ts: number): PoseFrame {
 }
 
 /** The fixed swing script: [speed, velX] per frame, 50ms apart, starting at ts=0. */
+// v2.2: speeds are body-lengths/s — all ×1.8 vs the pre-v2.2 raw-unit trace,
+// tracking the detector gate rescale so the FSM margins are unchanged.
 const SWING_SPEEDS: Array<[number, number]> = [
-  [0.5, 0], // idle prep streak 1
-  [0.5, 0], // idle prep streak 2
-  [0.5, 0], // idle prep streak 3 -> preparation
-  [1.0, 1], // preparation -> backswing
-  [1.5, -1], // backswing -> forward-swing (captures 'backswing')
-  [1.8, -1], // forward-swing rising 1
-  [2.2, -1], // forward-swing rising 2
-  [2.6, -1], // forward-swing rising 3 (peak)
-  [1.0, -1], // drop -> contact locked at 2.6 (captures 'contact')
-  [0.8, -1], // contact -> follow-through (captures 'follow-through')
-  [0.1, 0], // follow-through low-speed streak 1
-  [0.1, 0], // 2
-  [0.1, 0], // 3
-  [0.1, 0], // 4
-  [0.1, 0], // 5
-  [0.1, 0], // 6
-  [0.1, 0], // 7
-  [0.1, 0], // 8
-  [0.1, 0], // 9
-  [0.1, 0], // 10 -> idleReturnFrames reached -> finalize()
+  [0.9, 0], // idle prep streak 1
+  [0.9, 0], // idle prep streak 2
+  [0.9, 0], // idle prep streak 3 -> preparation
+  [1.8, 1], // preparation -> backswing
+  [2.7, -1], // backswing -> forward-swing (captures 'backswing')
+  [3.24, -1], // forward-swing rising 1
+  [3.96, -1], // forward-swing rising 2
+  [4.68, -1], // forward-swing rising 3 (peak)
+  [1.8, -1], // drop -> contact locked at 4.68 (captures 'contact')
+  [1.44, -1], // contact -> follow-through (captures 'follow-through')
+  [0.18, 0], // follow-through low-speed streak 1
+  [0.18, 0], // 2
+  [0.18, 0], // 3
+  [0.18, 0], // 4
+  [0.18, 0], // 5
+  [0.18, 0], // 6
+  [0.18, 0], // 7
+  [0.18, 0], // 8
+  [0.18, 0], // 9
+  [0.18, 0], // 10 -> idleReturnFrames reached -> finalize()
 ];
 
 const DT_MS = 50;
@@ -111,7 +113,7 @@ function runSyntheticSwing(detector: ShotDetector, getJpeg?: GetJpeg): JointAngl
   SWING_SPEEDS.forEach(([speed, velX], i) => {
     const ts = i * DT_MS;
     const angles = mkAngles(ts, speed, velX);
-    if (speed === 2.6) peak.angles = angles; // the local peak frame -> becomes contact
+    if (speed === 4.68) peak.angles = angles; // the local peak frame -> becomes contact
     detector.onFrame(mkFrame(ts), angles, getJpeg);
   });
   if (!peak.angles) throw new Error('synthetic swing script never reached its peak frame');
@@ -299,26 +301,27 @@ describe('shotDetector threshold robustness (realistic real-device swing vs. idl
     // NEW ones (0.5 / 0.7 / 1.1), with the forwardBypassSpeed/Frames chain
     // (1.0 for 2 frames) carrying it from 'backswing' into 'forward-swing'
     // since velX never flips.
+    // v2.2: speeds are body-lengths/s — ×1.8 vs the pre-v2.2 raw-unit trace.
     const trace: Array<[number, number]> = [
-      [0.35, 0.1], // idle prep streak 1 (>prepEnterSpeed 0.3)
-      [0.35, 0.1], // idle prep streak 2
-      [0.35, 0.1], // idle prep streak 3 -> preparation
-      [0.55, 0.1], // preparation -> backswing (>backswingMinSpeed 0.5)
-      [1.05, 0.1], // backswing, bypass streak 1 (>forwardBypassSpeed 1.0), no sign flip
-      [1.2, 0.1], // backswing, bypass streak 2 -> bypass into forward-swing
-      [1.3, 0.1], // forward-swing rising 1 (peak, >contactMinPeakSpeed 1.1)
-      [0.6, 0.1], // drop -> contact locked at 1.3 (contactMinRisingFrames=1 satisfied)
-      [0.4, 0.1], // contact -> follow-through
-      [0.2, 0], // follow-through low-speed streak 1
-      [0.2, 0], // 2
-      [0.2, 0], // 3
-      [0.2, 0], // 4
-      [0.2, 0], // 5
-      [0.2, 0], // 6
-      [0.2, 0], // 7
-      [0.2, 0], // 8
-      [0.2, 0], // 9
-      [0.2, 0], // 10 -> idleReturnFrames reached -> finalize()
+      [0.63, 0.1], // idle prep streak 1 (>prepEnterSpeed 0.55)
+      [0.63, 0.1], // idle prep streak 2
+      [0.63, 0.1], // idle prep streak 3 -> preparation
+      [0.99, 0.1], // preparation -> backswing (>backswingMinSpeed 0.9)
+      [1.89, 0.1], // backswing, bypass streak 1 (>forwardBypassSpeed 1.8), no sign flip
+      [2.16, 0.1], // backswing, bypass streak 2 -> bypass into forward-swing
+      [2.34, 0.1], // forward-swing rising 1 (peak, >contactMinPeakSpeed 2.0)
+      [1.08, 0.1], // drop -> contact locked at 2.34 (contactMinRisingFrames=1 satisfied)
+      [0.72, 0.1], // contact -> follow-through
+      [0.36, 0], // follow-through low-speed streak 1
+      [0.36, 0], // 2
+      [0.36, 0], // 3
+      [0.36, 0], // 4
+      [0.36, 0], // 5
+      [0.36, 0], // 6
+      [0.36, 0], // 7
+      [0.36, 0], // 8
+      [0.36, 0], // 9
+      [0.36, 0], // 10 -> idleReturnFrames reached -> finalize()
     ];
 
     const DT = 1000 / 15;
@@ -328,7 +331,7 @@ describe('shotDetector threshold robustness (realistic real-device swing vs. idl
     });
 
     const shot = completed.get();
-    expect(shot.peakWristSpeed).toBeCloseTo(1.3, 5);
+    expect(shot.peakWristSpeed).toBeCloseTo(2.34, 5);
 
     const detection = appStore.getState().detection;
     expect(detection.shotsCompleted).toBeGreaterThanOrEqual(1);

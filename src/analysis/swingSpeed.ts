@@ -1,14 +1,16 @@
 // ============================================================================
 // ADGE Tennis — swing-speed calibration (normalized units/s → ≈ km/h)
 //
-// The detector measures the dominant wrist's PEAK speed in MediaPipe
-// normalized-frame units per second (see angles.ts: EMA-smoothed
-// hypot(dx,dy)/dt on raw normalized coords). To turn that into a human number
-// we calibrate against the player's real height: measure the SAME body in the
-// SAME normalized space (nose → ankle-midpoint), then
-//     scaleMeters (m per normalized unit) = heightM × NOSE_ANKLE_FRACTION / bodyLen
-//     speedMps = peakWristSpeed × scaleMeters
+// v2.2: the detector's peak wrist speed is ALREADY scale-invariant — it is in
+// BODY-LENGTHS per second (angles.ts divides hypot(dx,dy) by the smoothed
+// nose→ankle body length). So converting to a human km/h is just:
+//     speedMps = peakWristSpeed[body-lengths/s] × (heightM × NOSE_ANKLE_FRACTION)
 //     kmh      = speedMps × 3.6
+// i.e. multiply by the body length IN METERS. We must NOT divide by the frame
+// body length again here — that was the pre-v2.2 step and doing both would
+// collapse km/h toward zero (a silent double-divide). The frame landmarks are
+// still used, but ONLY as a visibility guard (return undefined when the body is
+// cropped/unusable), never for scale.
 //
 // ── ACCURACY — read before trusting the number ──────────────────────────────
 //  • This is the player's HAND / WRIST speed, NOT ball speed. Low-double-digit
@@ -62,6 +64,19 @@ export const DEFAULT_SPEED_FACTOR = 1.0;
 export function clampSpeedFactor(f: number | undefined | null): number {
   if (f == null || !Number.isFinite(f)) return DEFAULT_SPEED_FACTOR;
   return Math.min(SPEED_FACTOR_MAX, Math.max(SPEED_FACTOR_MIN, f));
+}
+
+/** Capture-sensitivity knob range (v2.2 detector gate multiplier). Lives here —
+ *  a pure, store-free module — so both the store and shotDetector import it
+ *  without a cycle. LOWER = capture shots more easily; default 1.0 = unchanged. */
+export const CAPTURE_SENS_MIN = 0.3;
+export const CAPTURE_SENS_MAX = 2.0;
+export const DEFAULT_CAPTURE_SENS = 1.0;
+
+/** Clamp the capture-sensitivity multiplier into [0.3, 2.0]; NaN/absent → 1.0. */
+export function clampCaptureSensitivity(f: number | undefined | null): number {
+  if (f == null || !Number.isFinite(f)) return DEFAULT_CAPTURE_SENS;
+  return Math.min(CAPTURE_SENS_MAX, Math.max(CAPTURE_SENS_MIN, f));
 }
 
 /** Landmarks below this visibility are treated as not usable for calibration. */
@@ -124,12 +139,13 @@ export function estimateSpeedKmh(
   correctionFactor: number | undefined | null = DEFAULT_SPEED_FACTOR,
 ): number | undefined {
   if (!Number.isFinite(peakWristSpeed) || peakWristSpeed <= 0) return undefined;
-  const bodyLen = normalizedBodyLength(landmarks);
-  if (bodyLen === undefined) return undefined;
+  // Visibility GUARD only (v2.2) — we no longer use bodyLen for scale (peak is
+  // already body-normalized); if the body is cropped/unusable, show nothing.
+  if (normalizedBodyLength(landmarks) === undefined) return undefined;
 
   const heightM = clampHeightCm(heightCm) / 100;
-  const scaleMeters = (heightM * NOSE_ANKLE_FRACTION) / bodyLen; // m per unit
-  const kmh = peakWristSpeed * scaleMeters * 3.6 * clampSpeedFactor(correctionFactor);
+  const bodyMeters = heightM * NOSE_ANKLE_FRACTION; // real nose→ankle length (m)
+  const kmh = peakWristSpeed * bodyMeters * 3.6 * clampSpeedFactor(correctionFactor);
   if (!Number.isFinite(kmh) || kmh <= 0) return undefined;
   return Math.round(kmh);
 }

@@ -113,10 +113,23 @@ export interface JointAngles {
   rightHipDeg: number;
   /** Trunk lean from vertical, degrees. 0 = upright. */
   trunkLeanDeg: number;
-  /** Dominant-hand wrist speed, normalized image units per second (EMA-smoothed). */
+  /**
+   * Dominant-hand wrist speed in BODY-LENGTHS per second (EMA-smoothed), v2.2:
+   * hypot(dx,dy) is divided by the smoothed nose→ankle body length so the value
+   * is SCALE-INVARIANT — the same real swing reads the same whether the player
+   * fills the frame (MacBook) or is small in it (phone on a tripod). This is why
+   * the detector's speed thresholds are ~1.8× their pre-v2.2 raw-unit values.
+   */
   wristSpeed: number;
-  /** Signed horizontal wrist velocity (normalized units/s). Sign = direction of swing. */
+  /** Signed horizontal wrist velocity (body-lengths/s). Sign = direction of swing. */
   wristVelX: number;
+  /**
+   * Smoothed normalized nose→ankle body length used to make wristSpeed
+   * scale-invariant (v2.2). Carried frame-to-frame (slow EMA) and held through
+   * frames where nose/ankles drop out; undefined only until the first usable
+   * measurement. Exposed so the detector/km-h share ONE body scale.
+   */
+  bodyScale?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -628,6 +641,14 @@ export interface Settings {
   coachMode: CoachMode;
   /** Coach verbosity (v2.0): fixed spoken LENGTH band for the whole session. */
   verbosity: Verbosity;
+  /**
+   * Capture sensitivity (v2.2): a PO-tunable multiplier on the detector's speed
+   * gates (clamped 0.3–2.0, default 1.0 = no change). LOWER = the coach captures
+   * shots MORE easily (lower speed bar — good if a phone still misses swings);
+   * HIGHER = stricter (fewer false captures). Lets on-court tuning happen with
+   * no redeploy. Only affects DETECTION — scoring's SPEED_GOOD base is unchanged.
+   */
+  captureSensitivity: number;
   /**
    * LINE profile of the current player (v2.1), or null when unbound. Set on Home
    * (QR/manual); when set, seeds `userName = displayName`. Its lineUserId/email

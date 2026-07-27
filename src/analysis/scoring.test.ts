@@ -35,14 +35,14 @@ describe('scoreShot — peak wrist speed (v1.0.4 stale-tuning fix)', () => {
     expect(SPEED_WARN).toBeLessThan(SPEED_GOOD);
   });
 
-  it('REGRESSION: a real EMA-smoothed swing peak (1.3) is NOT penalized', () => {
-    // v0.3 measured real phone-swing peaks at ~0.8–1.6. Under the old rule
-    // (fault < 2.0) this ate a 15-pt fault + a "สวิงช้าไป" issue on essentially
-    // every real swing. It must now be clean.
+  it('REGRESSION: a real swing peak above the gate is NOT penalized', () => {
+    // v2.2: speeds are body-lengths/s; a normal completed swing peaks ≥ the
+    // contact gate (2.0) by construction, so it must be clean (no false
+    // "สวิงช้าไป" fault — the v1.0.4 regression, preserved in the new unit).
     const r = scoreShot({
       type: 'forehand',
       contactAngles: goodAngles(),
-      peakWristSpeed: 1.3,
+      peakWristSpeed: 2.3,
       dominantHand: 'right',
     });
     expect(has(r, 'swing-faster')).toBe(false);
@@ -50,7 +50,7 @@ describe('scoreShot — peak wrist speed (v1.0.4 stale-tuning fix)', () => {
     expect(r.issues).toEqual([expect.objectContaining({ key: 'clean-contact', severity: 'good' })]);
   });
 
-  it('peak exactly at the gate (1.1) is "good" — no penalty floor', () => {
+  it('peak exactly at the gate (SPEED_GOOD) is "good" — no penalty floor', () => {
     const r = scoreShot({
       type: 'forehand',
       contactAngles: goodAngles(),
@@ -65,7 +65,7 @@ describe('scoreShot — peak wrist speed (v1.0.4 stale-tuning fix)', () => {
     const r = scoreShot({
       type: 'forehand',
       contactAngles: goodAngles(),
-      peakWristSpeed: 0.9,
+      peakWristSpeed: 1.6, // between SPEED_WARN (1.45) and SPEED_GOOD (2.0)
       dominantHand: 'right',
     });
     const issue = r.issues.find((i) => i.key === 'swing-faster');
@@ -87,14 +87,14 @@ describe('scoreShot — peak wrist speed (v1.0.4 stale-tuning fix)', () => {
 
   it('RULES table + issue target strings advertise the retuned target', () => {
     const rule = RULES.find((r) => r.key === 'swing-faster')!;
-    expect(rule.target).toBe('≥1.1 units/s');
+    expect(rule.target).toBe('≥2.0 body-lengths/s');
     const r = scoreShot({
       type: 'forehand',
       contactAngles: goodAngles(),
       peakWristSpeed: 0.5,
       dominantHand: 'right',
     });
-    expect(r.issues.find((i) => i.key === 'swing-faster')!.target).toBe('≥1.1 units/s');
+    expect(r.issues.find((i) => i.key === 'swing-faster')!.target).toBe('≥2.0 body-lengths/s');
   });
 });
 
@@ -103,7 +103,7 @@ describe('scoreShot — shoulder rule 4 still guards the 60–110 window', () =>
     const r = scoreShot({
       type: 'forehand',
       contactAngles: goodAngles({ rightShoulderDeg: 40 }),
-      peakWristSpeed: 1.3,
+      peakWristSpeed: 2.3, // ≥ SPEED_GOOD so only the shoulder rule fires
       dominantHand: 'right',
     });
     const issue = r.issues.find((i) => i.key === 'shoulder-angle');

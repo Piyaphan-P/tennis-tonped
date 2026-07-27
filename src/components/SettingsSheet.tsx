@@ -160,6 +160,36 @@ export default function SettingsSheet() {
           </span>
         </label>
 
+        {/* --- capture sensitivity (v2.2: × multiplier on the detector gates) --- */}
+        <label className="col" style={{ gap: 4, marginBottom: 10 }}>
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <span>{t('settings.captureSensitivity')}</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0.3}
+              max={2}
+              step={0.05}
+              style={{ width: 92, textAlign: 'right' }}
+              value={settings.captureSensitivity}
+              onChange={(e) => {
+                // Loose while typing; clampCaptureSensitivity (store setter) lands
+                // the hard 0.3–2.0 clamp so a stray value can't break detection.
+                const n = Number(e.target.value);
+                if (Number.isFinite(n) && n > 0) updateSettings({ captureSensitivity: n });
+              }}
+              onBlur={() =>
+                updateSettings({
+                  captureSensitivity: Math.min(2, Math.max(0.3, settings.captureSensitivity)),
+                })
+              }
+            />
+          </div>
+          <span className="dim" style={{ fontSize: '0.8rem' }}>
+            {t('settings.captureSensitivityHint')}
+          </span>
+        </label>
+
         {/* --- camera --- */}
         <label className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
           <span>{t('settings.camera')}</span>

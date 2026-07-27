@@ -24,7 +24,7 @@
 
 import { create } from 'zustand';
 import { HISTORY_TTL_MS } from './types';
-import { clampHeightCm, clampSpeedFactor } from './analysis/swingSpeed';
+import { clampHeightCm, clampSpeedFactor, clampCaptureSensitivity } from './analysis/swingSpeed';
 import { clampWeightKg } from './analysis/calories';
 import { deriveSessionStats } from './history/sessionStats';
 import { filterHistoryByPlayer } from './history/playerStats';
@@ -79,6 +79,7 @@ const LS_VOICE_TONE = 'tp.voiceTone';
 const LS_COACH_MODE = 'tp.coachMode';
 const LS_VERBOSITY = 'tp.verbosity';
 const LS_SPEED_FACTOR = 'tp.speedFactor'; // km/h calibration multiplier (PO-tunable on court)
+const LS_CAPTURE_SENS = 'tp.captureSensitivity'; // detector gate multiplier (v2.2, PO-tunable)
 const LS_LINE_PROFILE = 'tp.lineProfile'; // current player's LINE identity (v2.1, JSON)
 const LS_HISTORY = 'tp.history';
 
@@ -372,6 +373,9 @@ const DEFAULT_SETTINGS: Settings = {
   // Tunable on court to correct the anisotropic under/over-read without redeploy.
   speedCorrectionFactor: clampSpeedFactor(
     lsGet(LS_SPEED_FACTOR) != null ? Number(lsGet(LS_SPEED_FACTOR)) : undefined,
+  ),
+  captureSensitivity: clampCaptureSensitivity(
+    lsGet(LS_CAPTURE_SENS) != null ? Number(lsGet(LS_CAPTURE_SENS)) : undefined,
   ),
   lineProfile: readLineProfile(),
 };
@@ -749,6 +753,11 @@ export const useAppStore = create<AppState>()((set) => ({
     if (patch.speedCorrectionFactor != null) {
       patch = { ...patch, speedCorrectionFactor: clampSpeedFactor(patch.speedCorrectionFactor) };
       lsSet(LS_SPEED_FACTOR, String(patch.speedCorrectionFactor));
+    }
+    // Persist the (PO-tuned) capture-sensitivity knob (v2.2), clamped 0.3–2.0.
+    if (patch.captureSensitivity != null) {
+      patch = { ...patch, captureSensitivity: clampCaptureSensitivity(patch.captureSensitivity) };
+      lsSet(LS_CAPTURE_SENS, String(patch.captureSensitivity));
     }
     set((s) => ({ settings: { ...s.settings, ...patch } }));
   },

@@ -551,6 +551,11 @@ const DICT = {
     th: '1.0 = ค่าเริ่มต้น ปรับที่สนามโดยเทียบกับความเร็วอ้างอิงที่รู้จริง',
     en: '1.0 = default. Tune on court by comparing to a known reference speed.',
   },
+  'settings.captureSensitivity': { th: 'ความไวจับช็อต (คูณ)', en: 'Capture sensitivity ×' },
+  'settings.captureSensitivityHint': {
+    th: '1.0 = ปกติ · ลดลง (เช่น 0.7) = จับช็อตง่ายขึ้น (ถ้ามือถือยังจับไม่ค่อยได้) · เพิ่มขึ้น = จับยากขึ้น กันจับพลาด',
+    en: '1.0 = normal · lower (e.g. 0.7) = captures shots more easily (if a phone still misses) · higher = stricter.',
+  },
   'speed.label': { th: 'สปีด', en: 'speed' },
   'settings.dominantHand': { th: 'มือถนัด', en: 'Dominant hand' },
   'settings.handLeft': { th: 'ซ้าย', en: 'Left' },

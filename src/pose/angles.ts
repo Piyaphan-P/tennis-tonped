@@ -8,9 +8,28 @@
 
 import { LM } from '../types';
 import type { DominantHand, JointAngles, Landmark, PoseFrame } from '../types';
+import { normalizedBodyLength } from '../analysis/swingSpeed';
 
 /** EMA smoothing factor for dominant-wrist speed/velocity. */
 export const EMA_ALPHA = 0.4;
+
+/**
+ * SLOW EMA for the body-scale denominator (v2.2). The player's on-screen size
+ * changes slowly, but the raw nose→ankle length carries MediaPipe jitter
+ * (~0.01–0.02) that, when used as a divisor, would inject 4–8% noise into every
+ * speed sample AND the forwardBypass sign logic. Heavy smoothing (0.1) is
+ * legitimate — size is quasi-constant within a session — and de-noises the
+ * denominator so scale-invariant speed stays stable.
+ */
+export const BODY_SCALE_EMA_ALPHA = 0.1;
+
+/**
+ * Fallback body length used ONLY before the first usable nose→ankle measurement
+ * (or if it never appears). ~0.55 ≈ a full-body figure's nose→ankle span in a
+ * typical framing, so early frames read a sane scale-invariant speed instead of
+ * exploding. Once a real measurement lands, the smoothed value takes over.
+ */
+const DEFAULT_BODY_LENGTH = 0.55;
 
 /**
  * EMA smoothing factor for the LIVE shoulder-angle STATUS coloring only
@@ -194,6 +213,27 @@ export function computeJointAngles(
   const wristIdx = dominantHand === 'left' ? LM.LEFT_WRIST : LM.RIGHT_WRIST;
   const wrist = lm[wristIdx];
 
+  // --- scale-invariant body reference (v2.2) --------------------------------
+  // Divide wrist displacement by the player's on-screen body length so speed is
+  // in BODY-LENGTHS/s, independent of how big they appear (phone-far vs
+  // MacBook-close). Heavily smooth the denominator (BODY_SCALE_EMA_ALPHA) and
+  // HOLD the last-good value through frames where nose/ankles drop out — never
+  // divide by a missing/near-zero scale, and never silently fall back to the
+  // raw (scale-broken) metric. km/h uses the SAME nose→ankle segment so the two
+  // stay dimensionally consistent (see swingSpeed.estimateSpeedKmh).
+  const prevScale = prev?.angles.bodyScale;
+  const rawScale = normalizedBodyLength(frame.landmarks);
+  let bodyScale: number | undefined;
+  if (rawScale !== undefined) {
+    bodyScale =
+      prevScale !== undefined
+        ? BODY_SCALE_EMA_ALPHA * rawScale + (1 - BODY_SCALE_EMA_ALPHA) * prevScale
+        : rawScale;
+  } else {
+    bodyScale = prevScale; // hold last-good (undefined only until first measure)
+  }
+  const scaleDivisor = bodyScale ?? DEFAULT_BODY_LENGTH;
+
   let wristSpeed = 0;
   let wristVelX = 0;
 
@@ -206,8 +246,8 @@ export function computeJointAngles(
     if (dt > 1e-4 && prevWrist && wrist) {
       const dx = wrist.x - prevWrist.x;
       const dy = wrist.y - prevWrist.y;
-      const instSpeed = Math.hypot(dx, dy) / dt;
-      const instVelX = dx / dt;
+      const instSpeed = Math.hypot(dx, dy) / scaleDivisor / dt;
+      const instVelX = dx / scaleDivisor / dt;
       wristSpeed = EMA_ALPHA * instSpeed + (1 - EMA_ALPHA) * prevSpeed;
       wristVelX = EMA_ALPHA * instVelX + (1 - EMA_ALPHA) * prevVelX;
     } else {
@@ -218,6 +258,7 @@ export function computeJointAngles(
   }
 
   return {
+    bodyScale,
     timestampMs: frame.timestampMs,
     leftElbowDeg,
     rightElbowDeg,
