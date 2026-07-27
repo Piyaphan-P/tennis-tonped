@@ -41,6 +41,10 @@
 
 ## สิ่งที่ต้องทำต่อ / รอเทสสนาม
 
+- **[รอ user รัน] ลบ leaderboard record เสีย** (2026-07-27): เจอ `"Player One"` (avg=75/max=0/1ช็อต — max<avg เป็นไปไม่ได้, เป็น record ยุคก่อน v1.5.2 recompute) id `736508c7-2933-4df5-a40f-fc4929b69c72` ค้างอันดับ 1 บน ranking. Claude ลบเองไม่ได้ (harness บล็อก DELETE ไป Firestore). คำสั่งให้ user รันเอง (`!` prefix): `TOKEN=$(gcloud auth print-access-token); curl -s -o /dev/null -w "%{http_code}\n" -X DELETE -H "Authorization: Bearer $TOKEN" "https://firestore.googleapis.com/v1/projects/adge-tennis-nonprd/databases/nonprd/documents/leaderboard_records/736508c7-2933-4df5-a40f-fc4929b69c72"` → คาดได้ 200. Ranking sort algorithm เองถูกต้อง (ยืนยันด้วย live API).
+- **[BACKLOG] normalize wrist speed ให้เป็น scale-invariant** (2026-07-27, user จัดเป็น backlog): มือถือจับช็อตได้น้อยกว่า MacBook เพราะ detector วัดความเร็วเป็น "สัดส่วนของเฟรม" (`angles.ts:207` `hypot(dx,dy)/dt`, พิกัด 0–1) → ผู้เล่นยืนไกล/ตัวเล็กในเฟรม = ความเร็วต่ำ = มักไม่ถึง `contactMinPeakSpeed=1.1`. แก้ราก = หารด้วยความยาวลำตัว/ช่วงไหล่-สะโพก (เหมือน `swingSpeed.ts` km/h) ให้ระยะกล้องหมดผล → ต้อง retune threshold + เทสสนาม. ทางลัดชั่วคราว: จัดเฟรมให้ผู้เล่นเต็มเฟรมขึ้น หรือลด threshold.
+- **[BACKLOG-minor] เพิ่ม pose-quality/visibility gate ใน scoring**: ตอนนี้ได้ 100 ฟรีได้ถ้า MediaPipe จับไม่ชัดแล้วมุมบังเอิญตกในกรอบทุกข้อ (เฟรมฟลุค) — ไม่มี gate เช็คว่า pose valid จริง.
+
 0. **เทสสนาม v2.0** (deployed `sit-v16` แล้ว): short สั้นพอ/ยังได้ยินชื่อช็อตไหม · long ยาวไปไหม (ยาวขึ้น = pacing queue drop ช็อตมากขึ้น) · ยืนยัน player ไม่เห็น section ราคาแล้ว (admin ยังเห็น)
 1. **เทสสนาม v1.4:** ชิปมุมไหล่กะพริบจาก z noise ไหม · ตัวเลข km/h ต่ำกว่าจริงไหม (ถ้าใช่ → ตัดสินใจ correction factor = PO decision)
 2. **Deploy รอบหน้า** ใช้ image tag `sit-v8` ขึ้นไป (v1.4 code ยังไม่ได้ deploy — service รัน `sit-v7`) — ตรวจว่า v1.4 อยู่ใน sit-v7 หรือยังก่อน build ซ้ำ
