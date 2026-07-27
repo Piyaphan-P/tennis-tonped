@@ -133,6 +133,15 @@ describe('estimateSpeedKmh', () => {
     expect(estimateSpeedKmh(lms, 1.1, 170)).toBeUndefined();
   });
 
+  it('bodyScaleHint keeps km/h alive when the contact frame is momentarily cropped (finding #5)', () => {
+    const cropped = standingFrame(0.1, 0.9, 0.1); // low visibility → landmark guard fails
+    expect(estimateSpeedKmh(cropped, 2.0, 170)).toBeUndefined();
+    // but with a held/smoothed bodyScale from an earlier frame, we still report:
+    const v = estimateSpeedKmh(cropped, 2.0, 170, 1.0, 0.8) as number;
+    expect(Number.isFinite(v)).toBe(true);
+    expect(v).toBeGreaterThan(0);
+  });
+
   it('returns undefined for non-positive or non-finite speed', () => {
     const lms = standingFrame(0.1, 0.9);
     expect(estimateSpeedKmh(lms, 0, 170)).toBeUndefined();

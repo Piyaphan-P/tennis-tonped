@@ -756,6 +756,10 @@ export class ShotDetector {
         contactAngles: this.contactAngles as JointAngles,
         peakWristSpeed: this.peakWristSpeed,
         dominantHand: settings.dominantHand,
+        // v2.2: anchor the speed penalty to THIS detector's effective contact
+        // gate (already ×captureSensitivity) so the knob never fabricates a
+        // false "swing-faster" penalty (code-review finding #1).
+        speedGate: this.th.contactMinPeakSpeed,
       });
 
       // FALLBACK: the normal path snapshots the 'contact' keyframe the instant
@@ -822,6 +826,10 @@ export class ShotDetector {
         this.peakWristSpeed,
         settings.playerHeightCm,
         settings.speedCorrectionFactor,
+        // v2.2: use the HELD/smoothed body scale (from the peak-frame angles) for
+        // the visibility guard so a momentary crop AT contact doesn't drop km/h
+        // when the speed was computed fine one frame earlier (finding #5).
+        this.contactAngles?.bodyScale,
       );
 
       const shot: Shot = {

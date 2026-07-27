@@ -137,11 +137,19 @@ export function estimateSpeedKmh(
   peakWristSpeed: number,
   heightCm: number | undefined | null,
   correctionFactor: number | undefined | null = DEFAULT_SPEED_FACTOR,
+  bodyScaleHint?: number | undefined | null,
 ): number | undefined {
   if (!Number.isFinite(peakWristSpeed) || peakWristSpeed <= 0) return undefined;
   // Visibility GUARD only (v2.2) — we no longer use bodyLen for scale (peak is
-  // already body-normalized); if the body is cropped/unusable, show nothing.
-  if (normalizedBodyLength(landmarks) === undefined) return undefined;
+  // already body-normalized); if the body is unusable, show nothing. Prefer the
+  // HELD/smoothed bodyScale (from angles) when provided so a momentary crop at
+  // the contact frame doesn't drop a km/h whose speed was already computed;
+  // fall back to recomputing from the contact landmarks (back-compat).
+  const scaleUsable =
+    typeof bodyScaleHint === 'number' && Number.isFinite(bodyScaleHint) && bodyScaleHint > 0
+      ? true
+      : normalizedBodyLength(landmarks) !== undefined;
+  if (!scaleUsable) return undefined;
 
   const heightM = clampHeightCm(heightCm) / 100;
   const bodyMeters = heightM * NOSE_ANKLE_FRACTION; // real nose→ankle length (m)

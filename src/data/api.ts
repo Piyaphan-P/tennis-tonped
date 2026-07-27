@@ -145,18 +145,23 @@ export interface SessionUsage {
   detail?: object;
 }
 
-/** PATCH /api/sessions/:id — end + summary (+ optional usage). Returns true on success. */
+/** PATCH /api/sessions/:id — end/flush + summary (+ optional usage). Returns
+ *  true on success. `endedAtIso = null` marks an IN-PROGRESS flush (auto-save):
+ *  the server stores endedAt=null so the session isn't treated as finished
+ *  while play continues. `keepalive` lets a page-hide flush survive unload. */
 export async function endSessionCloud(
   id: string,
-  endedAtIso: string,
+  endedAtIso: string | null,
   avgScore: number,
   shotCount: number,
   summary: SessionSummaryJson,
   usage?: SessionUsage,
+  opts?: { keepalive?: boolean },
 ): Promise<boolean> {
   const res = await safeFetch(`/api/sessions/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
+    keepalive: opts?.keepalive === true,
     body: JSON.stringify({
       endedAt: endedAtIso,
       avgScore,

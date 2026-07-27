@@ -127,6 +127,15 @@ export interface ScoreShotInput {
   contactAngles: JointAngles;
   peakWristSpeed: number;
   dominantHand: DominantHand;
+  /**
+   * The detector's EFFECTIVE contact gate for this shot (v2.2) —
+   * SHOT_THRESHOLDS.contactMinPeakSpeed × settings.captureSensitivity. The speed
+   * penalty anchors to THIS, not the base SPEED_GOOD, so that when the knob
+   * lowers the gate (captures weaker swings) a completed shot's peak is STILL
+   * ≥ the gate by construction and no false "swing-faster" penalty fires (the
+   * v1.4 bug stays fixed at every sensitivity). Defaults to SPEED_GOOD.
+   */
+  speedGate?: number;
 }
 
 export interface ScoreShotResult {
@@ -141,6 +150,11 @@ export interface ScoreShotResult {
  */
 export function scoreShot(input: ScoreShotInput): ScoreShotResult {
   const { contactAngles, peakWristSpeed, dominantHand } = input;
+  // Effective speed thresholds: scale with the detector's actual gate so the
+  // knob can't produce a peak below the "good" bar (see speedGate above). The
+  // warn:good RATIO is preserved from the base constants.
+  const speedGood = input.speedGate ?? SPEED_GOOD;
+  const speedWarn = speedGood * (SPEED_WARN / SPEED_GOOD);
 
   const elbowDeg =
     dominantHand === 'right' ? contactAngles.rightElbowDeg : contactAngles.leftElbowDeg;
@@ -248,8 +262,9 @@ export function scoreShot(input: ScoreShotInput): ScoreShotResult {
   }
 
   // --- 5. Peak wrist speed (weight 15) ------------------------------------
-  // Thresholds anchored to the detector's contact gate (see SPEED_GOOD above).
-  if (peakWristSpeed < SPEED_WARN) {
+  // Thresholds anchored to the detector's EFFECTIVE contact gate (speedGood),
+  // so a knob-lowered gate can't trigger a false penalty (see speedGate above).
+  if (peakWristSpeed < speedWarn) {
     totalPenalty += penaltyPoints(WEIGHT['swing-faster'], 1);
     issues.push({
       key: 'swing-faster',
@@ -259,7 +274,7 @@ export function scoreShot(input: ScoreShotInput): ScoreShotResult {
       messageTH: 'สวิงช้าไปหน่อย เร่งความเร็วช่วงเข้าหาลูกให้มากขึ้น',
       messageEN: 'Swing was slow — accelerate more through the ball.',
     });
-  } else if (peakWristSpeed < SPEED_GOOD) {
+  } else if (peakWristSpeed < speedGood) {
     totalPenalty += penaltyPoints(WEIGHT['swing-faster'], 0.5);
     issues.push({
       key: 'swing-faster',

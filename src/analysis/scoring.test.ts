@@ -85,6 +85,29 @@ describe('scoreShot — peak wrist speed (v1.0.4 stale-tuning fix)', () => {
     expect(r.score).toBe(85); // 100 - 15
   });
 
+  it('speedGate scales the penalty with captureSensitivity — a knob-lowered gate does NOT penalize (finding #1)', () => {
+    // captureSensitivity 0.5 → effective contact gate 1.0. A shot that just
+    // clears it (peak 1.05) must be CLEAN — no false "swing-faster".
+    const lowered = scoreShot({
+      type: 'forehand',
+      contactAngles: goodAngles(),
+      peakWristSpeed: 1.05,
+      dominantHand: 'right',
+      speedGate: 1.0,
+    });
+    expect(has(lowered, 'swing-faster')).toBe(false);
+    expect(lowered.score).toBe(100);
+    // Same peak WITHOUT the gate override (default 2.0) IS below good → penalized,
+    // proving the override is what protects the knob.
+    const base = scoreShot({
+      type: 'forehand',
+      contactAngles: goodAngles(),
+      peakWristSpeed: 1.05,
+      dominantHand: 'right',
+    });
+    expect(has(base, 'swing-faster')).toBe(true);
+  });
+
   it('RULES table + issue target strings advertise the retuned target', () => {
     const rule = RULES.find((r) => r.key === 'swing-faster')!;
     expect(rule.target).toBe('≥2.0 body-lengths/s');

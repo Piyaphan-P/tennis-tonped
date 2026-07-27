@@ -170,7 +170,7 @@ export function syncCoachText(localShotId: string, text: string): void {
  * a subsequent endSession() can't race the async PATCH. No-op without a cloud
  * session id.
  */
-export function syncSessionEnded(): void {
+export function syncSessionEnded(ended = true): void {
   const s = useAppStore.getState();
   const sessionId = s.cloudSessionId;
   if (!sessionId) return;
@@ -207,9 +207,15 @@ export function syncSessionEnded(): void {
       usageEvents: s.cost.usageEvents,
     },
   };
-  const endedAtIso = new Date().toISOString();
+  // Provisional (auto-save) flush: endedAt=null so the session isn't marked
+  // finished mid-play (code-review finding #3), and SKIP the (potentially large)
+  // usage detail so the keepalive page-hide PATCH stays under the ~64KB cap
+  // (finding #2). The final End (ended=true) writes the real endedAt + usage.
+  const endedAtIso = ended ? new Date().toISOString() : null;
   void api
-    .endSessionCloud(sessionId, endedAtIso, avgScore, shotCount, summary, usage)
+    .endSessionCloud(sessionId, endedAtIso, avgScore, shotCount, summary, ended ? usage : undefined, {
+      keepalive: !ended,
+    })
     .catch(() => false);
 }
 
@@ -233,7 +239,7 @@ function autoSaveFlush(): void {
   if (s.session.status !== 'live' && s.session.status !== 'starting') return;
   if (s.shots.length === 0) return;
   useAppStore.getState().snapshotSessionToHistory(); // local Home/History
-  syncSessionEnded(); // cloud History + durable ranking (idempotent)
+  syncSessionEnded(false); // cloud flush, endedAt=null (in-progress), keepalive
 }
 
 /** Start periodic + page-hide auto-save. Call on Live mount; idempotent. */
