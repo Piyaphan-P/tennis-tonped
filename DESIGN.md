@@ -234,3 +234,12 @@ A **1080×1920 portrait card** rendered for sharing to IG/TikTok/Facebook storie
 - **All numbers** in a mono tabular font — scoreboard feel.
 - **Mobile portrait**, max content width ~520px, big touch targets (≥48px), translucent blurred overlays on the camera screen, bottom tab nav, bottom sheets.
 - **Bilingual**, Thai primary — keep a small ไทย/อังกฤษ toggle.
+
+---
+
+## Recent UI additions (v2.2–v2.3, 2026-07-28)
+
+- **Live screen — controls pinned to the TOP:** the "End session" (จบ session, danger/red) and the "flip camera" 🔄 (สลับกล้อง) buttons now sit as a top control row (flip left, End right), NOT at the bottom — on a phone the growing swing-capture gallery used to cover bottom controls. Keep them reachable above the banner.
+- **Settings — "ความไวจับช็อต / Capture sensitivity ×":** a numeric field (0.3–2.0, default 1.0) next to the km/h calibration field; hint "ลดลง = จับช็อตง่ายขึ้น". Tunes how easily the coach captures a swing.
+- **History detail — "โค้ชแนะนำ / Coach said" cue block:** per shot, above the derived improvement bullets, a highlighted card (left accent-yellow border, faint yellow tint, small uppercase label) showing the coach's ACTUAL spoken cue text for that shot — so the advice persists past the session. Only shown when a cue was captured.
+- **Auto-save (no visible UI):** sessions now appear in History/ranking even without tapping End — behavioural, no new screen.
