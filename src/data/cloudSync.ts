@@ -150,6 +150,21 @@ export function syncCoachAudio(localShotId: string, wav: Blob): void {
 }
 
 /**
+ * The coach finished a (clean) critique for a shot: persist its TEXT (v2.3) to
+ * the cloud shot so it shows in History past the same session. Fire-and-forget;
+ * mirrors syncCoachAudio. Empty text is skipped.
+ */
+export function syncCoachText(localShotId: string, text: string): void {
+  const trimmed = (text || '').trim();
+  if (!trimmed) return;
+  void (async () => {
+    const cloudId = await resolveCloudShotId(localShotId);
+    if (!cloudId) return;
+    await api.uploadShotCoachText(cloudId, trimmed);
+  })().catch(() => {});
+}
+
+/**
  * Session ended: PATCH the cloud session with the summary, computed from the
  * SAME fields as buildStoredSession. State is snapshotted SYNCHRONOUSLY here so
  * a subsequent endSession() can't race the async PATCH. No-op without a cloud
@@ -196,4 +211,56 @@ export function syncSessionEnded(): void {
   void api
     .endSessionCloud(sessionId, endedAtIso, avgScore, shotCount, summary, usage)
     .catch(() => false);
+}
+
+// ---------------------------------------------------------------------------
+// AUTO-SAVE (v2.3) — so a session shows up in History/ranking even if the
+// player never taps "End session". Two triggers, both idempotent:
+//   • a periodic tick (every AUTO_SAVE_MS) while Live is mounted, and
+//   • a page-hide flush (visibilitychange→hidden / pagehide) for backgrounding.
+// Each fires the SAME idempotent syncSessionEnded() cloud PATCH (session_id
+// keyed → leaderboard upsert is a set()) PLUS a local-history upsert (dedup by
+// the stable live id). No new shot data is touched; End still does the full end.
+// ---------------------------------------------------------------------------
+
+const AUTO_SAVE_MS = 20_000;
+let autoSaveTimer: ReturnType<typeof setInterval> | null = null;
+let hideHandler: (() => void) | null = null;
+
+/** One idempotent auto-save pass: only when a session with ≥1 shot is live. */
+function autoSaveFlush(): void {
+  const s = useAppStore.getState();
+  if (s.session.status !== 'live' && s.session.status !== 'starting') return;
+  if (s.shots.length === 0) return;
+  useAppStore.getState().snapshotSessionToHistory(); // local Home/History
+  syncSessionEnded(); // cloud History + durable ranking (idempotent)
+}
+
+/** Start periodic + page-hide auto-save. Call on Live mount; idempotent. */
+export function startSessionAutoSave(): void {
+  stopSessionAutoSave();
+  autoSaveTimer = setInterval(autoSaveFlush, AUTO_SAVE_MS);
+  hideHandler = () => {
+    // Fire on the LAST chance before the tab is frozen/closed.
+    if (typeof document === 'undefined' || document.visibilityState === 'hidden') {
+      autoSaveFlush();
+    }
+  };
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', hideHandler);
+    window.addEventListener('pagehide', hideHandler);
+  }
+}
+
+/** Stop auto-save + do one final flush. Call on Live unmount / session end. */
+export function stopSessionAutoSave(): void {
+  if (autoSaveTimer) {
+    clearInterval(autoSaveTimer);
+    autoSaveTimer = null;
+  }
+  if (hideHandler && typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', hideHandler);
+    window.removeEventListener('pagehide', hideHandler);
+  }
+  hideHandler = null;
 }

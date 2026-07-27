@@ -306,6 +306,12 @@ export const pgBackend = {
     ]);
   },
 
+  async setShotCoachText(_sessionId, shotId, text) {
+    // v2.3 (pg parity — Firestore-only in practice). Column added lazily.
+    await query(`ALTER TABLE shots ADD COLUMN IF NOT EXISTS coach_text text`).catch(() => {});
+    await query(`UPDATE shots SET coach_text = $2 WHERE id = $1`, [shotId, text]);
+  },
+
   async getShotClipRef(shotId) {
     const { rows, rowCount } = await query(
       `SELECT clip_path, clip_mime FROM shots WHERE id = $1`,

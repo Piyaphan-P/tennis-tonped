@@ -30,6 +30,7 @@ import { translate } from '../i18n';
 import type { CoachMode, DominantHand, FocusShot, JointAngles, Lang, Shot, ShotPhase, ShotType, SwingCapture, Verbosity, VoiceTone } from '../types';
 import { audioPlayer } from './audioPlayer';
 import { coachAudioTap } from './coachAudioTap';
+import { syncCoachText } from '../data/cloudSync';
 
 const DEFAULT_MODEL = 'gemini-2.5-flash-native-audio-preview-09-2025';
 
@@ -1588,6 +1589,10 @@ export class CoachLiveClient {
       // critique below.
       if (!this.turnInterrupted) {
         coachAudioTap.finalizeForShot(shotId);
+        // v2.3: persist the spoken cue TEXT to the cloud shot (fire-and-forget)
+        // so it shows in History past the same session — same clean-turn rule as
+        // the audio above (interrupted/mixed turns are dropped).
+        syncCoachText(shotId, text);
         // The critique was actually spoken to completion — its style now counts
         // toward the no-repeat window.
         this.commitPendingStyle();

@@ -217,6 +217,7 @@ export const firestoreBackend = {
         clipMime: null,
         audioPath: null,
         audioMime: null,
+        coachText: null, // v2.3: set later when the coach's turn completes
         createdAt: Timestamp.fromMillis(now),
         expireAt: expireFrom(now),
       });
@@ -268,6 +269,17 @@ export const firestoreBackend = {
       .collection('shots')
       .doc(shotId)
       .update({ audioPath: path, audioMime: mime });
+  },
+
+  /** v2.3: store the coach's spoken cue text on the shot (direct doc path — the
+   *  route already resolved sessionId via getShotAccess, no 2nd scan). */
+  async setShotCoachText(sessionId, shotId, text) {
+    await db()
+      .collection('sessions')
+      .doc(sessionId)
+      .collection('shots')
+      .doc(shotId)
+      .update({ coachText: text });
   },
 
   async getShotClipRef(shotId) {

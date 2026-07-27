@@ -80,6 +80,7 @@ export function shotRowToJson(row) {
     hasClip: row.clip_path != null,
     clipMime: row.clip_mime ?? null,
     hasAudio: row.audio_path != null,
+    coachText: row.coach_text ?? null, // pg parity (Firestore-only in practice)
     createdAt: isoOrNull(row.created_at),
   };
 }
@@ -195,6 +196,7 @@ export function shotDocToJson(id, data) {
     hasClip: d.clipPath != null,
     clipMime: d.clipMime ?? null,
     hasAudio: d.audioPath != null,
+    coachText: d.coachText ?? null, // v2.3: coach's spoken cue text
     createdAt: isoOrNull(d.createdAt),
   };
 }

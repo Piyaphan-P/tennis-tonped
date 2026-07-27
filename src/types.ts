@@ -469,6 +469,9 @@ export interface CloudShot {
   clipMime: string | null;
   /** True when the coach's spoken critique WAV is stored for this shot. */
   hasAudio: boolean;
+  /** The coach's spoken cue/critique text for this shot (v2.3), or null. Shown
+   *  in History so the advice survives past the same session. */
+  coachText?: string | null;
   createdAt: string;
 }
 

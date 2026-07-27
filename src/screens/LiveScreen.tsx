@@ -258,7 +258,15 @@ export default function LiveScreen() {
     };
   }, [cameraFacing, retryKey]);
 
+  // v2.3 auto-save: periodic + page-hide flush so an abandoned session still
+  // lands in History/ranking. Runs for the whole Live lifetime.
+  useEffect(() => {
+    cloudSync.startSessionAutoSave();
+    return () => cloudSync.stopSessionAutoSave();
+  }, []);
+
   const end = () => {
+    cloudSync.stopSessionAutoSave();
     coachLive.disconnect();
     // Snapshot + PATCH the cloud session summary BEFORE endSession() mutates state.
     cloudSync.syncSessionEnded();

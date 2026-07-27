@@ -320,6 +320,22 @@ export function mountCloudRoutes(app) {
     }
   });
 
+  // --- PATCH /api/shots/:shotId/coach — store the coach's cue text (v2.3) --
+  app.patch('/api/shots/:shotId/coach', json, async (req, res) => {
+    if (!requireDb(res)) return;
+    try {
+      const access = await authorizeShotAccess(req, res, req.params.shotId);
+      if (!access) return;
+      const raw = typeof req.body?.text === 'string' ? req.body.text : '';
+      const text = raw.trim().slice(0, 2000); // bound it; empty is allowed (clear)
+      await backend.setShotCoachText(access.sessionId, req.params.shotId, text);
+      res.status(204).end();
+    } catch (err) {
+      console.error('[routes] set coach text:', err?.message || err);
+      res.status(503).json(unavailableBody('cloud'));
+    }
+  });
+
   // --- DELETE /api/sessions/:id — cascade delete rows (204) ---------------
   app.delete('/api/sessions/:id', async (req, res) => {
     if (!requireDb(res)) return;

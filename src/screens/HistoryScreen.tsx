@@ -385,6 +385,15 @@ function DetailView({ id, onBack }: { id: string; onBack: () => void }) {
                 <RadarChart data={radar} lang={lang} size={180} />
               </div>
 
+              {/* v2.3: the coach's actual spoken cue for this shot, persisted so
+                  it survives past the session (was previously same-session only). */}
+              {shot.coachText ? (
+                <div className="hist-coach-cue">
+                  <span className="hist-coach-cue-label">{t('history.coachCue')}</span>
+                  <p className="hist-coach-cue-text">{shot.coachText}</p>
+                </div>
+              ) : null}
+
               {lines.length > 0 && (
                 <ul className="hist-improve">
                   {lines.map((line, i) => (

@@ -511,8 +511,22 @@ function initialLang(): Lang {
   return lsGet(LS_LANG) === 'en' ? 'en' : 'th';
 }
 
-/** Build the StoredSession snapshot for the CURRENT session. Pure on state. */
-function buildStoredSession(s: AppState): StoredSession {
+/** Stable per-live-session history id so periodic auto-saves + the final
+ *  endSession all UPSERT the SAME history row instead of duplicating (v2.3). */
+function liveHistoryId(s: AppState): string {
+  return `live-${s.session.startedAtMs}`;
+}
+
+/** Upsert a StoredSession into history by id (replace same-id, else append),
+ *  then prune to the 3-day window. Pure. */
+function upsertHistory(history: History, entry: StoredSession, nowMs: number): History {
+  const without = history.filter((h) => h.id !== entry.id);
+  return pruneHistory([...without, entry], nowMs);
+}
+
+/** Build the StoredSession snapshot for the CURRENT session. Pure on state.
+ *  `id` defaults to a stable per-session id so repeated snapshots dedupe. */
+function buildStoredSession(s: AppState, id: string = liveHistoryId(s)): StoredSession {
   const shots = s.shots;
   const shotCount = shots.length;
   const avgScore =
@@ -534,7 +548,7 @@ function buildStoredSession(s: AppState): StoredSession {
     s.settings.dominantHand,
   );
   return {
-    id: crypto.randomUUID(),
+    id,
     tsMs: endedAtMs,
     userName: s.settings.userName,
     durationMs,
@@ -640,6 +654,9 @@ export interface AppState {
    * (pruned to 3 days). Navigation handled by caller.
    */
   endSession: () => void;
+  /** v2.3 auto-save: upsert the IN-PROGRESS session into local history without
+   *  ending it (dedup by a stable live id). Called periodically + on page-hide. */
+  snapshotSessionToHistory: () => void;
   /** error MUST be an i18n key, never a raw API/English string. */
   setSessionError: (error: string) => void;
   setConnection: (state: ConnectionState) => void;
@@ -847,12 +864,23 @@ export const useAppStore = create<AppState>()((set) => ({
     }),
   markSessionLive: () =>
     set((s) => ({ session: { ...s.session, status: 'live', error: null } })),
+  snapshotSessionToHistory: () =>
+    set((s) => {
+      // v2.3 auto-save: persist the in-progress session to LOCAL history WITHOUT
+      // ending it, so Home/History show it even if the player never taps End.
+      // UPSERTs by the stable live id so periodic calls never duplicate the row.
+      if (s.shots.length === 0 || s.session.startedAtMs <= 0) return {};
+      const history = upsertHistory(s.history, buildStoredSession(s), Date.now());
+      saveHistory(history);
+      return { history };
+    }),
   endSession: () =>
     set((s) => {
       let history = s.history;
-      // Persist only real sessions (>=1 shot) — no empty-history noise.
+      // Persist only real sessions (>=1 shot) — no empty-history noise. UPSERT by
+      // the stable live id so a prior auto-save snapshot is REPLACED, not dup+.
       if (s.shots.length > 0 && s.session.startedAtMs > 0) {
-        history = pruneHistory([...s.history, buildStoredSession(s)], Date.now());
+        history = upsertHistory(s.history, buildStoredSession(s), Date.now());
         saveHistory(history);
       }
       return {

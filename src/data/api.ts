@@ -240,6 +240,17 @@ export async function uploadShotAudio(
   return res !== null;
 }
 
+/** PATCH /api/shots/:id/coach — store the coach's spoken cue text (v2.3) so it
+ *  shows in History past the same session. Returns true on success. */
+export async function uploadShotCoachText(cloudShotId: string, text: string): Promise<boolean> {
+  const res = await safeFetch(`/api/shots/${encodeURIComponent(cloudShotId)}/coach`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  return res !== null;
+}
+
 /** Same-origin URL that streams a shot's coach-audio WAV through the server. */
 export function audioUrl(cloudShotId: string): string {
   return `/api/audio/${encodeURIComponent(cloudShotId)}`;

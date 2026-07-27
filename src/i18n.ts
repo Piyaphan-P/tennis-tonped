@@ -484,6 +484,7 @@ const DICT = {
   'history.loadFailed': { th: 'โหลดข้อมูลไม่สำเร็จ', en: 'Failed to load' },
   'history.retry': { th: 'ลองใหม่', en: 'Retry' },
   'history.radarTitle': { th: 'มุมข้อต่อเทียบเป้าหมาย', en: 'Joints vs target' },
+  'history.coachCue': { th: 'โค้ชแนะนำ', en: 'Coach said' },
   // --- history: export one swing as a 9:16 share video. {name} = player. ---
   'history.byPlayer': { th: 'ประวัติของ {name}', en: "{name}'s history" },
   'history.export.save': { th: 'บันทึกวิดีโอ', en: 'Save video' },
