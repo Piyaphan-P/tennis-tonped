@@ -29,10 +29,27 @@ import {
   parseCookies,
   evaluateGuard,
   clientIpFromForwarded,
+  apiKeyMatches,
 } from './authCore.mjs';
 
 // Paths that must stay reachable without the cookie.
 const OPEN_PATHS = new Set(['/api/login', '/api/logout', '/healthz']);
+
+// --- KIOSK auto-start (v2.4) -------------------------------------------------
+// When the coach app is embedded in a room-control iframe it authenticates via a
+// bearer HEADER `x-kiosk-token` (NOT a cookie — cross-site iframe cookies are
+// blocked on iOS). The frontend holds the key in memory and its own same-origin
+// /api/* fetches carry the header. Disabled unless env KIOSK_KEY is set, so
+// normal deploys are byte-unaffected. A match yields a synthetic identity — no
+// cookie, no provisioned user row, no store read.
+const KIOSK_KEY = (process.env.KIOSK_KEY || '').trim();
+
+/** True when the request presents a valid x-kiosk-token. Always false when
+ *  KIOSK_KEY is unset (kiosk fully inert). Constant-time via apiKeyMatches. */
+function kioskTokenOk(req) {
+  if (!KIOSK_KEY) return false;
+  return apiKeyMatches(req.get('x-kiosk-token'), KIOSK_KEY);
+}
 
 // --- Per-user store cache (UAM revocation) ----------------------------------
 // The cookie is stateless + 90-day, so a disabled/deleted/demoted user would
@@ -241,6 +258,16 @@ export function mountAuthGate(app) {
   app.use('/api', async (req, res, next) => {
     if (OPEN_PATHS.has(`/api${req.path}`) || OPEN_PATHS.has(req.path)) return next();
     if (req.path === '/login' || req.path === '/logout' || req.path === '/gate') return next();
+    // KIOSK: a valid x-kiosk-token authorizes /api/token + all cloud routes as a
+    // synthetic player identity — no cookie, no store read. Checked BEFORE the
+    // cookie path; leaves the normal login flow untouched below.
+    // NOTE: the relay-WS transport (/api/live) is cookie-only and does NOT honor
+    // this header — a kiosk on the relay transport would need a query-param token
+    // on the upgrade URL (not implemented; SIT default is the /api/token fetch).
+    if (kioskTokenOk(req)) {
+      req.user = { roomUser: 'kiosk', role: 'player', displayName: 'Kiosk' };
+      return next();
+    }
     const id = identityFromRequest(req);
     if (!id) return res.status(401).json(UNAUTHORIZED);
     try {
