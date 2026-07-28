@@ -869,7 +869,10 @@ export const useAppStore = create<AppState>()((set) => ({
       // v2.3 auto-save: persist the in-progress session to LOCAL history WITHOUT
       // ending it, so Home/History show it even if the player never taps End.
       // UPSERTs by the stable live id so periodic calls never duplicate the row.
-      if (s.shots.length === 0 || s.session.startedAtMs <= 0) return {};
+      // v2.6 (user request): save EVERY started session — even with 0 shots
+      // (buildStoredSession yields score 0 + all-0 stats). Only skip a session
+      // that never actually started (startedAtMs<=0).
+      if (s.session.startedAtMs <= 0) return {};
       const history = upsertHistory(s.history, buildStoredSession(s), Date.now());
       saveHistory(history);
       return { history };
@@ -877,9 +880,10 @@ export const useAppStore = create<AppState>()((set) => ({
   endSession: () =>
     set((s) => {
       let history = s.history;
-      // Persist only real sessions (>=1 shot) — no empty-history noise. UPSERT by
-      // the stable live id so a prior auto-save snapshot is REPLACED, not dup+.
-      if (s.shots.length > 0 && s.session.startedAtMs > 0) {
+      // v2.6 (user request): persist EVERY started session — even with 0 shots
+      // (score 0 + all-0 stats via buildStoredSession). UPSERT by the stable live
+      // id so a prior auto-save snapshot is REPLACED, not duplicated.
+      if (s.session.startedAtMs > 0) {
         history = upsertHistory(s.history, buildStoredSession(s), Date.now());
         saveHistory(history);
       }

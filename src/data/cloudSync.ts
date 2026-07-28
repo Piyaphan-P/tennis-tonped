@@ -173,8 +173,10 @@ export function syncCoachText(localShotId: string, text: string): void {
  */
 export function syncSessionEnded(ended = true): void {
   const s = useAppStore.getState();
-  const sessionId = s.cloudSessionId;
-  if (!sessionId) return;
+  // v2.6 (user request): save EVERY started session — even with 0 shots. If no
+  // shot ever created the cloud doc, create it lazily below (ensureSession).
+  // Only bail on a session that never actually started.
+  if (s.session.startedAtMs <= 0) return;
   const shots = s.shots;
   const shotCount = shots.length;
   const avgScore =
@@ -228,11 +230,23 @@ export function syncSessionEnded(ended = true): void {
   // usage detail so the keepalive page-hide PATCH stays under the ~64KB cap
   // (finding #2). The final End (ended=true) writes the real endedAt + usage.
   const endedAtIso = ended ? new Date().toISOString() : null;
-  void api
-    .endSessionCloud(sessionId, endedAtIso, avgScore, shotCount, summary, ended ? usage : undefined, {
-      keepalive: !ended,
-    })
-    .catch(() => false);
+  void (async () => {
+    // Create the cloud session lazily if no shot ever did (empty session still
+    // lands in cloud History). On a page-hide/keepalive flush the create POST
+    // may not finish before the tab freezes — that's fine, LOCAL history was
+    // already snapshotted synchronously by the caller.
+    const sessionId = s.cloudSessionId ?? (await ensureSession());
+    if (!sessionId) return;
+    await api.endSessionCloud(
+      sessionId,
+      endedAtIso,
+      avgScore,
+      shotCount,
+      summary,
+      ended ? usage : undefined,
+      { keepalive: !ended },
+    );
+  })().catch(() => false);
 }
 
 // ---------------------------------------------------------------------------
@@ -249,11 +263,12 @@ const AUTO_SAVE_MS = 20_000;
 let autoSaveTimer: ReturnType<typeof setInterval> | null = null;
 let hideHandler: (() => void) | null = null;
 
-/** One idempotent auto-save pass: only when a session with ≥1 shot is live. */
+/** One idempotent auto-save pass while a session is live. v2.6: runs for EMPTY
+ *  sessions too (0 shots → saved with score 0), per user request. */
 function autoSaveFlush(): void {
   const s = useAppStore.getState();
   if (s.session.status !== 'live' && s.session.status !== 'starting') return;
-  if (s.shots.length === 0) return;
+  if (s.session.startedAtMs <= 0) return;
   useAppStore.getState().snapshotSessionToHistory(); // local Home/History
   syncSessionEnded(false); // cloud flush, endedAt=null (in-progress), keepalive
 }
