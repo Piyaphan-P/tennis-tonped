@@ -241,10 +241,6 @@ export function mountAuthGate(app) {
   app.use('/api', async (req, res, next) => {
     if (OPEN_PATHS.has(`/api${req.path}`) || OPEN_PATHS.has(req.path)) return next();
     if (req.path === '/login' || req.path === '/logout' || req.path === '/gate') return next();
-    // External history API (v2.1): the ONLY sub-tree the cookie gate skips. It
-    // is authed by its own x-api-key middleware (extApi.mjs), never the cookie.
-    // req.path is mount-relative here, so /api/ext/* arrives as /ext/*.
-    if (req.path === '/ext' || req.path.startsWith('/ext/')) return next();
     const id = identityFromRequest(req);
     if (!id) return res.status(401).json(UNAUTHORIZED);
     try {

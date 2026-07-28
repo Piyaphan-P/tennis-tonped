@@ -14,7 +14,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GoogleGenAI } from '@google/genai';
 import { mountCloudRoutes } from './routes.mjs';
-import { mountExtApi } from './extApi.mjs';
 import { backend, initDb } from './store.mjs';
 import { mountLiveRelay } from './liveRelay.mjs';
 import { mountAuthGate } from './authGate.mjs';
@@ -76,9 +75,9 @@ app.get('/api/token', async (_req, res) => {
 initDb();
 mountCloudRoutes(app);
 
-// External history API (v2.1): /api/ext/* — authed by x-api-key (HISTORY_API_KEY),
-// NOT the cookie gate (which skips the /ext prefix). 503s when the key is unset.
-mountExtApi(app);
+// NOTE (2026-07-28): the external stat API (/api/ext/*) was EXTRACTED into its
+// own standalone service (server/statApiServer.mjs → Cloud Run adge-stat-api-sit)
+// and is no longer mounted here — the coach app no longer serves /api/ext.
 
 // v2.1 bootstrap admin room (idempotent recovery path): when ADMIN_USER +
 // ADMIN_PASS are both set AND the Firestore backend is selected, upsert that
