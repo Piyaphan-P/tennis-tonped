@@ -20,6 +20,8 @@ import {
   leaderboardDocToJson,
   foldLeaderboardStats,
   unavailableBody,
+  deriveDevPlan,
+  devPlanAreaForIssue,
 } from './lib.mjs';
 
 // A fake Firestore Timestamp: duck-typed via toDate() exactly like the real one,
@@ -461,5 +463,50 @@ describe('aggregateUsageRows', () => {
       row('room1', 'Oldest', 1, 1, 1, '2026-07-01T00:00:00Z'),
     ]);
     expect(out.users[0].userName).toBe('Newest');
+  });
+});
+
+describe('deriveDevPlan — server mirror of the frontend area ranker', () => {
+  const shot = (...issues) => ({
+    issues: issues.map(([key, severity]) => ({ key, severity })),
+  });
+
+  it('maps issue keys to areas', () => {
+    expect(devPlanAreaForIssue('elbow-too-bent')).toBe('contact-extension');
+    expect(devPlanAreaForIssue('no-knee-bend')).toBe('knee-load');
+    expect(devPlanAreaForIssue('leaning')).toBe('balance');
+    expect(devPlanAreaForIssue('shoulder-angle')).toBe('racket-prep');
+    expect(devPlanAreaForIssue('swing-faster')).toBe('swing-speed');
+    expect(devPlanAreaForIssue('unknown')).toBeNull();
+  });
+
+  it('ranks by severity weight, counts distinct shots, skips good/empty', () => {
+    const shots = [
+      shot(['elbow-too-bent', 'fault'], ['arm-locked', 'warn']), // contact +3, 1 shot
+      shot(['leaning', 'warn']), // balance +1
+      shot(['leaning', 'good']), // ignored
+      shot([], []),
+    ];
+    const plan = deriveDevPlan(shots);
+    expect(plan[0]).toEqual({ id: 'contact-extension', weight: 3, shots: 1 });
+    expect(plan.find((a) => a.id === 'balance')).toEqual({
+      id: 'balance',
+      weight: 1,
+      shots: 1,
+    });
+  });
+
+  it('returns [] for null/empty/clean input and respects the limit', () => {
+    expect(deriveDevPlan(null)).toEqual([]);
+    expect(deriveDevPlan([])).toEqual([]);
+    expect(deriveDevPlan([shot(['elbow-too-bent', 'good'])])).toEqual([]);
+    const many = [
+      shot(['swing-faster', 'fault']),
+      shot(['leaning', 'fault']),
+      shot(['no-knee-bend', 'fault']),
+      shot(['shoulder-angle', 'fault']),
+    ];
+    expect(deriveDevPlan(many).length).toBe(3);
+    expect(deriveDevPlan(many, 2).length).toBe(2);
   });
 });

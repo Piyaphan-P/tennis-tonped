@@ -23,7 +23,7 @@ import express from 'express';
 import { backend } from './store.mjs';
 import { gcsReady, streamClip } from './gcs.mjs';
 import { apiKeyMatches } from './authCore.mjs';
-import { unavailableBody } from './lib.mjs';
+import { unavailableBody, deriveDevPlan } from './lib.mjs';
 
 const HISTORY_DAYS = 3; // matches the session/clip TTL — older data is gone anyway
 
@@ -89,6 +89,43 @@ export function mountExtApi(app) {
       });
     } catch (err) {
       console.error('[ext] history:', err?.message || err);
+      res.status(503).json(unavailableBody('cloud'));
+    }
+  });
+
+  // --- GET /api/ext/devplan — per-session summary + development plan ------
+  // Returns, per live (≤3d) session, the persisted `summary` (durationMs,
+  // goodFormPct, focusShot, improvements[] — already bilingual) PLUS a derived
+  // `devPlan.areas` [{ id, weight, shots }] ranking the session's shot issues
+  // into coaching areas (worst first). The area COPY (อาการ/วิธีซ้อม/cue) is NOT
+  // duplicated here — it lives in the app i18n keyed by area id, so it can't
+  // drift. Same identity keys + window as /history.
+  ext.get('/devplan', async (req, res) => {
+    if (!requireDb(res)) return;
+    const id = identityFromQuery(req);
+    if (!id) {
+      return res.status(400).json({ error: 'missing_query', message: 'lineUserId or email required' });
+    }
+    try {
+      const sessions = await backend.listHistoryByLine(HISTORY_DAYS, id);
+      const plans = sessions.map((s) => ({
+        sessionId: s.id ?? s.sessionId ?? null,
+        userName: s.userName ?? null,
+        startedAt: s.startedAt ?? null,
+        endedAt: s.endedAt ?? null,
+        avgScore: s.avgScore ?? null,
+        shotCount: s.shotCount ?? (s.shots ? s.shots.length : 0),
+        summary: s.summary ?? null,
+        devPlan: { areas: deriveDevPlan(s.shots || []) },
+      }));
+      res.json({
+        query: { lineUserId: id.lineUserId ?? null, email: id.lineEmail ?? null },
+        windowDays: HISTORY_DAYS,
+        count: plans.length,
+        sessions: plans,
+      });
+    } catch (err) {
+      console.error('[ext] devplan:', err?.message || err);
       res.status(503).json(unavailableBody('cloud'));
     }
   });

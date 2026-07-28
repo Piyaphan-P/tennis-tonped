@@ -341,6 +341,65 @@ export function aggregateUsageRows(rows) {
   return { users, total };
 }
 
+// ---------------------------------------------------------------------------
+// Development-plan derivation (server mirror of src/history/devPlanDerive.ts).
+// Ranks a session's shot issues into 5 coaching areas, severity-weighted, worst
+// first. The coaching COPY (อาการ/วิธีซ้อม/cue) lives ONLY in the frontend i18n
+// (`devplan.area.<id>.*`) — the ext API returns the structured {id, weight,
+// shots} + the persisted `summary.improvements` (already bilingual), so the
+// text never forks/drifts from i18n. A consumer maps area ids → copy client-side.
+// ---------------------------------------------------------------------------
+
+const DEVPLAN_SEVERITY_WEIGHT = { fault: 2, warn: 1, good: 0 };
+
+/** ShotIssue.key → coaching area id (mirrors scoring.ts vocabulary). */
+export function devPlanAreaForIssue(key) {
+  switch (key) {
+    case 'elbow-too-bent':
+    case 'arm-locked':
+      return 'contact-extension';
+    case 'no-knee-bend':
+      return 'knee-load';
+    case 'leaning':
+    case 'off-balance':
+      return 'balance';
+    case 'shoulder-angle':
+      return 'racket-prep';
+    case 'swing-faster':
+      return 'swing-speed';
+    default:
+      return null;
+  }
+}
+
+/**
+ * Rank recurring faults across a session's shots into coaching areas. `shots` is
+ * an array of shot-json objects (each with an `issues` array). Returns up to
+ * `limit` (default 3) `{ id, weight, shots }` worst first. Pure.
+ */
+export function deriveDevPlan(shots, limit = 3) {
+  const acc = new Map();
+  for (const shot of shots ?? []) {
+    const seen = new Set();
+    for (const issue of shot?.issues ?? []) {
+      if (!issue || issue.severity === 'good') continue;
+      const id = devPlanAreaForIssue(issue.key);
+      if (!id) continue;
+      const e = acc.get(id) ?? { weight: 0, shots: 0 };
+      e.weight += DEVPLAN_SEVERITY_WEIGHT[issue.severity] ?? 0;
+      if (!seen.has(id)) {
+        e.shots += 1;
+        seen.add(id);
+      }
+      acc.set(id, e);
+    }
+  }
+  return [...acc.entries()]
+    .map(([id, v]) => ({ id, weight: v.weight, shots: v.shots }))
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, Math.max(0, limit));
+}
+
 /**
  * The bilingual 503 body returned when the cloud is not configured
  * (no DATABASE_URL / no GCS creds). COPIES the /api/token degradation pattern:

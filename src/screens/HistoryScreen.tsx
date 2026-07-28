@@ -18,6 +18,7 @@ import {
   formatSessionDate,
 } from '../history/derive';
 import { formatSpeedKmh } from '../analysis/swingSpeed';
+import { rankAreas } from '../history/devPlanDerive';
 import RadarChart from '../components/charts/RadarChart';
 import BarChart from '../components/charts/BarChart';
 import SwingExportButton from '../components/SwingExportButton';
@@ -29,6 +30,7 @@ import type {
   StoredSession,
 } from '../types';
 import './history.css';
+import './devplan.css'; // devplan-guide-* styles reused by DevPlanBlock
 
 function scoreColor(score: number): string {
   if (score >= 80) return 'var(--good)';
@@ -41,6 +43,55 @@ function ScoreBadge({ score }: { score: number }) {
     <span className="hist-score num" style={{ color: scoreColor(score) }}>
       {Math.round(score)}
     </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DEVELOPMENT PLAN block (v2.4) — the structured guidance a session earns,
+// shown in History detail so the plan (อาการ → เพราะอะไร → วิธีซ้อม → cue) is
+// visible past the session, not only on the live Summary/DevPlan screens.
+// Ranks the persisted shots' issues into coaching areas; copy comes from i18n.
+// Renders nothing when there are no ranked faults (clean or too-few shots).
+// ---------------------------------------------------------------------------
+
+function DevPlanBlock({ shots }: { shots: CloudShot[] }) {
+  const t = useT();
+  const ranked = rankAreas(shots);
+  if (ranked.length === 0) return null;
+  return (
+    <div className="card col" style={{ gap: 12, borderColor: 'var(--line-strong)' }}>
+      <h3 style={{ margin: 0 }}>{t('devplan.guideTitle')}</h3>
+      <div className="col" style={{ gap: 12 }}>
+        {ranked.map((r, i) => {
+          const k = (suffix: string) => t(`devplan.area.${r.id}.${suffix}` as I18nKey);
+          return (
+            <div key={r.id} className="card col devplan-guide-card" style={{ gap: 8 }}>
+              <div className="row" style={{ justifyContent: 'space-between', gap: 8 }}>
+                <span className="row" style={{ gap: 8 }}>
+                  <span className="rank-dot num">{i + 1}</span>
+                  <b>{k('title')}</b>
+                </span>
+                <span className="faint num">
+                  {t('devplan.affected')} {r.shots} {t('devplan.shotsUnit')}
+                </span>
+              </div>
+              <div className="devplan-guide-row">
+                <span className="devplan-guide-tag devplan-tag-fault">{t('devplan.symptom')}</span>
+                <span className="devplan-guide-text">{k('symptom')}</span>
+              </div>
+              <div className="devplan-guide-row">
+                <span className="devplan-guide-tag devplan-tag-good">{t('devplan.drill')}</span>
+                <span className="devplan-guide-text">{k('drill')}</span>
+              </div>
+              <div className="devplan-cue">
+                <span className="devplan-cue-label">{t('devplan.cue')}</span>
+                <span className="devplan-cue-text">“{k('cue')}”</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -338,6 +389,12 @@ function DetailView({ id, onBack }: { id: string; onBack: () => void }) {
           </div>
         )}
       </div>
+
+      {/* --- DEVELOPMENT PLAN (v2.4) ---
+          Derived from the persisted shots' issues (rankAreas) — NOT from
+          detail.summary, so an auto-saved session with summary=null still gets
+          a plan. Degrades silently when there are no ranked faults. */}
+      <DevPlanBlock shots={shots} />
 
       {/* --- PER-SHOT CLIP CARDS --- */}
       <div className="clip-grid">
