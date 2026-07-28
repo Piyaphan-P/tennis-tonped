@@ -431,6 +431,12 @@ export interface SessionSummaryJson {
   totalCostTHB: number;
   focusShot: FocusShot;
   improvements: SessionImprovement[];
+  /** v2.5: mean ≈km/h over speed-bearing shots; ABSENT when none had a speed. */
+  avgSpeedKmh?: number;
+  /** v2.5: ≈ kcal (MET model), same rounding as deriveSessionStats. */
+  kcal?: number;
+  /** v2.5: topspin/backspin/flat COUNTS (not %), same shape as StoredSession.spin. */
+  spin?: { topspin: number; backspin: number; flat: number };
 }
 
 /** One session row from the cloud (GET /api/history list item). */

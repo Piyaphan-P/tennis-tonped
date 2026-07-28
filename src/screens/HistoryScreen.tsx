@@ -6,7 +6,7 @@
 // All cloud calls go through data/api (never throw; null = fall back offline).
 // ============================================================================
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '../store';
 import { useT } from '../i18n';
 import type { I18nKey } from '../i18n';
@@ -19,10 +19,19 @@ import {
 } from '../history/derive';
 import { formatSpeedKmh } from '../analysis/swingSpeed';
 import { rankAreas } from '../history/devPlanDerive';
+import { resolveDetailStats } from '../history/detailStats';
+import { deriveCumulativeStats } from '../history/sessionStats';
+import { filterHistoryByPlayer } from '../history/playerStats';
+import { spinPercentages, emptySpinCounts } from '../analysis/spin';
 import RadarChart from '../components/charts/RadarChart';
 import BarChart from '../components/charts/BarChart';
 import SwingExportButton from '../components/SwingExportButton';
+import StatsShareButton from '../components/StatsShareButton';
+import DevPlanShareButton from '../components/DevPlanShareButton';
 import { getCoachAudioBlob } from '../coach/coachAudioTap';
+import type { StatsCardData } from '../share/statsCardRenderer';
+import type { DevPlanCardData, PlanAreaCard } from '../share/devPlanRenderer';
+import { translate } from '../i18n';
 import type {
   CloudSessionDetail,
   CloudSessionSummary,
@@ -54,9 +63,54 @@ function ScoreBadge({ score }: { score: number }) {
 // Renders nothing when there are no ranked faults (clean or too-few shots).
 // ---------------------------------------------------------------------------
 
-function DevPlanBlock({ shots }: { shots: CloudShot[] }) {
+function DevPlanBlock({
+  shots,
+  playerName,
+  dateLabel,
+}: {
+  shots: CloudShot[];
+  playerName?: string;
+  dateLabel: string;
+}) {
   const t = useT();
+  const lang = useAppStore((s) => s.lang);
   const ranked = rankAreas(shots);
+
+  // v2.5: build the shareable DevPlanCardData the same way DevPlanScreen does
+  // (translate() per ranked area so the renderer stays i18n-free). Hooks must
+  // run unconditionally, so this useMemo sits above the empty-ranked early
+  // return below.
+  const planCardData = useMemo<DevPlanCardData>(() => {
+    const areas: PlanAreaCard[] = ranked.map((r) => {
+      const k = (suffix: string) => translate(`devplan.area.${r.id}.${suffix}` as I18nKey, lang);
+      return {
+        title: k('title'),
+        symptom: k('symptom'),
+        why: k('why'),
+        drill: k('drill'),
+        cue: k('cue'),
+        shots: r.shots,
+      };
+    });
+    return {
+      lang,
+      playerName: playerName || undefined,
+      dateLabel,
+      areas,
+      cleanTitle: translate('devplan.storyBestTitle', lang),
+      cleanBody: translate('devplan.cleanNote', lang),
+      labels: {
+        guideTitle: translate('devplan.guideTitle', lang),
+        symptom: translate('devplan.symptom', lang),
+        why: translate('devplan.why', lang),
+        drill: translate('devplan.drill', lang),
+        cue: translate('devplan.cue', lang),
+        affected: translate('devplan.affected', lang),
+        shotsUnit: translate('devplan.shotsUnit', lang),
+      },
+    };
+  }, [ranked, lang, playerName, dateLabel]);
+
   if (ranked.length === 0) return null;
   return (
     <div className="card col" style={{ gap: 12, borderColor: 'var(--line-strong)' }}>
@@ -91,6 +145,7 @@ function DevPlanBlock({ shots }: { shots: CloudShot[] }) {
           );
         })}
       </div>
+      <DevPlanShareButton data={planCardData} />
     </div>
   );
 }
@@ -226,6 +281,8 @@ function DetailView({ id, onBack }: { id: string; onBack: () => void }) {
   const cloudSessionId = useAppStore((s) => s.cloudSessionId);
   const localShots = useAppStore((s) => s.shots);
   const setScreen = useAppStore((s) => s.setScreen);
+  const localHistory = useAppStore((s) => s.history);
+  const playerWeightKg = useAppStore((s) => s.settings.playerWeightKg);
 
   const [detail, setDetail] = useState<CloudSessionDetail | null | undefined>(undefined);
   const [deleteFailed, setDeleteFailed] = useState(false);
@@ -327,6 +384,88 @@ function DetailView({ id, onBack }: { id: string; onBack: () => void }) {
         ? 'history.trendDown'
         : 'history.trendFlat';
 
+  const dateLabel = formatSessionDate(detail.startedAt, lang);
+
+  // --- v2.5 post-session stats widget (mirrors SummaryScreen's) -----------
+  // resolveDetailStats degrades gracefully (summary=null / pre-v1.8 rows):
+  // undefined speed → "—", undefined/zero spin → the spin section is hidden.
+  const detailStats = resolveDetailStats(detail, localHistory, playerWeightKg);
+  const spinPct = spinPercentages(detailStats.spin ?? emptySpinCounts());
+  const hasSpin =
+    !!detailStats.spin &&
+    detailStats.spin.topspin + detailStats.spin.backspin + detailStats.spin.flat > 0;
+  const speedText = (kmh: number | undefined) =>
+    kmh === undefined ? '—' : formatSpeedKmh(kmh, lang);
+
+  // Cumulative (all-time, 3-day window) for THIS player from local history.
+  // Viewing a session from another device/player leaves local history empty
+  // for that player — fall back to the session's own values so the card
+  // never shows "all-time 0" under a real session total.
+  const cumStats = deriveCumulativeStats(filterHistoryByPlayer(localHistory, detail.userName ?? ''));
+  const cumMinutes = cumStats.sessions === 0 ? detailStats.minutes : cumStats.totalMinutes;
+  const cumShots = cumStats.sessions === 0 ? detailStats.shots : cumStats.totalShots;
+  const cumAvgSpeedKmh = cumStats.sessions === 0 ? detailStats.avgSpeedKmh : cumStats.avgSpeedKmh;
+  const cumKcal = cumStats.sessions === 0 ? detailStats.kcal : cumStats.totalKcal;
+
+  // Plain object, not memoized: it's built fresh from `lang` + the already
+  // recomputed detail/cum stats on every render, so it never goes stale when
+  // `lang` changes. (No useMemo here — this sits after the two early returns
+  // above, so a hook here would violate the rules of hooks across the
+  // detail===undefined → loaded render transition.)
+  const statsCardData: StatsCardData = {
+    lang,
+    playerName: detail.userName || undefined,
+    dateLabel,
+    minutes: detailStats.minutes,
+    shots: detailStats.shots,
+    avgSpeedKmh: detailStats.avgSpeedKmh,
+    kcal: detailStats.kcal,
+    spin: spinPct,
+    cumMinutes,
+    cumShots,
+    cumAvgSpeedKmh,
+    cumKcal,
+  };
+
+  /** One widget tile: label · big value · "รวมทุกครั้ง: X" secondary. */
+  const widgetTile = (label: string, value: string, cumValue: string, color?: string) => (
+    <div className="card col" style={{ gap: 4 }}>
+      <span className="dim" style={{ fontSize: '0.78rem' }}>
+        {label}
+      </span>
+      <span className="num" style={{ fontSize: '1.5rem', fontWeight: 800, color: color ?? 'var(--text)' }}>
+        {value}
+      </span>
+      <span className="faint num" style={{ fontSize: '0.7rem' }}>
+        {t('stats.cumulative')}: {cumValue}
+      </span>
+    </div>
+  );
+
+  /** One spin bar row: label · % · proportional track. */
+  const spinRow = (label: string, pct: number, color: string) => (
+    <div className="col" style={{ gap: 4 }}>
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <span className="dim" style={{ fontSize: '0.8rem' }}>
+          {label}
+        </span>
+        <span className="num" style={{ fontSize: '0.85rem', fontWeight: 700 }}>
+          {pct}%
+        </span>
+      </div>
+      <div style={{ height: 8, borderRadius: 4, background: 'var(--line)', overflow: 'hidden' }}>
+        <div
+          style={{
+            width: `${Math.max(0, Math.min(100, pct))}%`,
+            height: '100%',
+            background: color,
+            borderRadius: 4,
+          }}
+        />
+      </div>
+    </div>
+  );
+
   return (
     <div className="screen">
       <BackBar onBack={onBack} label={t('common.back')} />
@@ -337,7 +476,7 @@ function DetailView({ id, onBack }: { id: string; onBack: () => void }) {
             {t('history.byPlayer').replace('{name}', detail.userName)}
           </span>
         ) : null}
-        <h1 style={{ margin: 0 }}>{formatSessionDate(detail.startedAt, lang)}</h1>
+        <h1 style={{ margin: 0 }}>{dateLabel}</h1>
         <div className="row" style={{ gap: 12, alignItems: 'baseline' }}>
           <span className="faint num">
             {detail.shotCount} {t('history.shots')}
@@ -349,6 +488,51 @@ function DetailView({ id, onBack }: { id: string; onBack: () => void }) {
             </span>
           </span>
         </div>
+      </div>
+
+      {/* --- v2.5 POST-SESSION STATS WIDGET (mirrors SummaryScreen) --- */}
+      <div className="card col" style={{ gap: 12, borderColor: 'var(--line-strong)' }}>
+        <h3 style={{ margin: 0 }}>{t('stats.widget.title')}</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-3)' }}>
+          {widgetTile(
+            t('stats.minutes'),
+            `${detailStats.minutes} ${t('stats.minUnit')}`,
+            `${cumMinutes} ${t('stats.minUnit')}`,
+            'var(--accent)',
+          )}
+          {widgetTile(
+            t('stats.balls'),
+            `${detailStats.shots} ${t('stats.ballsUnit')}`,
+            String(cumShots),
+          )}
+          {widgetTile(t('stats.avgSpeed'), speedText(detailStats.avgSpeedKmh), speedText(cumAvgSpeedKmh), 'var(--good)')}
+          {widgetTile(
+            t('stats.kcal'),
+            `≈ ${detailStats.kcal} ${t('stats.kcalUnit')}`,
+            `≈ ${cumKcal} ${t('stats.kcalUnit')}`,
+            'var(--warn)',
+          )}
+        </div>
+
+        {hasSpin && (
+          <div className="col" style={{ gap: 8 }}>
+            <div className="row" style={{ justifyContent: 'space-between', gap: 8 }}>
+              <span style={{ fontWeight: 700 }}>{t('stats.spinTitle')}</span>
+              <span className="faint" style={{ fontSize: '0.68rem', textAlign: 'right' }}>
+                {t('stats.spinNote')}
+              </span>
+            </div>
+            {spinRow(t('stats.topspin'), spinPct.topspin, 'var(--good)')}
+            {spinRow(t('stats.backspin'), spinPct.backspin, 'var(--accent)')}
+            {spinRow(t('stats.flat'), spinPct.flat, 'var(--warn)')}
+          </div>
+        )}
+
+        <span className="faint" style={{ fontSize: '0.68rem' }}>
+          {t('stats.cumNote')}
+        </span>
+
+        {detail.shotCount > 0 && <StatsShareButton data={statsCardData} />}
       </div>
 
       {/* --- END-OF-SESSION SUMMARY --- */}
@@ -394,7 +578,7 @@ function DetailView({ id, onBack }: { id: string; onBack: () => void }) {
           Derived from the persisted shots' issues (rankAreas) — NOT from
           detail.summary, so an auto-saved session with summary=null still gets
           a plan. Degrades silently when there are no ranked faults. */}
-      <DevPlanBlock shots={shots} />
+      <DevPlanBlock shots={shots} playerName={detail.userName || undefined} dateLabel={dateLabel} />
 
       {/* --- PER-SHOT CLIP CARDS --- */}
       <div className="clip-grid">

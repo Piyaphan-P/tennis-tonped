@@ -22,6 +22,7 @@ import {
   unavailableBody,
   deriveDevPlan,
   devPlanAreaForIssue,
+  sessionStatsFromSummary,
 } from './lib.mjs';
 
 // A fake Firestore Timestamp: duck-typed via toDate() exactly like the real one,
@@ -508,5 +509,50 @@ describe('deriveDevPlan — server mirror of the frontend area ranker', () => {
     ];
     expect(deriveDevPlan(many).length).toBe(3);
     expect(deriveDevPlan(many, 2).length).toBe(2);
+  });
+});
+
+describe('sessionStatsFromSummary (v2.5)', () => {
+  it('echoes all fields when present', () => {
+    const stats = sessionStatsFromSummary({
+      durationMs: 1_200_000,
+      avgSpeedKmh: 88,
+      kcal: 150,
+      spin: { topspin: 5, backspin: 2, flat: 1 },
+    });
+    expect(stats).toEqual({
+      durationMs: 1_200_000,
+      avgSpeedKmh: 88,
+      kcal: 150,
+      spin: { topspin: 5, backspin: 2, flat: 1 },
+    });
+  });
+
+  it('null / absent summary → safe defaults', () => {
+    const def = { durationMs: 0, avgSpeedKmh: null, kcal: 0, spin: null };
+    expect(sessionStatsFromSummary(null)).toEqual(def);
+    expect(sessionStatsFromSummary(undefined)).toEqual(def);
+    expect(sessionStatsFromSummary('nope')).toEqual(def);
+    expect(sessionStatsFromSummary({})).toEqual(def);
+  });
+
+  it('partial summary → mix (pre-v2.5 has duration but no speed/spin)', () => {
+    const stats = sessionStatsFromSummary({ durationMs: 600_000, kcal: 42 });
+    expect(stats).toEqual({ durationMs: 600_000, avgSpeedKmh: null, kcal: 42, spin: null });
+  });
+
+  it('non-finite / bad values coerce to defaults', () => {
+    const stats = sessionStatsFromSummary({
+      durationMs: 'x',
+      avgSpeedKmh: 'fast',
+      kcal: NaN,
+      spin: { topspin: '3', backspin: null, flat: 4 },
+    });
+    expect(stats).toEqual({
+      durationMs: 0,
+      avgSpeedKmh: null,
+      kcal: 0,
+      spin: { topspin: 3, backspin: 0, flat: 4 },
+    });
   });
 });

@@ -15,6 +15,7 @@
 
 import type { Shot, ShotClip, SessionSummaryJson } from '../types';
 import { useAppStore, GOOD_FORM_SCORE, deriveImprovements } from '../store';
+import { deriveSessionStats } from '../history/sessionStats';
 import * as api from './api';
 
 const MAX_CLIP_BYTES = 8_000_000;
@@ -184,13 +185,28 @@ export function syncSessionEnded(ended = true): void {
       : (shots.filter((sh) => sh.score >= GOOD_FORM_SCORE).length / shotCount) * 100;
   const bestPeakWristSpeed =
     shotCount === 0 ? 0 : Math.max(...shots.map((sh) => sh.peakWristSpeed));
+  const durationMs = s.session.startedAtMs ? Date.now() - s.session.startedAtMs : 0;
+  // v2.5: persist ≈avg swing speed / ≈kcal / spin into the summary blob so
+  // History detail + the external API can show them (they round-trip verbatim
+  // through Firestore). Computed from the SAME live shots + durationMs the rest
+  // of this summary uses, via the ONE pure deriver the Summary widget uses too.
+  // Applied on BOTH the final and provisional (auto-save) flush — no gating.
+  const stats = deriveSessionStats(
+    shots,
+    durationMs,
+    s.settings.playerWeightKg,
+    s.settings.dominantHand,
+  );
   const summary: SessionSummaryJson = {
-    durationMs: s.session.startedAtMs ? Date.now() - s.session.startedAtMs : 0,
+    durationMs,
     goodFormPct,
     bestPeakWristSpeed,
     totalCostTHB: s.cost.breakdown.thbTotal,
     focusShot: s.settings.focusShot,
     improvements: deriveImprovements(shots),
+    ...(stats.avgSpeedKmh !== undefined ? { avgSpeedKmh: stats.avgSpeedKmh } : {}),
+    kcal: stats.kcal,
+    spin: stats.spin,
   };
   // Real Gemini usage from the cost monitor (source of truth: usageMetadata →
   // store.cost). tokensIn/tokensOut sum the per-modality buckets; thoughts are

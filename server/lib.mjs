@@ -201,6 +201,33 @@ export function shotDocToJson(id, data) {
   };
 }
 
+/**
+ * Extract the v2.5 per-session stats from a persisted `summary` blob into a
+ * guaranteed shape for the external API (so a consumer needn't dig into
+ * `summary`). PURE, import-free. Safe defaults for pre-v2.5 / absent summaries:
+ *   durationMs: Number(summary.durationMs) || 0
+ *   avgSpeedKmh: finite number, else null   (absent when no shot had a speed)
+ *   kcal: Number(summary.kcal) || 0
+ *   spin: { topspin, backspin, flat } each Number()||0, or null when absent.
+ */
+export function sessionStatsFromSummary(summary) {
+  const s = isPlainObject(summary) ? summary : {};
+  const avg = Number(s.avgSpeedKmh);
+  const sp = isPlainObject(s.spin) ? s.spin : null;
+  return {
+    durationMs: Number(s.durationMs) || 0,
+    avgSpeedKmh: Number.isFinite(avg) ? avg : null,
+    kcal: Number(s.kcal) || 0,
+    spin: sp
+      ? {
+          topspin: Number(sp.topspin) || 0,
+          backspin: Number(sp.backspin) || 0,
+          flat: Number(sp.flat) || 0,
+        }
+      : null,
+  };
+}
+
 const SHOT_TYPES = new Set(['forehand', 'backhand', 'unknown']);
 
 function isPlainObject(v) {

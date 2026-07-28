@@ -23,7 +23,7 @@ import express from 'express';
 import { backend } from './store.mjs';
 import { gcsReady, streamClip } from './gcs.mjs';
 import { apiKeyMatches } from './authCore.mjs';
-import { unavailableBody, deriveDevPlan } from './lib.mjs';
+import { unavailableBody, deriveDevPlan, sessionStatsFromSummary } from './lib.mjs';
 
 const HISTORY_DAYS = 3; // matches the session/clip TTL — older data is gone anyway
 
@@ -75,6 +75,9 @@ export function mountExtApi(app) {
       // Decorate each shot with ext clip/audio URLs (x-api-key required on them).
       const decorated = sessions.map((s) => ({
         ...s,
+        // v2.5: surface the persisted session stats (≈speed/≈kcal/spin) in a
+        // guaranteed shape alongside the raw `summary` (which still carries them).
+        stats: sessionStatsFromSummary(s.summary),
         shots: (s.shots || []).map((sh) => ({
           ...sh,
           clipUrl: sh.hasClip ? `/api/ext/clips/${sh.id}` : null,
@@ -116,6 +119,8 @@ export function mountExtApi(app) {
         avgScore: s.avgScore ?? null,
         shotCount: s.shotCount ?? (s.shots ? s.shots.length : 0),
         summary: s.summary ?? null,
+        // v2.5: guaranteed-shape session stats alongside the raw summary.
+        stats: sessionStatsFromSummary(s.summary),
         devPlan: { areas: deriveDevPlan(s.shots || []) },
       }));
       res.json({
