@@ -18,7 +18,7 @@
 |---|---|---|
 | โปรเจค | `adge-tennis-nonprd` | `adge-tennis-prod` |
 | Cloud Run | `adge-tennis-sit` + `adge-ranking-sit` | **ยังว่าง — APIs ยังไม่ enable** |
-| Bucket | `adge-tennis-nonprd-clips` (lifecycle 3 วัน) | — |
+| Bucket | `adge-tennis-nonprd-clips` (⚠️ **ไม่มี lifecycle rule** — ตรวจเจอ 2026-08-19, อยู่ใน backlog) | — |
 | Artifact Registry | `asia-southeast1-docker.pkg.dev/adge-tennis-nonprd/adge/` | — |
 | Metadata | Firestore `nonprd` (index `shots.id` COLLECTION_GROUP = **READY**) | — |
 | Secret | `gemini-api-key` (wired บน service แล้ว) | — |
@@ -49,12 +49,13 @@
 
 - **[x] ลบ leaderboard record เสียแล้ว** (2026-07-27): `"Player One"` (avg=75/max=0/1ช็อต — max<avg เป็นไปไม่ได้, record ยุคก่อน v1.5.2 recompute) id `736508c7-2933-4df5-a40f-fc4929b69c72` — user รัน DELETE ผ่าน Firestore REST เอง (Claude ถูก harness บล็อก) → **200**. Verify live API: board สะอาด 3 entries เรียงถูก (avg 71.02 > 71.00 > 59.41), record เสียเหลือ 0. Ranking sort algorithm เองถูกต้องมาแต่ต้น (ยืนยันด้วย live API) — ที่ดู "เรียงผิด" คือ record เสียตัวนี้ค้างอันดับ 1.
 - **[x] scale-invariant wrist speed = DONE (v2.2, 2026-07-28)**: หาร `hypot(dx,dy)` ด้วยความยาวลำตัว (nose→ankle, smoothed) → body-lengths/s ไม่ขึ้นกับระยะกล้องแล้ว; gate ×1.8; + ปุ่ม `captureSensitivity` ใน Settings ปรับสด. **เทสสนาม:** ถ้ายังจับยาก/ง่ายไป ปรับ `captureSensitivity` (ลด = จับง่ายขึ้น).
+- **[BACKLOG] GCS ไม่มี lifecycle rule — คลิปไม่เคยถูก purge** (ตรวจเจอ 2026-08-19, PO สั่ง "เก็บไว้ใน backlog"): `gs://adge-tennis-nonprd-clips` **ไม่มี lifecycle_config เลย** — rule 3 วันเดิมอยู่บน bucket เก่า `ton-phet-clips` ที่ถูกลบไปพร้อมโปรเจค `ton-team` ตอน migration 2026-07-20 แล้วไม่ได้ตั้งตามมาบน bucket ใหม่. server **ไม่ลบไฟล์เองโดยเจตนา** (`gcs.mjs:4`) → ไม่มีอะไรลบเลย. ค้างอยู่ **164 objects / 62 MiB** เก่าสุด 2026-07-20 (ทุกไฟล์เป็น orphan — Firestore metadata TTL หมดอายุไปแล้ว). Firestore TTL `expireAt` บน sessions+shots = **ACTIVE ปกติ** (ไม่ใช่ปัญหา). แก้เมื่อสั่ง: `echo '{"rule":[{"action":{"type":"Delete"},"condition":{"age":3}}]}' > /tmp/lc.json && gcloud storage buckets update gs://adge-tennis-nonprd-clips --lifecycle-file=/tmp/lc.json --project adge-tennis-nonprd` ⚠️ ลบไฟล์เก่าทั้งหมดภายใน ~24 ชม. กู้ไม่ได้. รายละเอียด `tasks20260819.md`
 - **[BACKLOG-minor] เพิ่ม pose-quality/visibility gate ใน scoring**: ตอนนี้ได้ 100 ฟรีได้ถ้า MediaPipe จับไม่ชัดแล้วมุมบังเอิญตกในกรอบทุกข้อ (เฟรมฟลุค) — ไม่มี gate เช็คว่า pose valid จริง.
 
 0. **เทสสนาม v2.0** (deployed `sit-v16` แล้ว): short สั้นพอ/ยังได้ยินชื่อช็อตไหม · long ยาวไปไหม (ยาวขึ้น = pacing queue drop ช็อตมากขึ้น) · ยืนยัน player ไม่เห็น section ราคาแล้ว (admin ยังเห็น)
 1. **เทสสนาม v1.4:** ชิปมุมไหล่กะพริบจาก z noise ไหม · ตัวเลข km/h ต่ำกว่าจริงไหม (ถ้าใช่ → ตัดสินใจ correction factor = PO decision)
 2. **Deploy รอบหน้า** ใช้ image tag `sit-v8` ขึ้นไป (v1.4 code ยังไม่ได้ deploy — service รัน `sit-v7`) — ตรวจว่า v1.4 อยู่ใน sit-v7 หรือยังก่อน build ซ้ำ
-3. **Prod migration (`adge-tennis-prod`):** enable APIs (run/artifactregistry/secretmanager/firestore/storage) → สร้าง bucket + AR repo + secret + Firestore (อย่าลืม index `shots.id` COLLECTION_GROUP + TTL `expireAt`) → deploy จาก branch `main` (แบรนด์ ต้นและเพชร)
+3. **Prod migration (`adge-tennis-prod`):** enable APIs (run/artifactregistry/secretmanager/firestore/storage) → สร้าง bucket + AR repo + secret + Firestore → deploy จาก branch `main` (แบรนด์ ต้นและเพชร). ⚠️ **3 อย่างนี้ไม่ได้อยู่ในโค้ด ต้องตั้งมือทุกครั้งที่สร้าง project ใหม่:** (a) GCS **lifecycle 3 วัน** บน bucket (บทเรียน 2026-08-19 — SIT ลืมตอน migrate) (b) Firestore **TTL `expireAt`** บน sessions+shots (c) Firestore index **`shots.id` COLLECTION_GROUP**
 4. **Repo `../tennis_ranking01`:** ยังอ้าง `ton-team` อยู่ — ต้อง replace แบบเดียวกัน (นอก scope งาน 2026-07-20)
 5. **ค้างเก่า:** rotate รหัส Supabase + AQ. tokens เก่าที่เคยแชร์ในแชท (path Postgres ไม่ได้ deploy แล้ว แต่ credential hygiene ยังควรทำ)
 
