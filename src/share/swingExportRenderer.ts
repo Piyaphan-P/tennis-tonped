@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — swing EXPORT renderer (v1.0 history share-a-swing)
+// ADGE Tennis — swing EXPORT renderer (v1.0 history share-a-swing)
 //
 // Renders one history swing into a share-worthy 9:16 (1080×1920) VIDEO that
 // plays the swing clip WITH the coach's recorded voice, laid out like the
@@ -50,10 +50,10 @@ export const EXPORT_FPS = 30;
 export const EXPORT_VIDEO_BITS_PER_SECOND = 2_500_000;
 
 /** Public brand handle shown in the footer (mirrors storyRenderer). */
-export const EXPORT_APP_URL = 'tonphet.tennis';
+export const EXPORT_APP_URL = 'adge.tennis';
 
 /** Brand header — the ONE canonical spelling. Never "ต้นเป็ด" / "TonPed". */
-const BRAND = 'ต้นและเพชร Tennis Club';
+const BRAND = 'ADGE Tennis';
 
 const SIDE_PAD = 72;
 const CONTENT_W = EXPORT_W - SIDE_PAD * 2;
@@ -96,6 +96,9 @@ export interface SwingExportOpts {
   fixLines: string[];
   playerName?: string;
   lang: Lang;
+  /** APPROXIMATE swing speed (km/h). Rendered as a small "≈ N km/h" line under
+   *  the shot line. Omitted/undefined → no line drawn. NOT ball speed. */
+  speedKmh?: number;
   /**
    * Known clip length in ms when available (same-session ShotClip.durationMs).
    * MediaRecorder-produced WebM omits duration from its header, so a played
@@ -133,6 +136,8 @@ export interface ExportLayout {
   radar: RadarLayout;
   /** Baseline y where the header row (index/type + score) sits. */
   headerRowY: number;
+  /** Baseline y of the small "≈ N km/h" line under the shot line (above video). */
+  speedLineY: number;
   /** Baseline y where the fix-bullet block starts. */
   fixStartY: number;
 }
@@ -148,6 +153,8 @@ export function exportLayout(): ExportLayout {
     video: { x: SIDE_PAD, y: 372, w: CONTENT_W, h: 680 },
     radar: { cx: EXPORT_W / 2, cy: 1268, r: 118, labelFactor: 1.34 },
     headerRowY: 318,
+    // Small speed line sits between the shot line (318) and the video box (372).
+    speedLineY: 358,
     fixStartY: 1560,
   };
 }
@@ -222,7 +229,7 @@ export function pickExportMimeType(
 
 /** Share/save filename for an exported swing, derived from the blob mimeType. */
 export function exportFilename(shotIndex: number, mimeType: string): string {
-  return storyFilename(`tonphet-swing-${shotIndex}`, mimeType);
+  return storyFilename(`adge-swing-${shotIndex}`, mimeType);
 }
 
 // ===========================================================================
@@ -325,6 +332,25 @@ function drawTitleRow(
   const typeLabel = (shotTypeLabel ?? '').trim();
   const shotLine = typeLabel ? `#${shotIndex}  ·  ${typeLabel}` : `#${shotIndex}`;
   ctx.fillText(fitText(ctx, shotLine, leftMaxW), SIDE_PAD, rowY);
+}
+
+/**
+ * Small "≈ N km/h" line under the shot line. Approximate HAND speed (not ball
+ * speed) — always prefixed "≈". No-ops when speed is absent/non-finite.
+ */
+function drawSpeedLine(
+  ctx: CanvasRenderingContext2D,
+  speedKmh: number | undefined,
+  y: number,
+  lang: Lang,
+): void {
+  if (speedKmh === undefined || !Number.isFinite(speedKmh) || speedKmh <= 0) return;
+  const unit = lang === 'th' ? 'กม./ชม.' : 'km/h';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = C_ACCENT;
+  ctx.font = `700 32px ${FONT_STACK}`;
+  ctx.fillText(fitText(ctx, `≈ ${Math.round(speedKmh)} ${unit}`, CONTENT_W), SIDE_PAD, y);
 }
 
 function drawFrameBorder(ctx: CanvasRenderingContext2D, box: StoryRect): void {
@@ -477,7 +503,7 @@ function drawFooter(ctx: CanvasRenderingContext2D, lang: Lang): void {
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = C_DIM;
   ctx.font = `500 28px ${FONT_STACK}`;
-  const tag = lang === 'th' ? 'ฝึกกับโค้ชต้นและเพชร' : 'Coached by Ton & Phet';
+  const tag = lang === 'th' ? 'ฝึกกับโค้ช ADGE' : 'Coached by ADGE';
   ctx.fillText(`${tag}  ·  ${EXPORT_APP_URL}`, EXPORT_W / 2, EXPORT_H - 64);
 }
 
@@ -493,6 +519,7 @@ function drawChrome(ctx: CanvasRenderingContext2D, opts: SwingExportOpts, layout
     opts.playerName,
     opts.lang,
   );
+  drawSpeedLine(ctx, opts.speedKmh, layout.speedLineY, opts.lang);
   drawRadar(ctx, opts.radar, opts.lang, layout.radar);
   drawFixLines(ctx, opts.fixLines, layout.fixStartY);
   drawFooter(ctx, opts.lang);

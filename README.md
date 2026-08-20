@@ -1,4 +1,6 @@
-# 🎾 ต้นและเพชร Tennis Club — AI Realtime Tennis Coach
+# 🎾 ADGE Tennis (SIT) — AI Realtime Tennis Coach
+
+> **SIT (non-production) build.** Brand: **ADGE Tennis**, coach **โค้ช ADGE**, DB isolation via `DB_SCHEMA=sit`. The `main` branch is production (**ต้นและเพชร Tennis Club**).
 
 แอปวิเคราะห์การตีเทนนิสแบบ **realtime** ด้วยกล้องมือถือ: จับโครงกระดูก (pose) วาดเส้นวิเคราะห์ลงบนตัวผู้เล่น วัดมุมแขน–ขา–ลำตัว ให้คะแนนรายช็อต และมี **โค้ช AI (Gemini Live) พูดโต้ตอบเป็นเสียง** คอยบอกว่าควรปรับอะไรหลังตีจบแต่ละวง พร้อม **มอนิเตอร์ค่าใช้จ่าย token เป็นเงินบาท** ต่อเซสชัน
 
@@ -87,16 +89,19 @@ Gemini Live ฝั่ง browser ใช้ **ephemeral token** (ขึ้นต�
 Build เป็น container เดียว (Node serve `dist/` + `/api/token`) — ดู `Dockerfile`
 
 ```bash
-# ต้องมี gcloud + service account
-gcloud auth activate-service-account --key-file=/path/to/service-account.json
-gcloud config set project ton-team
+# โปรเจค GCP: adge-tennis-nonprd (SIT) / adge-tennis-prod (production)
+gcloud config set project adge-tennis-nonprd
 
 # เก็บ key ตัวจริงเป็น secret (ครั้งเดียว)
 echo -n "AIzaYOUR_REAL_KEY" | gcloud secrets create gemini-api-key --data-file=-
 
-# deploy (build จาก source ด้วย Cloud Build)
-gcloud run deploy ton-phet-tennis \
-  --source . --region asia-southeast1 --allow-unauthenticated \
+# build image ในเครื่อง (colima ต้องรันอยู่) แล้ว push + deploy
+docker buildx build --platform linux/amd64 \
+  -t asia-southeast1-docker.pkg.dev/adge-tennis-nonprd/adge/app:sit-vN --push .
+
+gcloud run deploy adge-tennis-sit \
+  --image asia-southeast1-docker.pkg.dev/adge-tennis-nonprd/adge/app:sit-vN \
+  --region asia-southeast1 --allow-unauthenticated \
   --set-secrets GEMINI_API_KEY=gemini-api-key:latest
 ```
 

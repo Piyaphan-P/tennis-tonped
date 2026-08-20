@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — skeleton overlay canvas
+// ADGE Tennis — skeleton overlay canvas
 //
 // A transparent <canvas> that fills its (position:relative) parent and draws the
 // MediaPipe skeleton over the camera video. PERF CONTRACT: it never re-renders

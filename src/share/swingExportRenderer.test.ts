@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — swingExportRenderer pure-helper tests.
+// ADGE Tennis — swingExportRenderer pure-helper tests.
 // Covers the layout / radar geometry / duration+loop / mime / filename logic.
 // The DOM export path (exportSwingVideo) is NOT exercised here — node has no
 // MediaRecorder/canvas.captureStream, so it must return null without throwing.
@@ -45,6 +45,15 @@ describe('exportLayout', () => {
     // fix bullets start below the radar and above the footer
     expect(l.fixStartY).toBeGreaterThan(l.radar.cy + l.radar.r);
     expect(l.fixStartY).toBeLessThan(EXPORT_H);
+  });
+
+  it('places the speed line between the shot line and the video box', () => {
+    const l = exportLayout();
+    // below the shot line (larger baseline y = lower on the card)
+    expect(l.speedLineY).toBeGreaterThan(l.headerRowY);
+    // its baseline clears the video box top so the 32px line never overlaps it
+    expect(l.speedLineY).toBeLessThan(l.video.y);
+    expect(l.video.y - l.speedLineY).toBeGreaterThanOrEqual(12);
   });
 
   it('keeps the radar clear of the video box and gives the fix bullets a wide gap (v1.0.3)', () => {
@@ -159,8 +168,8 @@ describe('pickExportMimeType', () => {
 
 describe('exportFilename', () => {
   it('derives the extension from the mimeType and namespaces by shot index', () => {
-    expect(exportFilename(3, 'video/mp4')).toBe('tonphet-swing-3.mp4');
-    expect(exportFilename(12, 'video/webm;codecs=vp9')).toBe('tonphet-swing-12.webm');
+    expect(exportFilename(3, 'video/mp4')).toBe('adge-swing-3.mp4');
+    expect(exportFilename(12, 'video/webm;codecs=vp9')).toBe('adge-swing-12.webm');
   });
 });
 

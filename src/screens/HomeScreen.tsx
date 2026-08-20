@@ -4,15 +4,37 @@ import { useT } from '../i18n';
 import type { I18nKey } from '../i18n';
 import { audioPlayer } from '../coach/audioPlayer';
 import BrandMark from '../components/BrandMark';
+import LineProfileSheet from '../components/LineProfileSheet';
 import LangToggle from '../components/LangToggle';
 import StatsCard from '../components/StatsCard';
 import HistoryList from '../components/HistoryList';
-import type { FocusShot } from '../types';
+import AdminDailyStats from '../components/AdminDailyStats';
+import type { CoachMode, FocusShot, Verbosity, VoiceTone } from '../types';
 
 const FOCUS_OPTIONS: Array<{ value: FocusShot; labelKey: I18nKey }> = [
   { value: 'forehand', labelKey: 'home.forehand' },
   { value: 'backhand', labelKey: 'home.backhand' },
   { value: 'both', labelKey: 'home.both' },
+];
+
+const VOICE_TONE_OPTIONS: Array<{ value: VoiceTone; labelKey: I18nKey }> = [
+  { value: 'gentleF', labelKey: 'home.voiceTone.gentleF' },
+  { value: 'firmF', labelKey: 'home.voiceTone.firmF' },
+  { value: 'firmM', labelKey: 'home.voiceTone.firmM' },
+  { value: 'friendlyM', labelKey: 'home.voiceTone.friendlyM' },
+];
+
+const COACH_MODE_OPTIONS: Array<{ value: CoachMode; labelKey: I18nKey }> = [
+  { value: 'encourage', labelKey: 'home.coachMode.encourage' },
+  { value: 'hardcore', labelKey: 'home.coachMode.hardcore' },
+  { value: 'polite', labelKey: 'home.coachMode.polite' },
+  { value: 'buddy', labelKey: 'home.coachMode.buddy' },
+];
+
+const VERBOSITY_OPTIONS: Array<{ value: Verbosity; labelKey: I18nKey }> = [
+  { value: 'short', labelKey: 'home.verbosity.short' },
+  { value: 'medium', labelKey: 'home.verbosity.medium' },
+  { value: 'long', labelKey: 'home.verbosity.long' },
 ];
 
 /** Landing screen: brand, session setup, start CTA, stats + history. */
@@ -24,10 +46,12 @@ export default function HomeScreen() {
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
   const setUserName = useAppStore((s) => s.setUserName);
-  const authToken = useAppStore((s) => s.authToken);
-
-  const [tokenBannerDismissed, setTokenBannerDismissed] = useState(false);
-  const showTokenBanner = !authToken && !tokenBannerDismissed;
+  const setVoiceTone = useAppStore((s) => s.setVoiceTone);
+  const setCoachMode = useAppStore((s) => s.setCoachMode);
+  const setVerbosity = useAppStore((s) => s.setVerbosity);
+  const isAdmin = useAppStore((s) => s.auth?.role === 'admin');
+  const lineProfile = settings.lineProfile;
+  const [lineOpen, setLineOpen] = useState(false);
 
   const start = () => {
     // Unlock the AudioContext INSIDE this tap gesture so iOS Safari will play
@@ -47,6 +71,56 @@ export default function HomeScreen() {
       <div className="col" style={{ gap: 8, marginTop: 8 }}>
         <p className="dim">{t('home.tagline')}</p>
       </div>
+
+      {/* --- LINE player identity (v2.1): who is at the machine this session --- */}
+      <div className="card col" style={{ gap: 8 }}>
+        <h3>{t('home.player.title')}</h3>
+        {lineProfile ? (
+          <div className="row" style={{ gap: 12, alignItems: 'center' }}>
+            {lineProfile.pictureUrl ? (
+              <img
+                src={lineProfile.pictureUrl}
+                alt=""
+                width={44}
+                height={44}
+                style={{ borderRadius: '50%', objectFit: 'cover', flex: '0 0 auto' }}
+                onError={(e) => (e.currentTarget.style.display = 'none')}
+              />
+            ) : null}
+            <div className="col" style={{ gap: 2, flex: 1, minWidth: 0 }}>
+              <strong style={{ fontSize: '1.05rem' }}>
+                {lineProfile.displayName || lineProfile.lineUserId}
+              </strong>
+              {lineProfile.email ? (
+                <span
+                  className="faint"
+                  style={{ fontSize: '0.75rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                >
+                  {lineProfile.email}
+                </span>
+              ) : null}
+            </div>
+            <button className="btn btn-ghost tap" onClick={() => setLineOpen(true)}>
+              {t('home.player.change')}
+            </button>
+          </div>
+        ) : (
+          <button
+            className="btn btn-primary tap"
+            style={{ width: '100%', padding: '14px 8px' }}
+            onClick={() => setLineOpen(true)}
+          >
+            {t('home.player.set')}
+          </button>
+        )}
+        {!lineProfile ? (
+          <span className="faint" style={{ fontSize: '0.75rem' }}>
+            {t('home.player.none')}
+          </span>
+        ) : null}
+      </div>
+
+      {lineOpen ? <LineProfileSheet onClose={() => setLineOpen(false)} /> : null}
 
       {/* --- dominant hand: prominent, must be explicit before playing --- */}
       <div className="card col" style={{ gap: 8 }}>
@@ -113,32 +187,62 @@ export default function HomeScreen() {
         </div>
       </div>
 
-      {/* --- bilingual coach-token-missing warning (session still allowed) --- */}
-      {showTokenBanner && (
-        <div
-          className="card col"
-          role="alert"
-          style={{ gap: 8, borderColor: 'var(--warn)' }}
-        >
-          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <h3 style={{ color: 'var(--warn)' }}>{t('error.tokenMissing.title')}</h3>
+      {/* --- coach voice tone --- */}
+      <div className="card col" style={{ gap: 8 }}>
+        <h3>{t('home.voiceTone.title')}</h3>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          {VOICE_TONE_OPTIONS.map((o) => (
             <button
-              className="btn-ghost tap"
-              aria-label={t('common.close')}
-              onClick={() => setTokenBannerDismissed(true)}
-              style={{ border: 0, background: 'transparent', color: 'var(--text-dim)', cursor: 'pointer', fontSize: '1.1rem', lineHeight: 1, padding: 4 }}
+              key={o.value}
+              className={`btn tap${settings.voiceTone === o.value ? ' btn-primary' : ' btn-ghost'}`}
+              style={{ flex: '1 1 40%', padding: '12px 8px' }}
+              onClick={() => setVoiceTone(o.value)}
+              aria-pressed={settings.voiceTone === o.value}
             >
-              ×
+              {t(o.labelKey)}
             </button>
-          </div>
-          <p className="dim" style={{ fontSize: '0.85rem' }}>
-            {t('error.tokenMissing.body')}
-          </p>
-          <button className="btn btn-ghost" style={{ borderColor: 'var(--warn)', color: 'var(--warn)' }} onClick={() => setSettingsOpen(true)}>
-            {t('home.settings')}
-          </button>
+          ))}
         </div>
-      )}
+      </div>
+
+      {/* --- coach mode / style --- */}
+      <div className="card col" style={{ gap: 8 }}>
+        <h3>{t('home.coachMode.title')}</h3>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          {COACH_MODE_OPTIONS.map((o) => (
+            <button
+              key={o.value}
+              className={`btn tap${settings.coachMode === o.value ? ' btn-primary' : ' btn-ghost'}`}
+              style={{ flex: '1 1 40%', padding: '12px 8px' }}
+              onClick={() => setCoachMode(o.value)}
+              aria-pressed={settings.coachMode === o.value}
+            >
+              {t(o.labelKey)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* --- coach verbosity / reply length (v2.0) --- */}
+      <div className="card col" style={{ gap: 8 }}>
+        <h3>{t('home.verbosity.title')}</h3>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          {VERBOSITY_OPTIONS.map((o) => (
+            <button
+              key={o.value}
+              className={`btn tap${settings.verbosity === o.value ? ' btn-primary' : ' btn-ghost'}`}
+              style={{ flex: '1 1 30%', padding: '12px 8px' }}
+              onClick={() => setVerbosity(o.value)}
+              aria-pressed={settings.verbosity === o.value}
+            >
+              {t(o.labelKey)}
+            </button>
+          ))}
+        </div>
+        <span className="faint" style={{ fontSize: '0.8rem' }}>
+          {t('home.verbosity.hint')}
+        </span>
+      </div>
 
       <div className="col">
         <button className="btn btn-primary btn-block" onClick={start}>
@@ -155,8 +259,16 @@ export default function HomeScreen() {
         </p>
       </div>
 
-      <StatsCard />
-      <HistoryList />
+      {/* Admin sees daily player-traffic aggregates INSTEAD of the personal
+          stats/history widgets (user decision 2026-07-21). */}
+      {isAdmin ? (
+        <AdminDailyStats />
+      ) : (
+        <>
+          <StatsCard />
+          <HistoryList />
+        </>
+      )}
 
       <div className="spacer" />
 

@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — CostFab
+// ADGE Tennis — CostFab
 //
 // COST DEMOTED: the big live cost meter is gone from the Live screen. This is
 // the replacement — a small corner "฿" button that, on tap, opens a compact

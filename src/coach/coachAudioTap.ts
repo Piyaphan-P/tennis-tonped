@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — coach audio tap (persist the spoken critique).
+// ADGE Tennis — coach audio tap (persist the spoken critique).
 //
 // The Gemini Live coach streams native-audio PCM per turn (24 kHz / 16-bit LE
 // / mono). We ALREADY receive & play these bytes, so capturing them costs ZERO

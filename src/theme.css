@@ -1,5 +1,5 @@
 /* ==========================================================================
-   ต้นและเพชร Tennis Club — design tokens + mobile-first base styles
+   ADGE Tennis — design tokens + mobile-first base styles
    "court-night" dark UI. Mobile portrait first.
    ========================================================================== */
 
@@ -298,7 +298,9 @@ p {
 
 /* --- form controls --- */
 input[type='number'],
-input[type='text'] {
+input[type='text'],
+input[type='email'],
+input[type='password'] {
   width: 100%;
   background: var(--bg);
   border: 1px solid var(--line);

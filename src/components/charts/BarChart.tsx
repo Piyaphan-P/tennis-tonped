@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — hand-rolled SVG bar chart of per-shot scores.
+// ADGE Tennis — hand-rolled SVG bar chart of per-shot scores.
 // No chart lib. Bar color bands (good/warn/fault) come from theme.css tokens,
 // with the shot index printed under every bar so identity is never color-alone.
 // Wide sessions scroll horizontally inside .barchart-wrap (set in history.css).

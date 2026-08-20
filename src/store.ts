@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — Zustand store (THE integration hub)
+// ADGE Tennis — Zustand store (THE integration hub)
 //
 // Data flow:
 //   pose loop        -> pushPoseFrame(frame, angles), setPhase, setPoseFps,
@@ -24,8 +24,14 @@
 
 import { create } from 'zustand';
 import { HISTORY_TTL_MS } from './types';
+import { clampHeightCm, clampSpeedFactor, clampCaptureSensitivity } from './analysis/swingSpeed';
+import { clampWeightKg } from './analysis/calories';
+import { deriveSessionStats } from './history/sessionStats';
+import { filterHistoryByPlayer } from './history/playerStats';
+import { SHOULDER_STATUS_EMA_ALPHA, ema } from './pose/angles';
 import type {
   AngleStatuses,
+  AuthUser,
   CompareClipRef,
   CoachingResult,
   CoachState,
@@ -39,9 +45,12 @@ import type {
   JointAngles,
   JointStatus,
   Lang,
+  LineProfile,
   PoseFrame,
   PoseState,
   PricingRates,
+  CoachMode,
+  Verbosity,
   Screen,
   SessionImprovement,
   SessionState,
@@ -54,6 +63,7 @@ import type {
   TokenTotals,
   UsageDelta,
   UserStats,
+  VoiceTone,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -62,6 +72,15 @@ import type {
 
 const LS_LANG = 'tp.lang';
 const LS_USER_NAME = 'tp.userName';
+const LS_AUTH_EMAIL = 'tp.authEmail'; // last signed-in account — drives userName re-seed on account switch
+const LS_PLAYER_HEIGHT = 'tp.playerHeightCm';
+const LS_PLAYER_WEIGHT = 'tp.playerWeightKg';
+const LS_VOICE_TONE = 'tp.voiceTone';
+const LS_COACH_MODE = 'tp.coachMode';
+const LS_VERBOSITY = 'tp.verbosity';
+const LS_SPEED_FACTOR = 'tp.speedFactor'; // km/h calibration multiplier (PO-tunable on court)
+const LS_CAPTURE_SENS = 'tp.captureSensitivity'; // detector gate multiplier (v2.2, PO-tunable)
+const LS_LINE_PROFILE = 'tp.lineProfile'; // current player's LINE identity (v2.1, JSON)
 const LS_HISTORY = 'tp.history';
 
 function lsGet(key: string): string | null {
@@ -217,6 +236,15 @@ function shoulderStatus(deg: number): JointStatus {
   return 'warn';
 }
 
+/**
+ * LIVE-DISPLAY-ONLY EMA state for the dominant shoulder angle. Smooths the
+ * noisy 3D shoulder angle used to COLOR the status chip/skeleton so it stops
+ * flickering good↔warn on z-noise. Reset on startSession. This never touches
+ * the raw angles stored in `pose.angles` or captured for scoring — it is
+ * applied only to the transient copy fed into evaluateAngleStatuses below.
+ */
+let liveShoulderEma: number | null = null;
+
 function trunkStatus(deg: number): JointStatus {
   if (deg <= 15) return 'good';
   if (deg <= 25) return 'warn';
@@ -276,14 +304,80 @@ export const DEFAULT_RATES: PricingRates = {
   usdToThb: envUsdToThb(),
 };
 
+/** Valid voice tones — a stored value outside this set falls back to default. */
+const VOICE_TONES: readonly VoiceTone[] = ['gentleF', 'firmF', 'firmM', 'friendlyM'];
+/** Valid coach modes — a stored value outside this set falls back to default. */
+const COACH_MODES: readonly CoachMode[] = ['encourage', 'hardcore', 'polite', 'buddy'];
+/** Valid verbosity levels — a stored value outside this set falls back to default. */
+const VERBOSITY_LEVELS: readonly Verbosity[] = ['short', 'medium', 'long'];
+
+/**
+ * Read a persisted union-typed setting, guarding any unknown/legacy value: a
+ * missing key or a stored string outside `allowed` falls back to `fallback`
+ * (mirrors clampHeightCm's defend-against-garbage-LS posture). Exported for
+ * direct unit testing of the read-at-init / validation path.
+ */
+export function readEnum<T extends string>(
+  key: string,
+  allowed: readonly T[],
+  fallback: T,
+): T {
+  const raw = lsGet(key);
+  return raw != null && (allowed as readonly string[]).includes(raw) ? (raw as T) : fallback;
+}
+
+/**
+ * Read the persisted LINE profile (v2.1), guarding malformed JSON / legacy
+ * shapes: anything that isn't an object with a non-empty lineUserId → null
+ * (an unbound player). Kept lenient — a broken LS value must never crash boot.
+ */
+function readLineProfile(): LineProfile | null {
+  const raw = lsGet(LS_LINE_PROFILE);
+  if (!raw) return null;
+  try {
+    const p = JSON.parse(raw) as Partial<LineProfile>;
+    if (!p || typeof p !== 'object' || typeof p.lineUserId !== 'string' || !p.lineUserId.trim()) {
+      return null;
+    }
+    return {
+      lineUserId: p.lineUserId,
+      displayName: typeof p.displayName === 'string' ? p.displayName : '',
+      pictureUrl: typeof p.pictureUrl === 'string' ? p.pictureUrl : '',
+      email: typeof p.email === 'string' ? p.email.toLowerCase() : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
 const DEFAULT_SETTINGS: Settings = {
   rates: DEFAULT_RATES,
   userName: lsGet(LS_USER_NAME) ?? '',
   sendContactFrame: true,
   coachVoiceOn: true,
   dominantHand: 'right',
+  playerHeightCm: clampHeightCm(
+    lsGet(LS_PLAYER_HEIGHT) != null ? Number(lsGet(LS_PLAYER_HEIGHT)) : undefined,
+  ),
+  playerWeightKg: clampWeightKg(
+    lsGet(LS_PLAYER_WEIGHT) != null ? Number(lsGet(LS_PLAYER_WEIGHT)) : undefined,
+  ),
   cameraFacing: 'user',
   focusShot: 'forehand',
+  voiceTone: readEnum(LS_VOICE_TONE, VOICE_TONES, 'gentleF'),
+  coachMode: readEnum(LS_COACH_MODE, COACH_MODES, 'encourage'),
+  // v2.0: default 'short' — answers the on-court "coach talks too long" feedback;
+  // players who want the fuller coach pick medium/long on Home.
+  verbosity: readEnum(LS_VERBOSITY, VERBOSITY_LEVELS, 'short'),
+  // km/h calibration multiplier — clamped 0.5–3.0, default 1.0 (= no change).
+  // Tunable on court to correct the anisotropic under/over-read without redeploy.
+  speedCorrectionFactor: clampSpeedFactor(
+    lsGet(LS_SPEED_FACTOR) != null ? Number(lsGet(LS_SPEED_FACTOR)) : undefined,
+  ),
+  captureSensitivity: clampCaptureSensitivity(
+    lsGet(LS_CAPTURE_SENS) != null ? Number(lsGet(LS_CAPTURE_SENS)) : undefined,
+  ),
+  lineProfile: readLineProfile(),
 };
 
 const ZERO_TOKENS: TokenTotals = {
@@ -417,8 +511,22 @@ function initialLang(): Lang {
   return lsGet(LS_LANG) === 'en' ? 'en' : 'th';
 }
 
-/** Build the StoredSession snapshot for the CURRENT session. Pure on state. */
-function buildStoredSession(s: AppState): StoredSession {
+/** Stable per-live-session history id so periodic auto-saves + the final
+ *  endSession all UPSERT the SAME history row instead of duplicating (v2.3). */
+function liveHistoryId(s: AppState): string {
+  return `live-${s.session.startedAtMs}`;
+}
+
+/** Upsert a StoredSession into history by id (replace same-id, else append),
+ *  then prune to the 3-day window. Pure. */
+function upsertHistory(history: History, entry: StoredSession, nowMs: number): History {
+  const without = history.filter((h) => h.id !== entry.id);
+  return pruneHistory([...without, entry], nowMs);
+}
+
+/** Build the StoredSession snapshot for the CURRENT session. Pure on state.
+ *  `id` defaults to a stable per-session id so repeated snapshots dedupe. */
+function buildStoredSession(s: AppState, id: string = liveHistoryId(s)): StoredSession {
   const shots = s.shots;
   const shotCount = shots.length;
   const avgScore =
@@ -430,11 +538,20 @@ function buildStoredSession(s: AppState): StoredSession {
   const bestPeakWristSpeed =
     shotCount === 0 ? 0 : Math.max(...shots.map((sh) => sh.peakWristSpeed));
   const endedAtMs = Date.now();
+  const durationMs = s.session.startedAtMs ? endedAtMs - s.session.startedAtMs : 0;
+  // v1.8: durable per-session stats via the SHARED derivation, so what the
+  // Summary widget shows == what gets persisted == what feeds cumulative.
+  const sessionStats = deriveSessionStats(
+    shots,
+    durationMs,
+    s.settings.playerWeightKg,
+    s.settings.dominantHand,
+  );
   return {
-    id: crypto.randomUUID(),
+    id,
     tsMs: endedAtMs,
     userName: s.settings.userName,
-    durationMs: s.session.startedAtMs ? endedAtMs - s.session.startedAtMs : 0,
+    durationMs,
     shotCount,
     avgScore,
     goodFormPct,
@@ -442,6 +559,9 @@ function buildStoredSession(s: AppState): StoredSession {
     totalCostTHB: s.cost.breakdown.thbTotal,
     focusShot: s.settings.focusShot,
     improvements: deriveImprovements(shots),
+    avgSpeedKmh: sessionStats.avgSpeedKmh,
+    kcal: sessionStats.kcal,
+    spin: sessionStats.spin,
   };
 }
 
@@ -451,6 +571,13 @@ export interface AppState {
   screen: Screen;
   settings: Settings;
   settingsOpen: boolean;
+
+  /**
+   * Signed-in identity (UAM v1.5), set by LoginGate from /api/login or
+   * /api/gate. Null = not signed in — either the gate is locked (LoginGate
+   * shows the form) or there is no backend at all (dev fail-open).
+   */
+  auth: AuthUser | null;
 
   /** Cloud session id for the CURRENT live session (null until created lazily
    *  on first shot; reset to null by startSession). Written by the cloud-sync
@@ -491,6 +618,25 @@ export interface AppState {
   updateRates: (patch: Partial<PricingRates>) => void;
   /** Sets the player name (settings.userName) and persists it. */
   setUserName: (name: string) => void;
+  /** Sets the coach voice tone (settings.voiceTone) and persists it. */
+  setVoiceTone: (tone: VoiceTone) => void;
+  /** Sets the coach mode (settings.coachMode) and persists it. */
+  setCoachMode: (mode: CoachMode) => void;
+  /** Sets the coach verbosity (settings.verbosity) and persists it. */
+  setVerbosity: (level: Verbosity) => void;
+  /**
+   * Bind the current player's LINE profile (v2.1) and persist it. Also seeds
+   * settings.userName from displayName (falling back to email) so the coach
+   * greets by name and v1.9's on-device per-player history keys correctly.
+   * Pass null to unbind (clears LS).
+   */
+  setLineProfile: (profile: LineProfile | null) => void;
+  /**
+   * Set (or clear, on logout) the signed-in identity. On sign-in, if
+   * settings.userName is still empty, it is initialized from displayName (or
+   * the email local-part) via setUserName so the coach greets by name.
+   */
+  setAuth: (auth: AuthUser | null) => void;
   setAuthToken: (token: string) => void;
   /** Set the cloud session id for the current live session (or null to clear). */
   setCloudSessionId: (id: string | null) => void;
@@ -508,6 +654,9 @@ export interface AppState {
    * (pruned to 3 days). Navigation handled by caller.
    */
   endSession: () => void;
+  /** v2.3 auto-save: upsert the IN-PROGRESS session into local history without
+   *  ending it (dedup by a stable live id). Called periodically + on page-hide. */
+  snapshotSessionToHistory: () => void;
   /** error MUST be an i18n key, never a raw API/English string. */
   setSessionError: (error: string) => void;
   setConnection: (state: ConnectionState) => void;
@@ -579,6 +728,7 @@ export const useAppStore = create<AppState>()((set) => ({
   screen: 'home',
   settings: DEFAULT_SETTINGS,
   settingsOpen: false,
+  auth: null,
   authToken: envToken(),
   cloudSessionId: null,
   compareClip: null,
@@ -602,8 +752,32 @@ export const useAppStore = create<AppState>()((set) => ({
   },
   setScreen: (screen) => set({ screen }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
-  updateSettings: (patch) =>
-    set((s) => ({ settings: { ...s.settings, ...patch } })),
+  updateSettings: (patch) => {
+    // Persist the (stable, physical) player height so km/h calibration survives
+    // reloads — the only session-pref that outlives the session besides userName.
+    if (patch.playerHeightCm != null) {
+      lsSet(LS_PLAYER_HEIGHT, String(patch.playerHeightCm));
+    }
+    // Persist the (stable, physical) player weight — used for the calorie
+    // estimate on the session-stats widget. Clamped so a stray value can't
+    // poison the estimate; estimateCalories re-clamps as a safety net.
+    if (patch.playerWeightKg != null) {
+      patch = { ...patch, playerWeightKg: clampWeightKg(patch.playerWeightKg) };
+      lsSet(LS_PLAYER_WEIGHT, String(patch.playerWeightKg));
+    }
+    // Persist the (PO-tuned, physical) km/h calibration factor across reloads,
+    // clamped to the sane range so a stray value can never poison the display.
+    if (patch.speedCorrectionFactor != null) {
+      patch = { ...patch, speedCorrectionFactor: clampSpeedFactor(patch.speedCorrectionFactor) };
+      lsSet(LS_SPEED_FACTOR, String(patch.speedCorrectionFactor));
+    }
+    // Persist the (PO-tuned) capture-sensitivity knob (v2.2), clamped 0.3–2.0.
+    if (patch.captureSensitivity != null) {
+      patch = { ...patch, captureSensitivity: clampCaptureSensitivity(patch.captureSensitivity) };
+      lsSet(LS_CAPTURE_SENS, String(patch.captureSensitivity));
+    }
+    set((s) => ({ settings: { ...s.settings, ...patch } }));
+  },
   updateRates: (patch) =>
     set((s) => {
       const rates = { ...s.settings.rates, ...patch };
@@ -618,6 +792,51 @@ export const useAppStore = create<AppState>()((set) => ({
     lsSet(LS_USER_NAME, userName);
     set((s) => ({ settings: { ...s.settings, userName } }));
   },
+  setVoiceTone: (voiceTone) => {
+    lsSet(LS_VOICE_TONE, voiceTone);
+    set((s) => ({ settings: { ...s.settings, voiceTone } }));
+  },
+  setCoachMode: (coachMode) => {
+    lsSet(LS_COACH_MODE, coachMode);
+    set((s) => ({ settings: { ...s.settings, coachMode } }));
+  },
+  setVerbosity: (verbosity) => {
+    lsSet(LS_VERBOSITY, verbosity);
+    set((s) => ({ settings: { ...s.settings, verbosity } }));
+  },
+  setLineProfile: (profile) => {
+    if (profile) {
+      lsSet(LS_LINE_PROFILE, JSON.stringify(profile));
+      set((s) => ({ settings: { ...s.settings, lineProfile: profile } }));
+      // Seed the coach-greeting name from the LINE display name so the coach
+      // addresses the player and v1.9's per-player history keys on userName.
+      const name = profile.displayName.trim() || profile.email.trim();
+      if (name) useAppStore.getState().setUserName(name);
+    } else {
+      try {
+        localStorage.removeItem(LS_LINE_PROFILE);
+      } catch {
+        /* private mode / storage disabled */
+      }
+      set((s) => ({ settings: { ...s.settings, lineProfile: null } }));
+    }
+  },
+  setAuth: (auth) => {
+    set({ auth });
+    if (auth) {
+      const s = useAppStore.getState();
+      const prevAccount = lsGet(LS_AUTH_EMAIL);
+      // Seed the coach-greeting name on first sign-in on this device, and
+      // RE-seed whenever a DIFFERENT room signs in — a shared phone must not
+      // keep greeting the previous player. Default = ชื่อเล่น (displayName),
+      // else the room handle. NOTE: v2.1 the individual player is normally set
+      // via the LINE profile (setLineProfile) which overrides this.
+      if (!s.settings.userName.trim() || prevAccount !== auth.roomUser) {
+        s.setUserName(auth.displayName.trim() || auth.roomUser);
+      }
+      lsSet(LS_AUTH_EMAIL, auth.roomUser);
+    }
+  },
   setAuthToken: (authToken) => set({ authToken: authToken.trim() }),
   setCloudSessionId: (cloudSessionId) => set({ cloudSessionId }),
   setCompareClip: (compareClip) => set({ compareClip }),
@@ -627,6 +846,7 @@ export const useAppStore = create<AppState>()((set) => ({
     set((s) => {
       // Defensive: a session abandoned without endSession must not leak blobs.
       for (const sh of s.shots) revokeClipUrl(sh.clip);
+      liveShoulderEma = null; // reset live shoulder-status EMA for the new session
       return {
         cloudSessionId: null,
         session: {
@@ -644,12 +864,27 @@ export const useAppStore = create<AppState>()((set) => ({
     }),
   markSessionLive: () =>
     set((s) => ({ session: { ...s.session, status: 'live', error: null } })),
+  snapshotSessionToHistory: () =>
+    set((s) => {
+      // v2.3 auto-save: persist the in-progress session to LOCAL history WITHOUT
+      // ending it, so Home/History show it even if the player never taps End.
+      // UPSERTs by the stable live id so periodic calls never duplicate the row.
+      // v2.6 (user request): save EVERY started session — even with 0 shots
+      // (buildStoredSession yields score 0 + all-0 stats). Only skip a session
+      // that never actually started (startedAtMs<=0).
+      if (s.session.startedAtMs <= 0) return {};
+      const history = upsertHistory(s.history, buildStoredSession(s), Date.now());
+      saveHistory(history);
+      return { history };
+    }),
   endSession: () =>
     set((s) => {
       let history = s.history;
-      // Persist only real sessions (>=1 shot) — no empty-history noise.
-      if (s.shots.length > 0 && s.session.startedAtMs > 0) {
-        history = pruneHistory([...s.history, buildStoredSession(s)], Date.now());
+      // v2.6 (user request): persist EVERY started session — even with 0 shots
+      // (score 0 + all-0 stats via buildStoredSession). UPSERT by the stable live
+      // id so a prior auto-save snapshot is REPLACED, not duplicated.
+      if (s.session.startedAtMs > 0) {
+        history = upsertHistory(s.history, buildStoredSession(s), Date.now());
         saveHistory(history);
       }
       return {
@@ -670,18 +905,29 @@ export const useAppStore = create<AppState>()((set) => ({
 
   // --- pose loop ---
   pushPoseFrame: (frame, angles) =>
-    set((s) => ({
-      pose: {
-        ...s.pose,
-        frame,
-        angles,
-        statuses: evaluateAngleStatuses(
-          angles,
-          s.settings.dominantHand,
-          s.pose.phase,
-        ),
-      },
-    })),
+    set((s) => {
+      const hand = s.settings.dominantHand;
+      // LIVE-DISPLAY ONLY: de-flicker the noisy 3D shoulder angle for the status
+      // chip/skeleton coloring. We build a SHALLOW COPY of angles with just the
+      // dominant shoulder EMA-smoothed and pass THAT into evaluateAngleStatuses.
+      // `pose.angles` is stored byte-for-byte RAW below, so the per-shot scoring
+      // angle (which the detector captures from the raw stream) is untouched.
+      const rawShoulder =
+        hand === 'right' ? angles.rightShoulderDeg : angles.leftShoulderDeg;
+      liveShoulderEma = ema(liveShoulderEma, rawShoulder, SHOULDER_STATUS_EMA_ALPHA);
+      const displayAngles: JointAngles =
+        hand === 'right'
+          ? { ...angles, rightShoulderDeg: liveShoulderEma }
+          : { ...angles, leftShoulderDeg: liveShoulderEma };
+      return {
+        pose: {
+          ...s.pose,
+          frame,
+          angles, // RAW — never smoothed (scoring reads this)
+          statuses: evaluateAngleStatuses(displayAngles, hand, s.pose.phase),
+        },
+      };
+    }),
   setPhase: (phase) =>
     set((s) => (s.pose.phase === phase ? s : { pose: { ...s.pose, phase } })),
   setPoseFps: (fps) => set((s) => ({ pose: { ...s.pose, fps } })),
@@ -837,8 +1083,11 @@ export const selectSessionDurationMs = (s: AppState): number => {
   return (endedAtMs || startedAtMs) - startedAtMs;
 };
 
-/** Cross-session aggregate stats (Home "Your Stats" card). */
-export const selectUserStats = (s: AppState): UserStats => deriveStats(s.history);
+/** Cross-session aggregate stats (Home "Your Stats" card) — for the CURRENT
+ *  player only. History on a shared device holds everyone's sessions; "Your
+ *  Stats" must never merge players (bug fixed 2026-07-21). */
+export const selectUserStats = (s: AppState): UserStats =>
+  deriveStats(filterHistoryByPlayer(s.history, s.settings.userName));
 
 /** Concrete things to improve for the CURRENT session (Summary). */
 export const selectSessionImprovements = (s: AppState): SessionImprovement[] =>

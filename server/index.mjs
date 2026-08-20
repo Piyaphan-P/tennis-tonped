@@ -1,4 +1,4 @@
-// ต้นและเพชร Tennis Club — token-minting backend + static server
+// ADGE Tennis — token-minting backend + static server
 // -----------------------------------------------------------------------------
 // Serves the built frontend (../dist) AND exposes GET /api/token which mints a
 // short-lived Gemini Live *ephemeral* token (AQ...) from a long-lived API key
@@ -9,11 +9,15 @@
 // continuously without the ~30-min token expiry cutting it off.
 // -----------------------------------------------------------------------------
 import express from 'express';
+import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GoogleGenAI } from '@google/genai';
 import { mountCloudRoutes } from './routes.mjs';
-import { initDb } from './db.mjs';
+import { backend, initDb } from './store.mjs';
+import { mountLiveRelay } from './liveRelay.mjs';
+import { mountAuthGate } from './authGate.mjs';
+import { hashPassword, isValidRoomUser } from './authCore.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -27,6 +31,12 @@ const TOKEN_USES = Number(process.env.TOKEN_USES || 10);
 const minter = API_KEY
   ? new GoogleGenAI({ apiKey: API_KEY, httpOptions: { apiVersion: 'v1alpha' } })
   : null;
+
+// Credential gate: POST /api/login sets the cookie; every /api/* route below
+// (and the /api/live WS upgrade in liveRelay.mjs) requires it. Static assets
+// stay public — the frontend shows a login screen on 401. MUST be mounted
+// before any /api routes so the guard middleware runs first.
+mountAuthGate(app);
 
 app.get('/healthz', (_req, res) => {
   res.json({ ok: true, minter: Boolean(minter), ttlMin: TOKEN_TTL_MIN });
@@ -65,11 +75,44 @@ app.get('/api/token', async (_req, res) => {
 initDb();
 mountCloudRoutes(app);
 
+// NOTE (2026-07-28): the external stat API (/api/ext/*) was EXTRACTED into its
+// own standalone service (server/statApiServer.mjs → Cloud Run adge-stat-api-sit)
+// and is no longer mounted here — the coach app no longer serves /api/ext.
+
+// v2.1 bootstrap admin room (idempotent recovery path): when ADMIN_USER +
+// ADMIN_PASS are both set AND the Firestore backend is selected, upsert that
+// room as role=admin and reset its password — the first admin (or a locked-out
+// one) never depends on the UI. Fire-and-forget: must never block boot.
+// NOTE: ADMIN_USER MUST be a valid room handle (a–z 0–9 . _ - , 2–40 chars),
+// e.g. `admin`. The old ADMIN_EMAIL is deliberately NOT a fallback — an email
+// fails isValidRoomUser at login, so bootstrapping from it would write an
+// admin nobody can ever sign in as (total lockout). Only ADMIN_USER is read.
+const ADMIN_USER = (process.env.ADMIN_USER || '').trim().toLowerCase();
+const ADMIN_PASS = process.env.ADMIN_PASS || '';
+if (ADMIN_USER && ADMIN_PASS && isValidRoomUser(ADMIN_USER) && backend.name === 'firestore') {
+  const { passSalt, passHash } = hashPassword(ADMIN_PASS);
+  backend
+    .ensureAdmin({ roomUser: ADMIN_USER, passSalt, passHash })
+    .then(() => console.log(`[auth] bootstrap admin room ensured: ${ADMIN_USER}`))
+    .catch((err) => console.error('[auth] bootstrap admin failed (non-fatal):', err?.message || err));
+} else if (ADMIN_USER && !isValidRoomUser(ADMIN_USER)) {
+  console.error(
+    `[auth] ADMIN_USER "${ADMIN_USER}" is not a valid room handle (a–z 0–9 . _ - , 2–40) — ` +
+      'admin NOT bootstrapped. Set ADMIN_USER=admin (or similar).',
+  );
+}
+
 // Static frontend + SPA fallback.
 const dist = path.join(__dirname, '..', 'dist');
 app.use(express.static(dist));
 app.get('*', (_req, res) => res.sendFile(path.join(dist, 'index.html')));
 
-app.listen(PORT, () => {
-  console.log(`ต้นและเพชร Tennis Club server on :${PORT} (token minting: ${minter ? 'on' : 'OFF'})`);
+// Explicit http.Server so the Vertex Live relay can attach to the WS upgrade
+// event. The relay opens the real Vertex session server-side with ADC and pipes
+// BidiGenerateContent frames both ways (see liveRelay.mjs).
+const server = http.createServer(app);
+mountLiveRelay(server);
+
+server.listen(PORT, () => {
+  console.log(`ADGE Tennis server on :${PORT} (token minting: ${minter ? 'on' : 'OFF'})`);
 });

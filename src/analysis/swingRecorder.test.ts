@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — swingRecorder pure-logic tests
+// ADGE Tennis — swingRecorder pure-logic tests
 //
 // Only the mimeType negotiation is pure/DOM-free (the predicate is injected),
 // so it is the single unit-test surface. The SwingRecorder class itself only

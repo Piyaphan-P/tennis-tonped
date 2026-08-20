@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — Development Plan (v0.8)
+// ADGE Tennis — Development Plan (v0.8)
 //
 // A player-friendly, shareable review of the latest session:
 //   1. "จุดที่พลาด" — the lowest-scoring shots that have a swing clip (worst
@@ -19,54 +19,26 @@ import { memo, useEffect, useRef, useState, useMemo, type ReactNode } from 'reac
 import { useAppStore } from '../store';
 import { translate, useT } from '../i18n';
 import type { I18nKey } from '../i18n';
-import type { DominantHand, IssueSeverity, Lang, Shot, ShotIssue, SwingCapture } from '../types';
+import type { DominantHand, Lang, Shot, ShotIssue, SwingCapture } from '../types';
 import StoryShareButton from '../components/StoryShareButton';
+import DevPlanShareButton from '../components/DevPlanShareButton';
 import CaptureLightbox from '../components/CaptureLightbox';
 import { renderCaptureToDataUrl } from '../analysis/captureRenderer';
 import type { StoryData } from '../share/storyRenderer';
+import type { DevPlanCardData, PlanAreaCard } from '../share/devPlanRenderer';
+import {
+  type AreaId,
+  areaForIssue,
+  SEVERITY_WEIGHT,
+  rankAreas,
+} from '../history/devPlanDerive';
 import './devplan.css';
 
 // ---------------------------------------------------------------------------
-// Issue key → coaching area id (mirrors scoring.ts issue vocabulary). The area
-// copy (title / อาการ / เพราะอะไร / วิธีซ้อม / cue) lives in i18n so it stays
-// bilingual and editable without touching this screen.
+// Coaching areas are derived by the shared pure ranker (history/devPlanDerive);
+// the area copy (title / อาการ / เพราะอะไร / วิธีซ้อม / cue) lives in i18n so it
+// stays bilingual and editable without touching this screen.
 // ---------------------------------------------------------------------------
-
-const AREA_IDS = [
-  'contact-extension',
-  'knee-load',
-  'balance',
-  'racket-prep',
-  'swing-speed',
-] as const;
-type AreaId = (typeof AREA_IDS)[number];
-
-function areaForIssue(key: string): AreaId | null {
-  switch (key) {
-    case 'elbow-too-bent':
-    case 'arm-locked':
-      return 'contact-extension';
-    case 'no-knee-bend':
-      return 'knee-load';
-    case 'leaning':
-    case 'off-balance':
-      return 'balance';
-    case 'shoulder-angle':
-      return 'racket-prep';
-    case 'swing-faster':
-      return 'swing-speed';
-    default:
-      return null;
-  }
-}
-
-const SEVERITY_WEIGHT: Record<IssueSeverity, number> = { fault: 2, warn: 1, good: 0 };
-
-interface RankedArea {
-  id: AreaId;
-  weight: number;
-  shots: number;
-}
 
 // ---------------------------------------------------------------------------
 // Derivations (pure)
@@ -119,30 +91,10 @@ export default function DevPlanScreen() {
   const setScreen = useAppStore((s) => s.setScreen);
   const shots = useAppStore((s) => s.shots);
   const hand = useAppStore((s) => s.settings.dominantHand);
+  const userName = useAppStore((s) => s.settings.userName);
 
   // Rank recurring faults into coaching areas (worst first, up to 3).
-  const ranked = useMemo<RankedArea[]>(() => {
-    const acc = new Map<AreaId, { weight: number; shots: number }>();
-    for (const shot of shots) {
-      const seen = new Set<AreaId>();
-      for (const issue of shot.issues) {
-        if (issue.severity === 'good') continue;
-        const id = areaForIssue(issue.key);
-        if (!id) continue;
-        const e = acc.get(id) ?? { weight: 0, shots: 0 };
-        e.weight += SEVERITY_WEIGHT[issue.severity];
-        if (!seen.has(id)) {
-          e.shots += 1;
-          seen.add(id);
-        }
-        acc.set(id, e);
-      }
-    }
-    return [...acc.entries()]
-      .map(([id, v]) => ({ id, weight: v.weight, shots: v.shots }))
-      .sort((a, b) => b.weight - a.weight)
-      .slice(0, 3);
-  }, [shots]);
+  const ranked = useMemo(() => rankAreas(shots), [shots]);
 
   // Lowest-scoring shots that have BOTH a clip and a hero capture (worst first).
   const missShots = useMemo<Shot[]>(
@@ -153,16 +105,6 @@ export default function DevPlanScreen() {
         .slice(0, 3),
     [shots],
   );
-
-  // Best moment for the highlight share: highest score, preferring a clip.
-  const bestShot = useMemo<Shot | null>(() => {
-    const withCapture = shots.filter((s) => heroCapture(s));
-    if (withCapture.length === 0) return null;
-    return [...withCapture].sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      return (b.clip ? 1 : 0) - (a.clip ? 1 : 0);
-    })[0];
-  }, [shots]);
 
   const hasSession = shots.length > 0;
   const allGood = ranked.length === 0;
@@ -194,6 +136,40 @@ export default function DevPlanScreen() {
     }
     return { fix: t('devplan.bestFix'), cue: t('devplan.bestCue') };
   };
+
+  // The development-plan share card (fix: was wired to the swing-photo story).
+  // Resolves each ranked area's i18n copy so the renderer stays i18n-free;
+  // empty `areas` ⇒ the renderer draws the positive clean-session card.
+  const planCardData = useMemo<DevPlanCardData>(() => {
+    const areas: PlanAreaCard[] = ranked.map((r) => {
+      const k = (suffix: string) => translate(`devplan.area.${r.id}.${suffix}` as I18nKey, lang);
+      return {
+        title: k('title'),
+        symptom: k('symptom'),
+        why: k('why'),
+        drill: k('drill'),
+        cue: k('cue'),
+        shots: r.shots,
+      };
+    });
+    return {
+      lang,
+      playerName: userName || undefined,
+      dateLabel,
+      areas,
+      cleanTitle: translate('devplan.storyBestTitle', lang),
+      cleanBody: translate('devplan.cleanNote', lang),
+      labels: {
+        guideTitle: translate('devplan.guideTitle', lang),
+        symptom: translate('devplan.symptom', lang),
+        why: translate('devplan.why', lang),
+        drill: translate('devplan.drill', lang),
+        cue: translate('devplan.cue', lang),
+        affected: translate('devplan.affected', lang),
+        shotsUnit: translate('devplan.shotsUnit', lang),
+      },
+    };
+  }, [ranked, lang, userName, dateLabel]);
 
   const buildStory = (shot: Shot, kind: 'miss' | 'best'): StoryData => {
     const { fix, cue } = fixCueForShot(shot);
@@ -254,7 +230,7 @@ export default function DevPlanScreen() {
                           hand={hand}
                           data={buildStory(shot, 'miss')}
                           clip={shot.clip}
-                          filenameBase={`ton-phet-shot-${shot.index}`}
+                          filenameBase={`adge-shot-${shot.index}`}
                           label={t('devplan.shareStory')}
                         />
                       }
@@ -291,20 +267,17 @@ export default function DevPlanScreen() {
             )}
           </section>
 
-          {/* ---- Session highlight share ---- */}
-          {bestShot && heroCapture(bestShot) && (
-            <section className="devplan-section devplan-summary-share">
-              <StoryShareButton
-                capture={heroCapture(bestShot)!}
-                hand={hand}
-                data={buildStory(bestShot, 'best')}
-                clip={bestShot.clip}
-                filenameBase={`ton-phet-highlight-shot-${bestShot.index}`}
-                label={t('devplan.shareSummary')}
-                variant="primary"
-              />
-            </section>
-          )}
+          {/* ---- Development-plan summary share ----
+              Fix (v2.4): this "แชร์สรุปวันนี้" button used to be a StoryShareButton
+              that shared the best swing's PHOTO/CLIP — so it looked like it was
+              sharing the player's picture, not the plan. It now renders the
+              development-PLAN card (top areas + อาการ/วิธีซ้อม/cue). Gated on
+              hasSession (not bestShot) so a clean or capture-less session still
+              gets a plan card (the renderer draws a positive message when there
+              are no faults). */}
+          <section className="devplan-section devplan-summary-share">
+            <DevPlanShareButton data={planCardData} />
+          </section>
         </>
       )}
     </div>

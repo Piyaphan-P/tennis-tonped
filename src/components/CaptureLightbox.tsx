@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — CaptureLightbox
+// ADGE Tennis — CaptureLightbox
 //
 // Full-screen scrim rendered ABOVE the live overlay (and above Summary),
 // showing one SwingCapture LARGE: the skeleton-overlaid image (same renderer

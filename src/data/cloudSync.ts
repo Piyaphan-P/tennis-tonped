@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — cloud sync orchestrator (fire-and-forget).
+// ADGE Tennis — cloud sync orchestrator (fire-and-forget).
 //
 // Sits between the Live pose loop and api.ts. NEVER blocks the pose loop or
 // coaching, NEVER rejects into callers (every path is .catch(()=>{})). If the
@@ -15,6 +15,7 @@
 
 import type { Shot, ShotClip, SessionSummaryJson } from '../types';
 import { useAppStore, GOOD_FORM_SCORE, deriveImprovements } from '../store';
+import { deriveSessionStats } from '../history/sessionStats';
 import * as api from './api';
 
 const MAX_CLIP_BYTES = 8_000_000;
@@ -50,8 +51,10 @@ function ensureSession(): Promise<string | null> {
   }
   const userName = st.settings.userName;
   const startedAtIso = new Date(st.session.startedAtMs || Date.now()).toISOString();
+  const lp = st.settings.lineProfile;
+  const line = lp ? { lineUserId: lp.lineUserId, lineEmail: lp.email } : null;
   const p = api
-    .createSession(userName, startedAtIso)
+    .createSession(userName, startedAtIso, line)
     .then((id) => {
       if (id) {
         useAppStore.getState().setCloudSessionId(id);
@@ -148,15 +151,32 @@ export function syncCoachAudio(localShotId: string, wav: Blob): void {
 }
 
 /**
+ * The coach finished a (clean) critique for a shot: persist its TEXT (v2.3) to
+ * the cloud shot so it shows in History past the same session. Fire-and-forget;
+ * mirrors syncCoachAudio. Empty text is skipped.
+ */
+export function syncCoachText(localShotId: string, text: string): void {
+  const trimmed = (text || '').trim();
+  if (!trimmed) return;
+  void (async () => {
+    const cloudId = await resolveCloudShotId(localShotId);
+    if (!cloudId) return;
+    await api.uploadShotCoachText(cloudId, trimmed);
+  })().catch(() => {});
+}
+
+/**
  * Session ended: PATCH the cloud session with the summary, computed from the
  * SAME fields as buildStoredSession. State is snapshotted SYNCHRONOUSLY here so
  * a subsequent endSession() can't race the async PATCH. No-op without a cloud
  * session id.
  */
-export function syncSessionEnded(): void {
+export function syncSessionEnded(ended = true): void {
   const s = useAppStore.getState();
-  const sessionId = s.cloudSessionId;
-  if (!sessionId) return;
+  // v2.6 (user request): save EVERY started session — even with 0 shots. If no
+  // shot ever created the cloud doc, create it lazily below (ensureSession).
+  // Only bail on a session that never actually started.
+  if (s.session.startedAtMs <= 0) return;
   const shots = s.shots;
   const shotCount = shots.length;
   const avgScore =
@@ -167,16 +187,117 @@ export function syncSessionEnded(): void {
       : (shots.filter((sh) => sh.score >= GOOD_FORM_SCORE).length / shotCount) * 100;
   const bestPeakWristSpeed =
     shotCount === 0 ? 0 : Math.max(...shots.map((sh) => sh.peakWristSpeed));
+  const durationMs = s.session.startedAtMs ? Date.now() - s.session.startedAtMs : 0;
+  // v2.5: persist ≈avg swing speed / ≈kcal / spin into the summary blob so
+  // History detail + the external API can show them (they round-trip verbatim
+  // through Firestore). Computed from the SAME live shots + durationMs the rest
+  // of this summary uses, via the ONE pure deriver the Summary widget uses too.
+  // Applied on BOTH the final and provisional (auto-save) flush — no gating.
+  const stats = deriveSessionStats(
+    shots,
+    durationMs,
+    s.settings.playerWeightKg,
+    s.settings.dominantHand,
+  );
   const summary: SessionSummaryJson = {
-    durationMs: s.session.startedAtMs ? Date.now() - s.session.startedAtMs : 0,
+    durationMs,
     goodFormPct,
     bestPeakWristSpeed,
     totalCostTHB: s.cost.breakdown.thbTotal,
     focusShot: s.settings.focusShot,
     improvements: deriveImprovements(shots),
+    ...(stats.avgSpeedKmh !== undefined ? { avgSpeedKmh: stats.avgSpeedKmh } : {}),
+    kcal: stats.kcal,
+    spin: stats.spin,
   };
-  const endedAtIso = new Date().toISOString();
-  void api
-    .endSessionCloud(sessionId, endedAtIso, avgScore, shotCount, summary)
-    .catch(() => false);
+  // Real Gemini usage from the cost monitor (source of truth: usageMetadata →
+  // store.cost). tokensIn/tokensOut sum the per-modality buckets; thoughts are
+  // billed as text OUTPUT, so they count as output tokens. Fire-and-forget —
+  // must never block or fail session end (the PATCH already .catch()es).
+  const tk = s.cost.tokens;
+  const usage: api.SessionUsage = {
+    thb: s.cost.breakdown.thbTotal,
+    tokensIn: tk.textIn + tk.audioIn + tk.videoIn,
+    tokensOut: tk.textOut + tk.audioOut + tk.thoughts,
+    detail: {
+      tokens: { ...tk },
+      thb: { ...s.cost.breakdown },
+      usageEvents: s.cost.usageEvents,
+    },
+  };
+  // Provisional (auto-save) flush: endedAt=null so the session isn't marked
+  // finished mid-play (code-review finding #3), and SKIP the (potentially large)
+  // usage detail so the keepalive page-hide PATCH stays under the ~64KB cap
+  // (finding #2). The final End (ended=true) writes the real endedAt + usage.
+  const endedAtIso = ended ? new Date().toISOString() : null;
+  void (async () => {
+    // Create the cloud session lazily if no shot ever did (empty session still
+    // lands in cloud History). On a page-hide/keepalive flush the create POST
+    // may not finish before the tab freezes — that's fine, LOCAL history was
+    // already snapshotted synchronously by the caller.
+    const sessionId = s.cloudSessionId ?? (await ensureSession());
+    if (!sessionId) return;
+    await api.endSessionCloud(
+      sessionId,
+      endedAtIso,
+      avgScore,
+      shotCount,
+      summary,
+      ended ? usage : undefined,
+      { keepalive: !ended },
+    );
+  })().catch(() => false);
+}
+
+// ---------------------------------------------------------------------------
+// AUTO-SAVE (v2.3) — so a session shows up in History/ranking even if the
+// player never taps "End session". Two triggers, both idempotent:
+//   • a periodic tick (every AUTO_SAVE_MS) while Live is mounted, and
+//   • a page-hide flush (visibilitychange→hidden / pagehide) for backgrounding.
+// Each fires the SAME idempotent syncSessionEnded() cloud PATCH (session_id
+// keyed → leaderboard upsert is a set()) PLUS a local-history upsert (dedup by
+// the stable live id). No new shot data is touched; End still does the full end.
+// ---------------------------------------------------------------------------
+
+const AUTO_SAVE_MS = 20_000;
+let autoSaveTimer: ReturnType<typeof setInterval> | null = null;
+let hideHandler: (() => void) | null = null;
+
+/** One idempotent auto-save pass while a session is live. v2.6: runs for EMPTY
+ *  sessions too (0 shots → saved with score 0), per user request. */
+function autoSaveFlush(): void {
+  const s = useAppStore.getState();
+  if (s.session.status !== 'live' && s.session.status !== 'starting') return;
+  if (s.session.startedAtMs <= 0) return;
+  useAppStore.getState().snapshotSessionToHistory(); // local Home/History
+  syncSessionEnded(false); // cloud flush, endedAt=null (in-progress), keepalive
+}
+
+/** Start periodic + page-hide auto-save. Call on Live mount; idempotent. */
+export function startSessionAutoSave(): void {
+  stopSessionAutoSave();
+  autoSaveTimer = setInterval(autoSaveFlush, AUTO_SAVE_MS);
+  hideHandler = () => {
+    // Fire on the LAST chance before the tab is frozen/closed.
+    if (typeof document === 'undefined' || document.visibilityState === 'hidden') {
+      autoSaveFlush();
+    }
+  };
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', hideHandler);
+    window.addEventListener('pagehide', hideHandler);
+  }
+}
+
+/** Stop auto-save + do one final flush. Call on Live unmount / session end. */
+export function stopSessionAutoSave(): void {
+  if (autoSaveTimer) {
+    clearInterval(autoSaveTimer);
+    autoSaveTimer = null;
+  }
+  if (hideHandler && typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', hideHandler);
+    window.removeEventListener('pagehide', hideHandler);
+  }
+  hideHandler = null;
 }

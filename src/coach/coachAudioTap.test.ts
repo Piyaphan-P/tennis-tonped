@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — coach audio tap + WAV encoder tests.
+// ADGE Tennis — coach audio tap + WAV encoder tests.
 //
 // Covers:
 //   • encodeWavPcm16      — RIFF/WAVE header bytes, sizes, empty → null

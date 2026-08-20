@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — story renderer (v0.8 share-a-swing)
+// ADGE Tennis — story renderer (v0.8 share-a-swing)
 //
 // Turns one bad/missed swing into a share-worthy 9:16 story the player can post
 // to IG / Facebook / TikTok:
@@ -44,10 +44,10 @@ export const STORY_W = 1080;
 export const STORY_H = 1920;
 
 /** Public brand handle shown in the footer. Never a real broken link claim. */
-export const STORY_APP_URL = 'tonphet.tennis';
+export const STORY_APP_URL = 'adge.tennis';
 
 /** Brand header — the ONE canonical spelling. Never "ต้นเป็ด" / "TonPed". */
-const BRAND = 'ต้นและเพชร Tennis Club';
+const BRAND = 'ADGE Tennis';
 
 /** Video story tunables (a touch richer than the on-court clip). */
 export const STORY_VIDEO_MAX_MS = 8000;
@@ -171,7 +171,7 @@ export function extForMime(mimeType: string): string {
 
 /** `${base}.${ext}` derived from the blob mimeType. */
 export function storyFilename(base: string, mimeType: string): string {
-  const safe = (base || 'tonphet-story').replace(/[^a-z0-9._-]+/gi, '-');
+  const safe = (base || 'adge-story').replace(/[^a-z0-9._-]+/gi, '-');
   return `${safe}.${extForMime(mimeType)}`;
 }
 
