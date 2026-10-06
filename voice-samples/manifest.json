@@ -1,0 +1,139 @@
+{
+  "model": "gemini-3.1-flash-live-preview",
+  "verbosity": "short",
+  "shot": {
+    "index": 3,
+    "type": "forehand",
+    "score": 72
+  },
+  "samples": [
+    {
+      "tone": "gentleF",
+      "voice": "Aoede",
+      "mode": "encourage",
+      "file": "voice-samples/gentleF-Aoede__encourage.wav",
+      "seconds": 8.4,
+      "text": "ช็อตที่ 3 โฟร์แฮนด์นะ คะ โอเค ตีได้ มั่นคง ดีแล้ว ลอง งอเข่า เพิ่มอีก นิดนึงนะ คะ จะได้ มีแรง ส่งเพิ่ม ขึ้น ค่ะ"
+    },
+    {
+      "tone": "gentleF",
+      "voice": "Aoede",
+      "mode": "hardcore",
+      "file": "voice-samples/gentleF-Aoede__hardcore.wav",
+      "seconds": 8,
+      "text": "ช็อตที่ 3 โฟร์แฮนด์นะคะ เยี่ยมเลย ตีลูก ได้มั่นคง ดีมาก แค่ตอน กระทบ ลูก ลอง ยืด แขนออก ไปอีก นิดนะ ต้น ลองดู!"
+    },
+    {
+      "tone": "gentleF",
+      "voice": "Aoede",
+      "mode": "polite",
+      "file": "voice-samples/gentleF-Aoede__polite.wav",
+      "seconds": 8.1,
+      "text": "ช็อตที่ สาม โฟร์แฮนด์นะ คะ ต้น เริ่ม นิ่ง แล้ว ลอง งอเข่า เพิ่ม อีกนิด จะสมบูรณ์แบบ เลยค่ะ ลองดู ใหม่อีก ทีนะ คะ"
+    },
+    {
+      "tone": "gentleF",
+      "voice": "Aoede",
+      "mode": "buddy",
+      "file": "voice-samples/gentleF-Aoede__buddy.wav",
+      "seconds": 6.9,
+      "text": "ช็อตที่ 3 โฟร์แฮนด์นะครับ ต้น ตีโต้ ได้สม่ำเสมอ ดีแล้ว ลอง งอเข่า ให้มากขึ้น อีกนิด ตอนเข้า บอลนะ"
+    },
+    {
+      "tone": "firmF",
+      "voice": "Kore",
+      "mode": "encourage",
+      "file": "voice-samples/firmF-Kore__encourage.wav",
+      "seconds": 8.1,
+      "text": "ช็อตที่ สาม โฟร์แฮนด์นะคะ - โอเค คุณต้น ตีได้ นิ่ง ขึ้นเยอะ เลย ลอง เพิ่ม การย่อ เข่า ตอนตี อีกนิด นะคะ จะดี กว่านี้ เลย"
+    },
+    {
+      "tone": "firmF",
+      "voice": "Kore",
+      "mode": "hardcore",
+      "file": "voice-samples/firmF-Kore__hardcore.wav",
+      "seconds": 7.4,
+      "text": "ช็อตที่ สาม โฟร์แฮนด์นะ ต้น โอเค ขึ้นแล้ว ลอง งอเข่า ลงตอน กระทบ ลูกอีก นิดนะ จะได้ มีแรง ส่งเพิ่ม"
+    },
+    {
+      "tone": "firmF",
+      "voice": "Kore",
+      "mode": "polite",
+      "file": "voice-samples/firmF-Kore__polite.wav",
+      "seconds": 10.5,
+      "text": "โอเค ช็อตที่ 3 โฟร์แฮนด์นะ ต้น สวิง นิ่ง ขึ้นแล้ว ลอง ยืด แขนตอน กระทบ ลูก ให้เกือบ ตรงอีก นิดนะ จะดีมาก เลย ประมาณ ร้อยสี่สิบ องศาค่ะ"
+    },
+    {
+      "tone": "firmF",
+      "voice": "Kore",
+      "mode": "buddy",
+      "file": "voice-samples/firmF-Kore__buddy.wav",
+      "seconds": 7.2,
+      "text": "ช็อตที่ สาม โฟร์แฮนด์นะคะ ต้น — โฟร์แฮนด์ลูกนี้ ดูมั่นคง ขึ้นนะ ลองยืด แขนตอน กระทบ ลูกให้ ตึงอีก นิดนึงนะ คะ"
+    },
+    {
+      "tone": "firmM",
+      "voice": "Charon",
+      "mode": "encourage",
+      "file": "voice-samples/firmM-Charon__encourage.wav",
+      "seconds": 5.6,
+      "text": "ช็อตที่สาม โฟร์แฮนด์นะ โหลดเข่าอีกนิดนึง จะแจ๋วเลย ลองดูใหม่นะ ต้น"
+    },
+    {
+      "tone": "firmM",
+      "voice": "Charon",
+      "mode": "hardcore",
+      "file": "voice-samples/firmM-Charon__hardcore.wav",
+      "seconds": 6.5,
+      "text": "ช็อตที่ 3 โฟร์แฮนด์นะครับ ต้น แขนยังงอไปหน่อยตอนกระทบลูก นะครับ ลองเหยียดออกไปให้เกือบตรงอีกนิดนึงนะ"
+    },
+    {
+      "tone": "firmM",
+      "voice": "Charon",
+      "mode": "polite",
+      "file": "voice-samples/firmM-Charon__polite.wav",
+      "seconds": 6.5,
+      "text": "ช็อตที่ สาม โฟร์แฮนด์นะ ครับ ต้น ดีแล้ว ล่ะ ตอน นี้ลอง เพิ่ม การย่อ เข่าตอน โหลดลูก ดูอีก นิดนะ ครับ"
+    },
+    {
+      "tone": "firmM",
+      "voice": "Charon",
+      "mode": "buddy",
+      "file": "voice-samples/firmM-Charon__buddy.wav",
+      "seconds": 8.9,
+      "text": "ช็อตที่สาม โฟร์แฮนด์นะ ต้น จังหวะ ตี ทรงตัว ดีแล้ว ลอง งอเข่า ตอน พับแบ็คสวิง เพิ่มอีกนิด นะครับ จะได้ มีแรง ส่ง ขึ้น ลองดู ครับ"
+    },
+    {
+      "tone": "friendlyM",
+      "voice": "Puck",
+      "mode": "encourage",
+      "file": "voice-samples/friendlyM-Puck__encourage.wav",
+      "seconds": 6.6,
+      "text": "โอเค ช็อตที่ สาม โฟร์แฮนด์นะ ครับ ต้น ลอง ย่อเข่า ลงอีก สักนิด ตอนตีลูก นะเพื่อน จะได้ ตีนิ่ง ขึ้นอีก"
+    },
+    {
+      "tone": "friendlyM",
+      "voice": "Puck",
+      "mode": "hardcore",
+      "file": "voice-samples/friendlyM-Puck__hardcore.wav",
+      "seconds": 6.1,
+      "text": "ช็อตที่ สาม โฟร์แฮนด์นะ ดีขึ้น แล้ว ต้น! ตอน กระทบ ลูก เหยียด แขนออก ไปอีก นิดนึง ลองดู!"
+    },
+    {
+      "tone": "friendlyM",
+      "voice": "Puck",
+      "mode": "polite",
+      "file": "voice-samples/friendlyM-Puck__polite.wav",
+      "seconds": 7,
+      "text": "ช็อตที่ 3 โฟร์แฮนด์นะ ต้น โอเคเลย ตอนตี ศอกงอไปนิด ลองเหยียด แขนออกอีก สักหน่อยนะ จะได้มีแรงส่งครับ"
+    },
+    {
+      "tone": "friendlyM",
+      "voice": "Puck",
+      "mode": "buddy",
+      "file": "voice-samples/friendlyM-Puck__buddy.wav",
+      "seconds": 6.9,
+      "text": "ช็อตที่ 3 โฟร์แฮนด์นะ สวิงได้ นิ่ง ขึ้นเยอะ เลย ตอนตี ลองงอ เข่าอีก Nid1 จะดีมาก ลองดู ใหม่นะ เพื่อน"
+    }
+  ]
+}
