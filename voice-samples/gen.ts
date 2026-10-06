@@ -48,7 +48,7 @@ async function one(tone: VoiceTone, mode: CoachMode) {
       responseModalities: [Modality.AUDIO],
       speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: VOICE_NAMES[tone] } } },
       outputAudioTranscription: {},
-      systemInstruction: buildCoachSystemPrompt('ต้น', tone, mode, VERBOSITY),
+      systemInstruction: buildCoachSystemPrompt('คุณลูกค้า', tone, mode, VERBOSITY),
     },
     callbacks: {
       onmessage: (m: any) => {
@@ -64,7 +64,7 @@ async function one(tone: VoiceTone, mode: CoachMode) {
   });
   const t = setTimeout(() => fail('timeout 45s'), 45000);
   session.sendClientContent({
-    turns: buildShotPrompt(shot, 'th', 'right', 'both', 'ต้น', [], undefined, VERBOSITY),
+    turns: buildShotPrompt(shot, 'th', 'right', 'both', 'คุณลูกค้า', [], undefined, VERBOSITY),
     turnComplete: true,
   });
   try { await finished; } finally { clearTimeout(t); try { session.close(); } catch {} }
