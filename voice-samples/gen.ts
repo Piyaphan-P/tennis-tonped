@@ -10,7 +10,7 @@ import {
 } from '../src/coach/liveClient';
 import type { CoachMode, Shot, VoiceTone } from '../src/types';
 
-const MODEL = process.env.LIVE_MODEL || 'gemini-3.1-flash-live-preview';
+const MODEL = process.env.LIVE_MODEL || 'gemini-3.8-live';
 const VERBOSITY = (process.env.VERBOSITY as 'short' | 'medium' | 'long') || 'short';
 const TONES: VoiceTone[] = ['gentleF', 'firmF', 'firmM', 'friendlyM'];
 const MODES: CoachMode[] = ['encourage', 'hardcore', 'polite', 'buddy'];

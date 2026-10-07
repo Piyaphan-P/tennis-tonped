@@ -1,0 +1,157 @@
+{
+  "model": "gemini-3.8-live",
+  "line": "ช็อตที่สาม โฟร์แฮนด์ วงสวิงเริ่มนิ่งแล้ว ลองเหยียดแขนออกไปอีกนิด แล้วย่อเข่าลงหน่อย",
+  "voices": [
+    {
+      "voice": "Zephyr",
+      "seconds": 8.2,
+      "text": ""
+    },
+    {
+      "voice": "Puck",
+      "seconds": 8.5,
+      "text": ""
+    },
+    {
+      "voice": "Charon",
+      "seconds": 7.7,
+      "text": "ช็อตที่สาม โฟร์แฮนด์ วงสวิงเริ่มนิ่งแล้ว ลองเหยียดแขนออกไปอีกนิด แล้วย่อเข่าลงหน่อย"
+    },
+    {
+      "voice": "Kore",
+      "seconds": 7.1,
+      "text": ""
+    },
+    {
+      "voice": "Fenrir",
+      "seconds": 7.5,
+      "text": ""
+    },
+    {
+      "voice": "Leda",
+      "seconds": 8.9,
+      "text": ""
+    },
+    {
+      "voice": "Orus",
+      "seconds": 8.4,
+      "text": ""
+    },
+    {
+      "voice": "Aoede",
+      "seconds": 7.6,
+      "text": ""
+    },
+    {
+      "voice": "Callirrhoe",
+      "seconds": 8,
+      "text": ""
+    },
+    {
+      "voice": "Autonoe",
+      "seconds": 8,
+      "text": ""
+    },
+    {
+      "voice": "Enceladus",
+      "seconds": 7.8,
+      "text": ""
+    },
+    {
+      "voice": "Iapetus",
+      "seconds": 7.8,
+      "text": "ช็อตที่สาม โฟร์แฮนด์ วงสวิงเริ่มนิ่งแล้ว ลองเหยียดแขนออกไปอีกนิด แล้วย่อเข่าลงหน่อย"
+    },
+    {
+      "voice": "Umbriel",
+      "seconds": 7.3,
+      "text": ""
+    },
+    {
+      "voice": "Algieba",
+      "seconds": 8,
+      "text": ""
+    },
+    {
+      "voice": "Despina",
+      "seconds": 7.6,
+      "text": "",
+      "note": "first run glitched (0.8s, garbage transcript); 2 retries OK"
+    },
+    {
+      "voice": "Erinome",
+      "seconds": 7.8,
+      "text": ""
+    },
+    {
+      "voice": "Algenib",
+      "seconds": 7.8,
+      "text": ""
+    },
+    {
+      "voice": "Rasalgethi",
+      "seconds": 7.6,
+      "text": ""
+    },
+    {
+      "voice": "Laomedeia",
+      "seconds": 7.5,
+      "text": ""
+    },
+    {
+      "voice": "Achernar",
+      "seconds": 8.3,
+      "text": ""
+    },
+    {
+      "voice": "Alnilam",
+      "seconds": 7.8,
+      "text": ""
+    },
+    {
+      "voice": "Schedar",
+      "seconds": 7.2,
+      "text": ""
+    },
+    {
+      "voice": "Gacrux",
+      "seconds": 8.2,
+      "text": ""
+    },
+    {
+      "voice": "Pulcherrima",
+      "seconds": 7.8,
+      "text": ""
+    },
+    {
+      "voice": "Achird",
+      "seconds": 7.1,
+      "text": ""
+    },
+    {
+      "voice": "Zubenelgenubi",
+      "seconds": 8.8,
+      "text": ""
+    },
+    {
+      "voice": "Vindemiatrix",
+      "seconds": 7.2,
+      "text": ""
+    },
+    {
+      "voice": "Sadachbia",
+      "seconds": 6.7,
+      "text": "ช็อตที่สาม โฟร์แฮนด์ วงสวิงเริ่มนิ่งแล้ว ลองเหยียดแขนออกไปอีกนิด แล้วย่อเข่าลงหน่อย"
+    },
+    {
+      "voice": "Sadaltager",
+      "seconds": 7.3,
+      "text": "ช็อตที่สาม โฟร์แฮนด์ วงสวิงเริ่มนิ่งแล้ว ลองเหยียดแขนออกไปอีกนิด แล้วย่อเข่าลงหน่อย"
+    },
+    {
+      "voice": "Sulafat",
+      "seconds": 8.1,
+      "text": ""
+    }
+  ]
+}
