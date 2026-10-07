@@ -1693,34 +1693,29 @@ export class CoachLiveClient {
     // Open the cost attribution window for this shot.
     state.beginShotCost(shot.id);
 
-    // TRANSPORT SPLIT for image delivery (SIT migration — empirically required):
-    //   • RELAY / Vertex: the swing frames MUST ride INSIDE the clientContent turn
-    //     as inlineData parts. Vertex half-cascade gemini-live-2.5-flash IGNORES
-    //     images sent via sendRealtimeInput({video}) now that the mic is cut (v0.6)
-    //     — realtimeInput is the streaming/VAD channel and, with no audio stream to
-    //     anchor a frame to, the model literally never sees the swing (proven E2E
-    //     through /api/live: it replies "NO IMAGE RECEIVED" and prompt tokens stay
-    //     TEXT-only). Sent inline, the model reads every frame and Vertex bills the
-    //     IMAGE-modality tokens (~93% of the prompt) that costMonitor folds into
-    //     the VIDEO bucket.
-    //   • AI-Studio (native-audio, main-branch): UNCHANGED — frames still go via
-    //     sendRealtimeInput({video}) exactly as before, so a merge to main keeps
-    //     its verified behavior. (If AI-Studio ever shows the same blindness it
-    //     needs the same inline treatment — retest that path independently.)
-    const useRelay = isRelayTransport();
-
+    // IMAGE DELIVERY — INLINE on EVERY transport (v2.7, 2026-10-07).
+    //   The swing frames ride INSIDE the clientContent turn as inlineData parts
+    //   (phase order, text LAST). This was first required for the Vertex relay
+    //   (half-cascade gemini-live-2.5-flash ignores sendRealtimeInput({video})
+    //   once the mic is cut — "NO IMAGE RECEIVED", TEXT-only prompt tokens).
+    //   Re-tested on AI-Studio native (voice-samples/spikeimg.ts, red-circle
+    //   can't-parrot probe): realtime video IMMEDIATELY followed by the text
+    //   turn — exactly what this method did — billed IMAGE=0 and the model said
+    //   "I cannot see the image" on BOTH gemini-3.1-flash-live-preview and
+    //   gemini-3.8-live, i.e. the native coach was coaching BLIND from the text
+    //   angles. 3.1 only saw realtime frames after a ~2s gap; 3.8 never did on
+    //   that channel. Inline is the one pattern both models read (IMAGE 1064 /
+    //   266 tokens) — so the transport split is gone. Rerun the spike on every
+    //   model bump: a fluent Thai reply is NOT proof the coach saw the swing;
+    //   IMAGE tokens > 0 in usageMetadata is.
     try {
       // Send every captured frame in phase order (if enabled). Fall back to the
       // legacy single contact-frame blob only when NOTHING was captured.
       let framesSent = 0;
       const imageParts: Array<{ inlineData: { mimeType: string; data: string } }> = [];
       const addFrame = (data: string): void => {
-        if (useRelay) {
-          // Buffer for the inline clientContent turn (order preserved).
-          imageParts.push({ inlineData: { mimeType: 'image/jpeg', data } });
-        } else {
-          session.sendRealtimeInput({ video: { data, mimeType: 'image/jpeg' } });
-        }
+        // Buffer for the inline clientContent turn (order preserved).
+        imageParts.push({ inlineData: { mimeType: 'image/jpeg', data } });
         framesSent += 1;
       };
       if (state.settings.sendContactFrame) {
@@ -1762,12 +1757,12 @@ export class CoachLiveClient {
           '\nThe still frames of this swing are attached in the order listed above — read them as one motion and ground your correction in what you see.';
       }
 
-      if (useRelay && imageParts.length > 0) {
-        // Relay: images ride INSIDE the turn as inlineData parts (phase order),
-        // text LAST so it lines up with the "Frame N = <phase>" mapping in `turns`.
-        // This is the exact wire frame proven end-to-end through /api/live (model
-        // reads the swing; IMAGE tokens billed). normalizeTurns passes this Content
-        // object through unchanged → { clientContent: { turns: [Content], … } }.
+      if (imageParts.length > 0) {
+        // Images ride INSIDE the turn as inlineData parts (phase order), text
+        // LAST so it lines up with the "Frame N = <phase>" mapping in `turns`.
+        // Proven on both transports (relay via /api/live; native via the SDK —
+        // see the IMAGE DELIVERY note above). On the relay, normalizeTurns
+        // passes this Content object through → { clientContent: { turns: [Content], … } }.
         session.sendClientContent({
           turns: { role: 'user', parts: [...imageParts, { text: turns }] },
           turnComplete: true,

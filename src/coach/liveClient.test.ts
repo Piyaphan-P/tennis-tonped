@@ -1368,22 +1368,34 @@ describe('dispatchShot image delivery per transport', () => {
     ).toBe('cap-contact-200');
   });
 
-  it('AI-STUDIO (no relay env): frames go via realtimeInput + a plain string turn (main-branch behavior unchanged)', () => {
+  it('AI-STUDIO native (no relay env): frames ALSO go INLINE — never realtimeInput (v2.7: native realtime frames were unseen, IMAGE=0)', () => {
     const { client, session } = connectedClient();
     const s = shot({
       captures: [capture('backswing', 100), capture('contact', 200)],
     });
     client.sendShotForCoaching(s);
 
-    expect(session.sendRealtimeInput).toHaveBeenCalledTimes(2);
-    expect((session.sendRealtimeInput.mock.calls[0][0] as { video: { data: string } }).video.data).toBe(
-      'jpeg-backswing',
-    );
+    // The blind pattern (realtime video then an immediate text turn) is gone.
+    expect(session.sendRealtimeInput).not.toHaveBeenCalled();
     expect(session.sendClientContent).toHaveBeenCalledTimes(1);
+    const arg = session.sendClientContent.mock.calls[0][0] as {
+      turns: { role: string; parts: Array<{ inlineData?: { data: string }; text?: string }> };
+    };
+    expect(arg.turns.role).toBe('user');
+    expect(arg.turns.parts.slice(0, 2).map((p) => p.inlineData?.data)).toEqual([
+      'jpeg-backswing',
+      'jpeg-contact',
+    ]);
+    expect(arg.turns.parts[2].text ?? '').toContain('Frame 1 = backswing');
+  });
+
+  it('no frames captured → plain string turn, no images (unchanged)', () => {
+    appStore.setState((s) => ({ settings: { ...s.settings, sendContactFrame: false } }));
+    const { client, session } = connectedClient();
+    client.sendShotForCoaching(shot({ captures: [capture('contact', 200)] }));
+    expect(session.sendRealtimeInput).not.toHaveBeenCalled();
     const arg = session.sendClientContent.mock.calls[0][0] as { turns: unknown };
-    // A plain STRING turn on the AI-Studio path, not an inline Content object.
     expect(typeof arg.turns).toBe('string');
-    expect(arg.turns as string).toContain('Frame 1 = backswing');
   });
 });
 

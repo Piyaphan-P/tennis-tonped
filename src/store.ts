@@ -296,10 +296,10 @@ function envUsdToThb(): number {
  * Editable in SettingsSheet; keep in sync with src/cost/pricing.ts DEFAULT_RATES.
  */
 export const DEFAULT_RATES: PricingRates = {
-  textInPer1M: 0.5,
+  textInPer1M: 0.75,
   audioInPer1M: 3.0,
-  videoInPer1M: 3.0,
-  textOutPer1M: 2.0,
+  videoInPer1M: 1.0,
+  textOutPer1M: 4.5,
   audioOutPer1M: 12.0,
   usdToThb: envUsdToThb(),
 };

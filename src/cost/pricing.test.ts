@@ -25,9 +25,9 @@ describe('pricing math', () => {
       total: 1_000_000,
     };
     const b = computeBreakdown(tokens, { ...DEFAULT_RATES, usdToThb: 36.5 });
-    // textInPer1M = 0.5 USD -> 0.5 * 36.5 = 18.25 THB
-    expect(b.textInTHB).toBeCloseTo(18.25, 6);
-    expect(b.thbTotal).toBeCloseTo(18.25, 6);
+    // textInPer1M = 0.75 USD (Gemini 3.x Live) -> 0.75 * 36.5 = 27.375 THB
+    expect(b.textInTHB).toBeCloseTo(27.375, 6);
+    expect(b.thbTotal).toBeCloseTo(27.375, 6);
   });
 
   it('deltaTHB prices thoughts at the text-output rate', () => {
@@ -39,8 +39,8 @@ describe('pricing math', () => {
       totalTokens: 1_000_000,
     };
     const rates = { ...DEFAULT_RATES, usdToThb: 36.5 };
-    // textOutPer1M = 2.0 USD -> 2 * 36.5 = 73 THB
-    expect(deltaTHB(d, rates)).toBeCloseTo(73, 6);
+    // textOutPer1M = 4.5 USD (Gemini 3.x Live) -> 4.5 * 36.5 = 164.25 THB
+    expect(deltaTHB(d, rates)).toBeCloseTo(164.25, 6);
   });
 });
 
