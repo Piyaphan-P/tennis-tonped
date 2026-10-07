@@ -12,7 +12,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function run(label: string, model: string, inline: boolean) {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY!, httpOptions: { apiVersion: 'v1beta' } });
-  let usage: any = null, done: (() => void) | null = null;
+  let usage: any = null, done: (() => void) | null = null, said = '';
   const s = await ai.live.connect({
     model,
     config: {
@@ -20,9 +20,10 @@ async function run(label: string, model: string, inline: boolean) {
       speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: VOICE_NAMES.gentleF } } },
       outputAudioTranscription: {},
       systemInstruction: buildCoachSystemPrompt('คุณลูกค้า', 'gentleF', 'encourage', 'short'),
+      ...(process.env.TRIGGER ? { contextWindowCompression: { triggerTokens: process.env.TRIGGER, slidingWindow: { targetTokens: process.env.TARGET } } } : {}),
     },
     callbacks: {
-      onmessage: (m: any) => { if (m.usageMetadata) usage = m.usageMetadata; if (m.serverContent?.turnComplete) done?.(); },
+      onmessage: (m: any) => { if (m.serverContent?.outputTranscription?.text) said += m.serverContent.outputTranscription.text; if (m.usageMetadata) usage = m.usageMetadata; if (m.serverContent?.turnComplete) done?.(); },
       onerror: (e: any) => console.log('err', e?.message ?? e), onclose: () => {},
     },
   });
@@ -32,7 +33,7 @@ async function run(label: string, model: string, inline: boolean) {
     const shot: any = { id: `s${i}`, index: i, type: i % 2 ? 'forehand' : 'backhand', startMs: 0, contactMs: 1, endMs: 2, contactAngles: angles, peakWristSpeed: 2.6, score: 60 + i * 5, issues: [{ key: 'elbow-too-bent', severity: 'warn' }], captures: caps };
     let text = buildShotPrompt(shot, 'th', 'right', 'both', 'คุณลูกค้า', caps, undefined, 'short');
     text += '\nThe still frames of this swing are attached in the order listed above — read them as one motion and ground your correction in what you see.';
-    usage = null;
+    usage = null; said = '';
     const fin = new Promise<void>((r) => (done = r));
     if (inline) {
       s.sendClientContent({ turns: [{ role: 'user', parts: [...caps.map((c) => ({ inlineData: { mimeType: 'image/jpeg', data: c.jpegBase64 } })), { text }] }], turnComplete: true });
@@ -46,7 +47,7 @@ async function run(label: string, model: string, inline: boolean) {
     const p = usage?.promptTokensDetails, r = usage?.responseTokensDetails;
     const row = { shot: i, inText: by(p, 'TEXT'), inImage: by(p, 'IMAGE'), inAudio: by(p, 'AUDIO'), outAudio: by(r, 'AUDIO'), outText: by(r, 'TEXT'), thoughts: usage?.thoughtsTokenCount ?? 0 };
     const usd = (row.inText * RATE.TEXT + row.inImage * RATE.IMAGE + row.inAudio * RATE.AUDIO_IN + row.outAudio * RATE.AUDIO_OUT + (row.outText + row.thoughts) * RATE.TEXT_OUT) / 1e6;
-    rows.push({ ...row, thb: +(usd * THB).toFixed(4) });
+    rows.push({ ...row, prompt: usage?.promptTokenCount ?? 0, thb: +(usd * THB).toFixed(4), said: said.replace(/\s+/g, '').slice(0, 34) });
     await sleep(1500);
   }
   s.close();
@@ -55,6 +56,6 @@ async function run(label: string, model: string, inline: boolean) {
   console.table(rows);
   console.log(`total ${N} shots = ${tot.toFixed(4)} THB  | avg/shot = ${(tot / N).toFixed(4)} THB`);
 }
-await run('OLD: realtime frames (blind)', 'gemini-3.1-flash-live-preview', false);
-await run('NEW: inline frames', 'gemini-3.8-live', true);
+if (!process.env.ONLY_NEW) await run('OLD: realtime frames (blind)', 'gemini-3.1-flash-live-preview', false);
+await run(`NEW: inline frames${process.env.TRIGGER ? ` + sliding window ${process.env.TRIGGER}->${process.env.TARGET}` : ''}`, 'gemini-3.8-live', true);
 process.exit(0);

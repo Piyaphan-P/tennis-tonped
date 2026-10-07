@@ -174,6 +174,24 @@ Your goal: after every swing, {{PLAYER_NAME}} feels seen, knows the ONE thing to
  * transports (SDK config.speechConfig / relay setup.generationConfig.speechConfig).
  * This RE-INTRODUCES a voice pin (removed in v1.3.1) — intended for this feature.
  */
+/**
+ * CONTEXT WINDOW COMPRESSION (v2.7.1, 2026-10-07). Without it every turn
+ * re-bills the WHOLE session history (text + the coach's earlier audio + every
+ * earlier swing's inline frames, ~1.5k tokens/shot), so per-shot cost climbed
+ * without bound (measured 0.27 → 0.47 THB over 5 shots on 3.8). Sliding window:
+ * once the context passes triggerTokens before a turn, the server drops the
+ * oldest turns down to ~targetTokens. The systemInstruction is preserved
+ * (verified: persona particles + the shot-name opener stay correct on every
+ * turn after compression, 10-shot spike voice-samples/spikecost.ts). Measured:
+ * prompt saw-tooths 4.3k→10.8k→6.0k, per-shot cost capped ≈0.34–0.52 THB.
+ * The gap (4k ≈ 2–3 shots) keeps the window-shortening latency off most turns.
+ * Native (AI-Studio SDK) path only — the relay setup frame is unchanged.
+ */
+export const CONTEXT_WINDOW_COMPRESSION = {
+  triggerTokens: '10000',
+  slidingWindow: { targetTokens: '6000' },
+} as const;
+
 export const VOICE_NAMES: Record<VoiceTone, string> = {
   gentleF: 'Aoede',
   firmF: 'Kore',
@@ -1421,6 +1439,8 @@ export class CoachLiveClient {
                 voiceConfig: { prebuiltVoiceConfig: { voiceName } },
               },
               outputAudioTranscription: {},
+              // v2.7.1: cap the re-billed history (see CONTEXT_WINDOW_COMPRESSION).
+              contextWindowCompression: CONTEXT_WINDOW_COMPRESSION,
               // v0.6: no inputAudioTranscription — the mic is never opened, so
               // there is no user audio to transcribe.
               systemInstruction,

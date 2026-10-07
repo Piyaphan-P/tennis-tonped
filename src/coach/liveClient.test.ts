@@ -19,6 +19,7 @@ import {
   buildShotPrompt,
   COACH_SYSTEM_PROMPT,
   COACHING_STYLES,
+  CONTEXT_WINDOW_COMPRESSION,
   lengthClause,
   CoachLiveClient,
   orderedCaptures,
@@ -1494,5 +1495,18 @@ describe('turn watchdog (silent model can never wedge the pipeline)', () => {
     expect(internals.pendingShotId).toBe('next-2');
 
     client.disconnect();
+  });
+});
+
+// v2.7.1: sliding-window context compression caps the per-turn re-billed history.
+describe('CONTEXT_WINDOW_COMPRESSION', () => {
+  it('trigger above target, both positive int64 strings (SDK shape)', () => {
+    const trig = Number(CONTEXT_WINDOW_COMPRESSION.triggerTokens);
+    const targ = Number(CONTEXT_WINDOW_COMPRESSION.slidingWindow.targetTokens);
+    expect(Number.isInteger(trig) && Number.isInteger(targ)).toBe(true);
+    expect(targ).toBeGreaterThan(0);
+    expect(trig).toBeGreaterThan(targ);
+    // Must leave room for the system prompt (~3k) + at least one shot (~1.5k).
+    expect(targ).toBeGreaterThanOrEqual(4500);
   });
 });
