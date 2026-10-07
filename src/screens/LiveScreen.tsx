@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — Live screen (COACH IS THE HERO)
+// ADGE Tennis — Live screen (COACH IS THE HERO)
 //
 // Full-bleed 100dvh, no page scroll: the camera <video> sits behind everything
 // with the skeleton overlay on top, and all controls are overlaid with
@@ -31,7 +31,6 @@ import CaptureGallery from '../components/CaptureGallery';
 import TelemetryStrip from '../components/TelemetryStrip';
 import DetectionHud from '../components/DetectionHud';
 import ScoreBadge from '../components/ScoreBadge';
-import CostFab from '../components/CostFab';
 
 /** Max width (px) of the JPEG we snapshot for captures + the coach frame. */
 const CAPTURE_MAX_W = 640;
@@ -44,8 +43,16 @@ export default function LiveScreen() {
   const endSession = useAppStore((s) => s.endSession);
   const connection = useAppStore((s) => s.connection);
   const coachError = useAppStore((s) => s.coach.error);
+  // Coach gave up connecting (missing token + /api/token 503, or retries
+  // exhausted). setSessionError is the ONE signal every give-up path sets —
+  // and the 503/no-token path throws BEFORE connection flips to 'error', so
+  // keying off connection alone would miss the primary case. Cleared on a
+  // successful (re)connect (markSessionLive) and on startSession. Purely
+  // informational: pose, scoring, captures, clips, cloud sync all keep working.
+  const coachOffline = useAppStore((s) => s.session.status === 'error');
   const poseInitError = useAppStore((s) => s.pose.initError);
   const cameraFacing = useAppStore((s) => s.settings.cameraFacing);
+  const updateSettings = useAppStore((s) => s.updateSettings);
   const videoRef = useRef<HTMLVideoElement>(null);
   const captureCanvasRef = useRef<HTMLCanvasElement | null>(null);
   // Last pose tick with a full 33-landmark frame, kept fresh from the pose
@@ -53,12 +60,21 @@ export default function LiveScreen() {
   // momentarily empty/short (a one-tick MediaPipe dropout), so a capture at
   // contact isn't lost to a single missed frame.
   const lastGoodPoseRef = useRef<{ frame: PoseFrame; angles: JointAngles } | null>(null);
-  const mirrored = cameraFacing === 'user';
 
   // Camera error is LOCAL UI state (never a raw store error string). retryKey
   // re-runs the camera/pose/coach effect when the user taps "retry".
   const [cameraError, setCameraError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
+  // True while getUserMedia/play is in flight — disables the flip button so a
+  // rapid double-tap can't stack overlapping getUserMedia calls.
+  const [cameraBusy, setCameraBusy] = useState(true);
+  // What the browser ACTUALLY gave us. On devices without a rear camera,
+  // facingMode:'environment' (non-exact) silently falls back to the front
+  // camera — mirroring must follow the real track, not the requested setting,
+  // or the preview reads unmirrored-front (feels "flipped"). Falls back to the
+  // requested value when the track doesn't report facingMode (some desktops).
+  const [actualFacing, setActualFacing] = useState<'user' | 'environment'>(cameraFacing);
+  const mirrored = actualFacing === 'user';
 
   useEffect(() => {
     let stopLoop: (() => void) | null = null;
@@ -128,6 +144,15 @@ export default function LiveScreen() {
         // Fire-and-forget cloud persistence (metadata now, clip after finish).
         cloudSync.syncShotCompleted(shot);
       },
+      // Speak-to-completion capture gate (v1.2): don't arm a NEW swing while
+      // the coach is still speaking/queued — the ball machine feeds faster
+      // than a critique, and piled-up shots were unreadable on court. Coach
+      // offline → never holds (isBusyCoaching is false when disconnected).
+      holdArm: () => coachLive.isBusyCoaching(),
+      // v2.2: PO-tunable capture sensitivity (scales the detector's speed gates
+      // at construction). Read once here — mid-session changes take effect on the
+      // next camera (re)open, like the other physical calibration settings.
+      captureSensitivity: useAppStore.getState().settings.captureSensitivity,
       // idle→preparation: arm a fresh clip recording.
       onSwingStarted: () => recorder?.startSwing(),
       // finalize(): completed → finish + attach the clip; discarded → drop it.
@@ -154,10 +179,21 @@ export default function LiveScreen() {
       /* session/coach error already surfaced to the store by connect() */
     });
 
+    setCameraBusy(true);
     (async () => {
       try {
+        // ideal (NEVER exact — exact rejects on unsupporting devices): without
+        // these, iOS Safari defaults to ~640×480 while desktop Chrome gives
+        // 720p+, which is why an iPhone's pose looked WORSE than a MacBook
+        // webcam. 720p@30 is plenty for MediaPipe (it downscales to ~256px);
+        // the win is a sharper, less noisy source frame.
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: cameraFacing },
+          video: {
+            facingMode: cameraFacing,
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30 },
+          },
           audio: false,
         });
         if (cancelled) {
@@ -165,10 +201,24 @@ export default function LiveScreen() {
           return;
         }
         setCameraError(false);
+        // Mirror by what the camera really is (rear-less devices fall back to
+        // front even when 'environment' was requested).
+        const trackSettings = stream.getVideoTracks()[0]?.getSettings?.();
+        setActualFacing(
+          trackSettings?.facingMode === 'environment' || trackSettings?.facingMode === 'user'
+            ? trackSettings.facingMode
+            : cameraFacing,
+        );
+        // On-device verification instrument (handoff DoD #2): what the camera
+        // actually granted vs the 1280×720@30 ask.
+        console.info(
+          `[camera] ${trackSettings?.width}×${trackSettings?.height}@${trackSettings?.frameRate ?? '?'}fps facing=${trackSettings?.facingMode ?? '?'}`,
+        );
         const video = videoRef.current;
         if (!video) return;
         video.srcObject = stream;
         await video.play().catch(() => undefined);
+        setCameraBusy(false);
         recorder = new SwingRecorder(video);
         stopLoop = startPoseLoop(video, (frame, angles) => {
           if (frame.landmarks.length === 33) {
@@ -187,7 +237,10 @@ export default function LiveScreen() {
         });
       } catch {
         // Bilingual camera-denied overlay — NEVER a raw getUserMedia string.
-        if (!cancelled) setCameraError(true);
+        if (!cancelled) {
+          setCameraError(true);
+          setCameraBusy(false);
+        }
       }
     })();
 
@@ -205,7 +258,15 @@ export default function LiveScreen() {
     };
   }, [cameraFacing, retryKey]);
 
+  // v2.3 auto-save: periodic + page-hide flush so an abandoned session still
+  // lands in History/ranking. Runs for the whole Live lifetime.
+  useEffect(() => {
+    cloudSync.startSessionAutoSave();
+    return () => cloudSync.stopSessionAutoSave();
+  }, []);
+
   const end = () => {
+    cloudSync.stopSessionAutoSave();
     coachLive.disconnect();
     // Snapshot + PATCH the cloud session summary BEFORE endSession() mutates state.
     cloudSync.syncSessionEnded();
@@ -216,6 +277,15 @@ export default function LiveScreen() {
   const retryCamera = () => {
     setCameraError(false);
     setRetryKey((k) => k + 1);
+  };
+
+  // Flip front/rear. Just toggles the setting — the main effect (dep
+  // [cameraFacing]) tears down the old track and reopens the camera; the
+  // recorder/pose loop are rebuilt by that same effect. Disabled while a
+  // (re)open is in flight so taps can't stack getUserMedia calls.
+  const flipCamera = () => {
+    if (cameraBusy) return;
+    updateSettings({ cameraFacing: cameraFacing === 'user' ? 'environment' : 'user' });
   };
 
   const connColor =
@@ -245,6 +315,24 @@ export default function LiveScreen() {
 
       <div className="live-overlay">
         <div className="live-top">
+          {/* Controls pinned to the TOP (2026-07-28): on a phone the swing
+              CaptureGallery grows along the bottom and used to cover the
+              flip/End buttons mid-session. Keep them reachable up here. */}
+          <div className="row live-controls live-controls-top" style={{ justifyContent: 'space-between' }}>
+            <button
+              className="btn btn-ghost tap"
+              onClick={flipCamera}
+              disabled={cameraBusy}
+              aria-label={t('live.flipCamera')}
+              title={t('live.flipCamera')}
+            >
+              <span aria-hidden>🔄</span> {t('live.flipCamera')}
+            </button>
+            <button className="btn btn-danger tap" onClick={end}>
+              {t('live.end')}
+            </button>
+          </div>
+
           <div className="live-banner">
             <span className="brand-dot" aria-hidden />
             <span className="live-banner-name">{t('brand.name')}</span>
@@ -267,6 +355,24 @@ export default function LiveScreen() {
           {coachError && (
             <span className="chip live-coach-err">{translateError(coachError, lang)}</span>
           )}
+
+          {/* Non-blocking reassurance: the coach couldn't connect, but the whole
+              local pipeline (pose · scoring · captures · clips · cloud sync)
+              keeps running. NEVER a blocking scrim — just a small chip. */}
+          {coachOffline && !coachError && (
+            <span
+              className="chip"
+              role="status"
+              style={{
+                background: 'rgba(245, 179, 66, 0.16)',
+                borderColor: 'var(--warn)',
+                color: 'var(--warn)',
+                fontSize: '0.8rem',
+              }}
+            >
+              {t('live.coachOffline')}
+            </span>
+          )}
         </div>
 
         <div className="spacer" />
@@ -276,18 +382,14 @@ export default function LiveScreen() {
               rail was too small to read — reverted in v0.3.2). */}
           <CaptureGallery />
           <CoachBubble />
-          {/* v0.6: mic input removed — only End Session remains here, so
-              center it (was a left-aligned .row with MicControl as the
-              first child) to keep the bottom row visually balanced. */}
-          <div className="row live-controls" style={{ justifyContent: 'center' }}>
-            <button className="btn btn-danger" onClick={end}>
-              {t('live.end')}
-            </button>
-          </div>
+          {/* Flip/End controls moved to .live-top (2026-07-28) so the growing
+              CaptureGallery can't cover them on a phone. */}
         </div>
       </div>
 
-      <CostFab />
+      {/* CostFab removed 2026-07-20 (player-facing cost hidden). costMonitor
+          still records usage — totals feed the admin usage upload at session
+          end (cloudSync → PATCH usage). Component kept on disk, unrendered. */}
 
       {poseInitError && (
         <div className="live-error-scrim">

@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club (Ton & Phet Tennis Club) — shared type contracts
+// ADGE Tennis — shared type contracts
 // Every module codes against these types. Do not import app code here.
 // ============================================================================
 
@@ -10,8 +10,51 @@
 /** UI language. Thai is primary. */
 export type Lang = 'th' | 'en';
 
-/** Top-level screens routed by App.tsx via store.screen. */
-export type Screen = 'home' | 'live' | 'summary' | 'devplan' | 'compare' | 'history';
+/** Top-level screens routed by App.tsx via store.screen.
+ *  'admin' is reachable ONLY when auth.role === 'admin' (App/BottomNav gate it). */
+export type Screen = 'home' | 'live' | 'summary' | 'devplan' | 'compare' | 'history' | 'admin';
+
+// ---------------------------------------------------------------------------
+// Auth / user access management (UAM v1.5 — per-user email+password login)
+// ---------------------------------------------------------------------------
+
+/** Server-side role. Admins see everyone's data + manage players. */
+export type UserRole = 'admin' | 'player';
+
+/** The signed-in identity (from POST /api/login or GET /api/gate). v2.1: the
+ *  club logs into a ROOM (roomUser), not an email. */
+export interface AuthUser {
+  /** Lowercase room handle (e.g. room1) — the primary key of the account. */
+  roomUser: string;
+  role: UserRole;
+  displayName: string;
+}
+
+/**
+ * LINE profile of the player currently at the machine (SIT v2.1). The club logs
+ * into ONE ROOM account, so `roomUser` on a session identifies the ROOM, not the
+ * player — this captures the individual. Bound on Home before a session (QR scan
+ * or manual), persisted to localStorage (tp.lineProfile), and stamped onto the
+ * session so the external history API can query by lineUserId/lineEmail.
+ * `email` is the player's PERSONAL email (≠ the room account) — always
+ * lowercased on capture so query-by-email matches.
+ */
+export interface LineProfile {
+  lineUserId: string;
+  displayName: string;
+  pictureUrl: string;
+  /** Lowercased personal email (distinct from the room account). */
+  email: string;
+}
+
+/** One room row from GET /api/users (admin only). */
+export interface AdminUserRow {
+  roomUser: string;
+  displayName: string;
+  role: UserRole;
+  disabled: boolean;
+  createdAt: string;
+}
 
 // ---------------------------------------------------------------------------
 // Pose (MediaPipe PoseLandmarker, 33 landmarks, normalized [0..1] coords)
@@ -70,10 +113,23 @@ export interface JointAngles {
   rightHipDeg: number;
   /** Trunk lean from vertical, degrees. 0 = upright. */
   trunkLeanDeg: number;
-  /** Dominant-hand wrist speed, normalized image units per second (EMA-smoothed). */
+  /**
+   * Dominant-hand wrist speed in BODY-LENGTHS per second (EMA-smoothed), v2.2:
+   * hypot(dx,dy) is divided by the smoothed nose→ankle body length so the value
+   * is SCALE-INVARIANT — the same real swing reads the same whether the player
+   * fills the frame (MacBook) or is small in it (phone on a tripod). This is why
+   * the detector's speed thresholds are ~1.8× their pre-v2.2 raw-unit values.
+   */
   wristSpeed: number;
-  /** Signed horizontal wrist velocity (normalized units/s). Sign = direction of swing. */
+  /** Signed horizontal wrist velocity (body-lengths/s). Sign = direction of swing. */
   wristVelX: number;
+  /**
+   * Smoothed normalized nose→ankle body length used to make wristSpeed
+   * scale-invariant (v2.2). Carried frame-to-frame (slow EMA) and held through
+   * frames where nose/ankles drop out; undefined only until the first usable
+   * measurement. Exposed so the detector/km-h share ONE body scale.
+   */
+  bodyScale?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +307,13 @@ export interface Shot {
   contactAngles: JointAngles;
   /** Peak dominant-wrist speed during the swing (normalized units/s). */
   peakWristSpeed: number;
+  /**
+   * APPROXIMATE swing (hand/wrist) speed in km/h, calibrated from peakWristSpeed
+   * and the player's height at finalize (src/analysis/swingSpeed.ts). Undefined
+   * when the body was out of frame / low visibility so no estimate was possible.
+   * Always shown with a "≈" prefix — NOT ball speed. See swingSpeed.ts caveats.
+   */
+  speedKmh?: number;
   /** Local rule-based score 0–100. */
   score: number;
   issues: ShotIssue[];
@@ -342,6 +405,15 @@ export interface StoredSession {
   focusShot: FocusShot;
   /** Top (<=3) concrete things to improve, derived from shot issues. */
   improvements: SessionImprovement[];
+  // --- v1.8 session-stats fields (OPTIONAL — pre-v1.8 rows / old localStorage
+  //     lack them; cumulative aggregation guards/defaults, never crashes) ---
+  /** Mean of shots' ≈ km/h swing speed (over shots that produced one). */
+  avgSpeedKmh?: number;
+  /** ≈ kcal burned this session (MET estimate). */
+  kcal?: number;
+  /** topspin/backspin/flat tally over the session's completed shots
+   *  (estimated from swing path — no ball sensor). */
+  spin?: { topspin: number; backspin: number; flat: number };
 }
 
 /** Persisted history: pruned to HISTORY_TTL_MS on init and on every save. */
@@ -359,6 +431,12 @@ export interface SessionSummaryJson {
   totalCostTHB: number;
   focusShot: FocusShot;
   improvements: SessionImprovement[];
+  /** v2.5: mean ≈km/h over speed-bearing shots; ABSENT when none had a speed. */
+  avgSpeedKmh?: number;
+  /** v2.5: ≈ kcal (MET model), same rounding as deriveSessionStats. */
+  kcal?: number;
+  /** v2.5: topspin/backspin/flat COUNTS (not %), same shape as StoredSession.spin. */
+  spin?: { topspin: number; backspin: number; flat: number };
 }
 
 /** One session row from the cloud (GET /api/history list item). */
@@ -370,6 +448,13 @@ export interface CloudSessionSummary {
   avgScore: number;
   shotCount: number;
   summary: SessionSummaryJson | null;
+  /** Owning ROOM (v2.1). The SERVER filters history by it — a room gets its own
+   *  rows only, admins get everyone's. Optional: pre-v2.1 rows lack it. */
+  roomUser?: string;
+  /** Player LINE id / personal email (v2.1). Stamped at session create so the
+   *  external history API can query by them. Null/absent on pre-v2.1 rows. */
+  lineUserId?: string | null;
+  lineEmail?: string | null;
 }
 
 /** One shot row from the cloud (metadata only; clip streamed separately). */
@@ -383,10 +468,16 @@ export interface CloudShot {
   statuses: AngleStatuses;
   issues: ShotIssue[];
   peakWristSpeed: number;
+  /** APPROXIMATE swing speed (km/h) if the server persisted it; else undefined
+   *  (cloud round-trip may not carry it — same-session shots always have it). */
+  speedKmh?: number;
   hasClip: boolean;
   clipMime: string | null;
   /** True when the coach's spoken critique WAV is stored for this shot. */
   hasAudio: boolean;
+  /** The coach's spoken cue/critique text for this shot (v2.3), or null. Shown
+   *  in History so the advice survives past the same session. */
+  coachText?: string | null;
   createdAt: string;
 }
 
@@ -485,11 +576,46 @@ export interface CostBreakdown {
 /** Which shot the player is drilling this session — threaded into the coach prompt. */
 export type FocusShot = 'forehand' | 'backhand' | 'both';
 
+/**
+ * Coach VOICE TONE (v1.6). Independent of coach MODE. Maps to a Gemini Live
+ * prebuilt voiceName + the Thai persona particles the coach speaks with:
+ *   gentleF   → 'Aoede'  · ค่ะ/นะคะ · warm gentle female (default = current)
+ *   firmF     → 'Kore'   · ค่ะ/นะ   · confident/crisp female
+ *   firmM     → 'Charon' · ครับ/นะ  · deep/serious male coach
+ *   friendlyM → 'Puck'   · ครับ/เพื่อน · fun/upbeat male
+ */
+export type VoiceTone = 'gentleF' | 'firmF' | 'firmM' | 'friendlyM';
+
+/**
+ * Coach MODE (v1.6). Independent of voice TONE. Maps to a system-prompt persona
+ * layer (overall personality) that colors HOW each per-shot style is delivered:
+ *   encourage → praise-first, gentle fixes, cheer to close (default = current)
+ *   hardcore  → blunt/demanding drill-sergeant, repeats the fix as a command
+ *               (guardrail: tough SPORTS coaching only — never demeaning)
+ *   polite    → formal, measured, comfortable citing angles/degrees
+ *   buddy     → casual, fun, pumped
+ */
+export type CoachMode = 'encourage' | 'hardcore' | 'polite' | 'buddy';
+
+/**
+ * Coach VERBOSITY (v2.0). Independent of voice TONE and coach MODE. Sets the
+ * fixed spoken LENGTH of every coaching reply for the whole session — the one
+ * thing that varies is the length band, injected into the coach prompt. Answers
+ * on-court feedback that the coach talks too long:
+ *   short  → 1–2 sentences (~2–4s): shot name + the single most useful beat.
+ *            DEFAULT (settings) — new players get the terse coach.
+ *   medium → 2–4 sentences (~4–9s): the pre-v2.0 shape (name→praise→fix→cue).
+ *   long   → 4–6 sentences (~10–16s): adds the WHY + a bit more practice detail.
+ * Never goes on the wire — like coachMode it shapes only the browser-built
+ * systemInstruction + per-shot prompt text. Persisted (tp.verbosity).
+ */
+export type Verbosity = 'short' | 'medium' | 'long';
+
 export interface Settings {
   rates: PricingRates;
   /**
    * Player's name, captured on Home. Threaded into the coach systemInstruction
-   * so โค้ชต้นและเพชร addresses the player by name. Persisted to localStorage.
+   * so โค้ช ADGE addresses the player by name. Persisted to localStorage.
    */
   userName: string;
   /** Send 1 JPEG contact frame with each shot's coaching request. */
@@ -497,10 +623,47 @@ export interface Settings {
   /** Play coach audio (off = transcript only, cheaper UX but same tokens). */
   coachVoiceOn: boolean;
   dominantHand: DominantHand;
+  /**
+   * Player height in cm (clamped 100–230, default 170). Used ONLY to calibrate
+   * normalized wrist speed into an approximate km/h swing speed. Persisted.
+   */
+  playerHeightCm: number;
+  /**
+   * Player body weight in kg (clamped 30–200, default 65). Used ONLY for the
+   * MET-based calorie ESTIMATE on the session-stats widget. Persisted.
+   */
+  playerWeightKg: number;
+  /**
+   * PO-tunable km/h calibration multiplier (clamped 0.5–3.0, default 1.0 = no
+   * change). Multiplies the estimated swing speed at compute time so the user
+   * can correct the anisotropic under/over-read on court without a redeploy.
+   * Persisted to localStorage (tp.speedFactor).
+   */
+  speedCorrectionFactor: number;
   /** 'user' = front camera (default: player props phone facing themself). */
   cameraFacing: 'user' | 'environment';
   /** Shot the player is drilling this session. */
   focusShot: FocusShot;
+  /** Coach voice tone (v1.6): Gemini Live voiceName + Thai persona particles. */
+  voiceTone: VoiceTone;
+  /** Coach mode (v1.6): system-prompt persona layer / delivery personality. */
+  coachMode: CoachMode;
+  /** Coach verbosity (v2.0): fixed spoken LENGTH band for the whole session. */
+  verbosity: Verbosity;
+  /**
+   * Capture sensitivity (v2.2): a PO-tunable multiplier on the detector's speed
+   * gates (clamped 0.3–2.0, default 1.0 = no change). LOWER = the coach captures
+   * shots MORE easily (lower speed bar — good if a phone still misses swings);
+   * HIGHER = stricter (fewer false captures). Lets on-court tuning happen with
+   * no redeploy. Only affects DETECTION — scoring's SPEED_GOOD base is unchanged.
+   */
+  captureSensitivity: number;
+  /**
+   * LINE profile of the current player (v2.1), or null when unbound. Set on Home
+   * (QR/manual); when set, seeds `userName = displayName`. Its lineUserId/email
+   * are stamped onto sessions for the external history API. Persisted (tp.lineProfile).
+   */
+  lineProfile: LineProfile | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -576,9 +739,17 @@ export interface CostState {
  * Why the detector discarded a swing ('' when the swing completed as a shot).
  * 'cooldown' = a would-be swing was suppressed because it started inside the
  * post-shot cooldown window (see SHOT_THRESHOLDS.cooldownMs); it never armed a
- * recording and nothing was sent to the coach.
+ * recording and nothing was sent to the coach. 'coach-speaking' = suppressed
+ * because the coach was still speaking the previous critique (speak-to-
+ * completion capture gate, v1.2).
  */
-export type SwingDiscardReason = '' | 'no-contact' | 'too-short' | 'too-long' | 'cooldown';
+export type SwingDiscardReason =
+  | ''
+  | 'no-contact'
+  | 'too-short'
+  | 'too-long'
+  | 'cooldown'
+  | 'coach-speaking';
 
 /** One detector outcome, pushed by ShotDetector.finalize() for the on-court detection HUD. */
 export interface DetectionEvent {

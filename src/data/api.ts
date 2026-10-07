@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — cloud sync HTTP client (FROZEN CONTRACT).
+// ADGE Tennis — cloud sync HTTP client (FROZEN CONTRACT).
 //
 // Same-origin /api/* calls (dev proxies to :8080 via vite.config). NONE of
 // these functions throw: any network error or a 503 flips a module-level
@@ -15,6 +15,8 @@
 // ============================================================================
 
 import type {
+  AdminUserRow,
+  AuthUser,
   CloudSessionDetail,
   CloudSessionSummary,
   Shot,
@@ -48,9 +50,26 @@ function markOnline(): void {
 }
 
 /**
+ * Auth cookie expired/revoked mid-session (401 on a cloud DATA call). Clear the
+ * stored identity so LoginGate reappears. This is an AUTH failure, NOT offline,
+ * so we never latch offline here. Scoped to safeFetch (the cloud data path):
+ * the auth probes/mutations (fetchGate/login/listUsers/…) use raw fetch and
+ * bypass this, so their own expected 401s never recursively clear auth.
+ * Guarded against SSR / a missing store (never throws).
+ */
+function clearAuthOn401(): void {
+  try {
+    useAppStore.getState().setAuth(null);
+  } catch {
+    /* no store available (e.g. SSR) — nothing to clear */
+  }
+}
+
+/**
  * fetch wrapper: returns the Response on 2xx, or null on any failure. A 503
  * (cloud not configured / server DB error) OR a thrown network error latches
- * offline for 60s. Never throws.
+ * offline for 60s. A 401 clears the auth identity (LoginGate reappears) but
+ * does NOT latch offline. Never throws.
  */
 async function safeFetch(input: string, init?: RequestInit): Promise<Response | null> {
   if (isOffline()) return null;
@@ -58,6 +77,12 @@ async function safeFetch(input: string, init?: RequestInit): Promise<Response | 
     const res = await fetch(input, init);
     if (res.status === 503) {
       latchOffline();
+      return null;
+    }
+    if (res.status === 401) {
+      // Auth, not offline: drop the identity so re-login is prompted; the
+      // offline latch stays untouched so cloud sync resumes after re-login.
+      clearAuthOn401();
       return null;
     }
     if (!res.ok) {
@@ -82,15 +107,22 @@ export function isCloudAvailable(): boolean {
   return !isOffline();
 }
 
-/** POST /api/sessions — returns the new session id, or null when offline. */
+/** POST /api/sessions — returns the new session id, or null when offline.
+ *  Optionally stamps the current player's LINE identity (v2.1) so the external
+ *  history API can query the session by lineUserId / lineEmail. */
 export async function createSession(
   userName: string,
   startedAtIso: string,
+  line?: { lineUserId: string; lineEmail: string } | null,
 ): Promise<string | null> {
   const res = await safeFetch('/api/sessions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userName, startedAt: startedAtIso }),
+    body: JSON.stringify({
+      userName,
+      startedAt: startedAtIso,
+      ...(line?.lineUserId ? { lineUserId: line.lineUserId, lineEmail: line.lineEmail } : {}),
+    }),
   });
   if (!res) return null;
   try {
@@ -101,18 +133,42 @@ export async function createSession(
   }
 }
 
-/** PATCH /api/sessions/:id — end + summary. Returns true on success. */
+/**
+ * Per-session Gemini usage totals, PATCHed with the session end (frozen
+ * contract). thb = costMonitor's real THB total; tokensIn/tokensOut = summed
+ * input/output tokens across modalities; detail = per-modality breakdown.
+ */
+export interface SessionUsage {
+  thb: number;
+  tokensIn: number;
+  tokensOut: number;
+  detail?: object;
+}
+
+/** PATCH /api/sessions/:id — end/flush + summary (+ optional usage). Returns
+ *  true on success. `endedAtIso = null` marks an IN-PROGRESS flush (auto-save):
+ *  the server stores endedAt=null so the session isn't treated as finished
+ *  while play continues. `keepalive` lets a page-hide flush survive unload. */
 export async function endSessionCloud(
   id: string,
-  endedAtIso: string,
+  endedAtIso: string | null,
   avgScore: number,
   shotCount: number,
   summary: SessionSummaryJson,
+  usage?: SessionUsage,
+  opts?: { keepalive?: boolean },
 ): Promise<boolean> {
   const res = await safeFetch(`/api/sessions/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ endedAt: endedAtIso, avgScore, shotCount, summary }),
+    keepalive: opts?.keepalive === true,
+    body: JSON.stringify({
+      endedAt: endedAtIso,
+      avgScore,
+      shotCount,
+      summary,
+      ...(usage ? { usage } : {}),
+    }),
   });
   return res !== null;
 }
@@ -133,6 +189,12 @@ export async function uploadShotMeta(
     statuses,
     issues: shot.issues,
     peakWristSpeed: shot.peakWristSpeed,
+    // Purely additive optional field. NOTE: BOTH server backends pick explicit
+    // fields and currently DROP this (dbFirestore.mjs too — it is NOT stored
+    // as-is), so there is no cloud round-trip; History shows speed via the
+    // same-session localMatch fallback only. Kept on the wire so a future
+    // server mapper change is frontend-free.
+    speedKmh: shot.speedKmh,
   };
   const res = await safeFetch(
     `/api/sessions/${encodeURIComponent(sessionId)}/shots`,
@@ -183,6 +245,17 @@ export async function uploadShotAudio(
   return res !== null;
 }
 
+/** PATCH /api/shots/:id/coach — store the coach's spoken cue text (v2.3) so it
+ *  shows in History past the same session. Returns true on success. */
+export async function uploadShotCoachText(cloudShotId: string, text: string): Promise<boolean> {
+  const res = await safeFetch(`/api/shots/${encodeURIComponent(cloudShotId)}/coach`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  return res !== null;
+}
+
 /** Same-origin URL that streams a shot's coach-audio WAV through the server. */
 export function audioUrl(cloudShotId: string): string {
   return `/api/audio/${encodeURIComponent(cloudShotId)}`;
@@ -226,4 +299,228 @@ export async function deleteSessionCloud(id: string): Promise<boolean> {
     method: 'DELETE',
   });
   return res !== null;
+}
+
+// ---------------------------------------------------------------------------
+// Auth + user management (UAM v1.5). These calls deliberately BYPASS the
+// offline latch above: a login attempt / admin action must never be silently
+// swallowed because clip sync latched offline, and an auth failure (401/429/
+// 503 on /api/login) must never latch the CLOUD offline — the two failure
+// domains are unrelated. All functions still never throw.
+// ---------------------------------------------------------------------------
+
+/** Known server error codes plus client-side buckets. */
+export type AuthErrorCode =
+  | 'bad_credentials'
+  | 'too_many_attempts'
+  | 'user_exists'
+  | 'invalid_input'
+  | 'forbidden'
+  | 'server'
+  | 'network';
+
+export interface AuthFailure {
+  ok: false;
+  error: AuthErrorCode;
+  /** Server-provided human message (fallback copy when we lack an i18n key). */
+  message?: string;
+}
+
+export type LoginResult = { ok: true; user: AuthUser } | AuthFailure;
+export type UserMutationResult = { ok: true } | AuthFailure;
+
+export type GateResult =
+  | { status: 'authed'; user: AuthUser }
+  | { status: 'unauthed' }
+  /** 404 / network / non-contract response — no gate (dev). Caller fails OPEN. */
+  | { status: 'no-gate' };
+
+const KNOWN_CODES: readonly AuthErrorCode[] = [
+  'bad_credentials',
+  'too_many_attempts',
+  'user_exists',
+  'invalid_input',
+  'forbidden',
+];
+
+async function jsonOf(res: Response): Promise<Record<string, unknown>> {
+  try {
+    return (await res.json()) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+function userOf(body: Record<string, unknown>): AuthUser | null {
+  if (typeof body.roomUser !== 'string' || body.roomUser === '') return null;
+  return {
+    roomUser: body.roomUser,
+    role: body.role === 'admin' ? 'admin' : 'player',
+    displayName: typeof body.displayName === 'string' ? body.displayName : '',
+  };
+}
+
+async function failureOf(res: Response): Promise<AuthFailure> {
+  if (res.status === 403) return { ok: false, error: 'forbidden' };
+  const body = await jsonOf(res);
+  const code = KNOWN_CODES.find((c) => c === body.error);
+  return {
+    ok: false,
+    error: code ?? 'server',
+    message: typeof body.message === 'string' ? body.message : undefined,
+  };
+}
+
+/** POST /api/login — sets the httpOnly cookie on success. */
+export async function login(roomUser: string, password: string): Promise<LoginResult> {
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ roomUser, password }),
+    });
+    if (res.ok) {
+      const user = userOf(await jsonOf(res));
+      if (user) return { ok: true, user };
+      return { ok: false, error: 'server' };
+    }
+    return failureOf(res);
+  } catch {
+    return { ok: false, error: 'network' };
+  }
+}
+
+/** POST /api/logout — clears the cookie. Returns true on success. */
+export async function logout(): Promise<boolean> {
+  try {
+    const res = await fetch('/api/logout', {
+      method: 'POST',
+      credentials: 'same-origin',
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** GET /api/gate — who am I? (LoginGate boot probe.) */
+export async function fetchGate(): Promise<GateResult> {
+  try {
+    const res = await fetch('/api/gate', { credentials: 'same-origin' });
+    if (res.status === 401) return { status: 'unauthed' };
+    if (!res.ok) return { status: 'no-gate' };
+    const user = userOf(await jsonOf(res));
+    // 200 without the contract body = pre-UAM server / dev stub → fail open.
+    return user ? { status: 'authed', user } : { status: 'no-gate' };
+  } catch {
+    return { status: 'no-gate' };
+  }
+}
+
+/** GET /api/users — all accounts (admin only). Null on any failure. */
+export async function listUsers(): Promise<AdminUserRow[] | null> {
+  try {
+    const res = await fetch('/api/users', { credentials: 'same-origin' });
+    if (!res.ok) return null;
+    const body = (await res.json()) as unknown;
+    return Array.isArray(body) ? (body as AdminUserRow[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface CreateUserInput {
+  roomUser: string;
+  password: string;
+  displayName?: string;
+}
+
+/** POST /api/users — add a room (admin only). */
+export async function createUser(input: CreateUserInput): Promise<UserMutationResult> {
+  try {
+    const res = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(input),
+    });
+    return res.ok ? { ok: true } : failureOf(res);
+  } catch {
+    return { ok: false, error: 'network' };
+  }
+}
+
+/** PATCH /api/users/:roomUser — reset password / rename / enable-disable. */
+export async function patchUser(
+  roomUser: string,
+  patch: { password?: string; displayName?: string; disabled?: boolean },
+): Promise<UserMutationResult> {
+  try {
+    const res = await fetch(`/api/users/${encodeURIComponent(roomUser)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(patch),
+    });
+    return res.ok ? { ok: true } : failureOf(res);
+  } catch {
+    return { ok: false, error: 'network' };
+  }
+}
+
+/** DELETE /api/users/:roomUser — remove a room (cannot delete self). */
+export async function deleteUser(roomUser: string): Promise<UserMutationResult> {
+  try {
+    const res = await fetch(`/api/users/${encodeURIComponent(roomUser)}`, {
+      method: 'DELETE',
+      credentials: 'same-origin',
+    });
+    return res.ok ? { ok: true } : failureOf(res);
+  } catch {
+    return { ok: false, error: 'network' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Usage / cost reporting (admin only). Frozen contract:
+//   GET /api/usage → { users: [{ email, userName, thb, tokensIn, tokensOut,
+//   sessions }], total: { thb, tokensIn, tokensOut, sessions } }
+// Bypasses the offline latch like the other admin calls. Never throws.
+// ---------------------------------------------------------------------------
+
+export interface UsageUserRow {
+  roomUser: string;
+  userName: string;
+  thb: number;
+  tokensIn: number;
+  tokensOut: number;
+  sessions: number;
+}
+
+export interface UsageTotals {
+  thb: number;
+  tokensIn: number;
+  tokensOut: number;
+  sessions: number;
+}
+
+export interface UsageReport {
+  users: UsageUserRow[];
+  total: UsageTotals;
+}
+
+/** GET /api/usage — per-user + total Gemini spend (admin only). Null on any failure. */
+export async function fetchUsage(): Promise<UsageReport | null> {
+  try {
+    const res = await fetch('/api/usage', { credentials: 'same-origin' });
+    if (!res.ok) return null;
+    const body = (await res.json()) as unknown;
+    if (!body || typeof body !== 'object') return null;
+    const r = body as UsageReport;
+    if (!Array.isArray(r.users) || !r.total || typeof r.total !== 'object') return null;
+    return r;
+  } catch {
+    return null;
+  }
 }

@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — i18n (TH primary, EN switchable)
+// ADGE Tennis — i18n (TH primary, EN switchable)
 //
 // Usage in components:
 //   const t = useT();
@@ -22,8 +22,8 @@ import type { Lang } from './types';
 
 const DICT = {
   // --- brand / common ---
-  'brand.name': { th: 'ต้นและเพชร เทนนิส คลับ', en: 'Ton & Phet Tennis Club' },
-  'brand.coach': { th: 'โค้ชต้นและเพชร', en: 'Coach Ton & Phet' },
+  'brand.name': { th: 'ADGE Tennis', en: 'ADGE Tennis' },
+  'brand.coach': { th: 'โค้ช ADGE', en: 'Coach ADGE' },
   'common.close': { th: 'ปิด', en: 'Close' },
   'common.back': { th: 'ย้อนกลับ', en: 'Back' },
   'common.save': { th: 'บันทึก', en: 'Save' },
@@ -34,12 +34,27 @@ const DICT = {
   'common.loading': { th: 'กำลังโหลด…', en: 'Loading…' },
   'common.times': { th: 'ครั้ง', en: 'x' },
 
+  // --- login gate (UAM v1.5: per-user email+password) ---
+  'login.title': { th: 'เข้าสู่ระบบห้อง', en: 'Room sign in' },
+  'login.subtitle': { th: 'กรอกชื่อห้องและรหัสผ่านเพื่อเริ่มใช้งาน', en: 'Enter your room and password to continue' },
+  'login.email': { th: 'อีเมล', en: 'Email' },
+  'login.room': { th: 'ชื่อห้อง (เช่น room1)', en: 'Room (e.g. room1)' },
+  'login.pass': { th: 'รหัสผ่าน', en: 'Password' },
+  'login.submit': { th: 'เข้าสู่ระบบ', en: 'Sign in' },
+  'login.checking': { th: 'กำลังตรวจสอบ…', en: 'Checking…' },
+  'login.wrong': { th: 'ชื่อห้องหรือรหัสผ่านไม่ถูกต้อง', en: 'Wrong room or password' },
+  'login.tooMany': {
+    th: 'ลองเข้าสู่ระบบผิดหลายครั้งเกินไป รอสักครู่แล้วลองใหม่',
+    en: 'Too many attempts — wait a moment and try again',
+  },
+  'login.error': { th: 'เชื่อมต่อไม่ได้ ลองใหม่อีกครั้ง', en: 'Connection failed — try again' },
+
   // --- language toggle ---
   'lang.th': { th: 'ไทย', en: 'Thai' },
   'lang.en': { th: 'อังกฤษ', en: 'English' },
 
   // --- home screen ---
-  'home.title': { th: 'ต้นและเพชร เทนนิส คลับ', en: 'Ton & Phet Tennis Club' },
+  'home.title': { th: 'ADGE Tennis', en: 'ADGE Tennis' },
   'home.tagline': {
     th: 'โค้ชเทนนิสส่วนตัว วิเคราะห์ฟอร์มเรียลไทม์ข้างคอร์ต',
     en: 'Your personal courtside coach — realtime form analysis',
@@ -71,11 +86,56 @@ const DICT = {
   },
   'home.handedness.current': { th: 'กำลังวิเคราะห์แบบมือ', en: 'Analyzing as' },
 
+  // --- coach voice tone + mode selectors (v1.6) ---
+  'home.voiceTone.title': { th: 'เสียงโค้ช', en: 'Coach Voice' },
+  'home.voiceTone.gentleF': { th: 'หญิงอ่อนโยน', en: 'Gentle female' },
+  'home.voiceTone.firmF': { th: 'หญิงเข้ม', en: 'Firm female' },
+  'home.voiceTone.firmM': { th: 'ชายเข้ม', en: 'Firm male' },
+  'home.voiceTone.friendlyM': { th: 'ชายเป็นกันเอง', en: 'Friendly male' },
+  'home.coachMode.title': { th: 'สไตล์โค้ช', en: 'Coach Style' },
+  'home.coachMode.encourage': { th: 'ให้กำลังใจ', en: 'Encouraging' },
+  'home.coachMode.hardcore': { th: 'ดุ hardcore', en: 'Hardcore' },
+  'home.coachMode.polite': { th: 'สุภาพ/เทคนิค', en: 'Polite / technical' },
+  'home.coachMode.buddy': { th: 'เพื่อนซี้/ฮึกเหิม', en: 'Buddy / hype' },
+  'home.verbosity.title': { th: 'ความยาวคำโค้ช', en: 'Coach Length' },
+  'home.verbosity.short': { th: 'สั้น', en: 'Short' },
+  'home.verbosity.medium': { th: 'กลาง', en: 'Medium' },
+  'home.verbosity.long': { th: 'ยาว', en: 'Long' },
+  'home.verbosity.hint': {
+    th: 'สั้น = บอกสั้น ๆ ทันใจ · กลาง = ชม+แก้+ย้ำ · ยาว = อธิบายละเอียด',
+    en: 'Short = quick cue · Medium = praise+fix+cue · Long = fuller explanation',
+  },
+
+  // --- LINE player identity (v2.1) ---
+  'home.player.title': { th: 'ผู้เล่น (LINE)', en: 'Player (LINE)' },
+  'home.player.none': { th: 'ยังไม่ได้ระบุตัว — แตะเพื่อสแกน QR', en: 'Not identified — tap to scan QR' },
+  'home.player.change': { th: 'เปลี่ยน', en: 'Change' },
+  'home.player.set': { th: 'ระบุผู้เล่น', en: 'Identify player' },
+  'line.title': { th: 'ระบุตัวผู้เล่น', en: 'Identify player' },
+  'line.subtitle': {
+    th: 'สแกน QR โปรไฟล์ LINE หรือกรอกเอง ก่อนเริ่มตี',
+    en: 'Scan your LINE profile QR, or enter it manually, before you play',
+  },
+  'line.tabScan': { th: 'สแกน QR', en: 'Scan QR' },
+  'line.tabManual': { th: 'กรอกเอง', en: 'Manual' },
+  'line.scanHint': { th: 'เล็ง QR ให้อยู่ในกรอบ', en: 'Point the QR code inside the frame' },
+  'line.camError': {
+    th: 'เปิดกล้องไม่ได้ — ลองกรอกเองแทน',
+    en: "Can't open the camera — try manual entry",
+  },
+  'line.rescan': { th: 'สแกนใหม่', en: 'Rescan' },
+  'line.confirm': { th: 'ยืนยัน', en: 'Confirm' },
+  'line.fieldId': { th: 'LINE User ID', en: 'LINE User ID' },
+  'line.fieldName': { th: 'ชื่อที่แสดง', en: 'Display name' },
+  'line.fieldEmail': { th: 'อีเมล', en: 'Email' },
+  'line.fieldPicture': { th: 'ลิงก์รูปโปรไฟล์ (ถ้ามี)', en: 'Picture URL (optional)' },
+
   // --- errors (ALWAYS bilingual, never raw API strings) ---
-  'error.tokenMissing.title': { th: 'ยังไม่ได้ตั้งค่าโทเคนโค้ช', en: 'Coach token not set' },
+  // (The manual token field was removed 2026-07-20 — coach auth is provisioned
+  // server-side, so this copy no longer tells the user to paste anything.)
   'error.tokenMissing.body': {
-    th: 'วางโทเคน Gemini ชั่วคราว (ขึ้นต้น AQ.) ในหน้าตั้งค่า จึงจะคุยกับโค้ชได้ — การวิเคราะห์ท่าและคะแนนยังใช้งานได้ปกติ',
-    en: 'Paste a Gemini ephemeral token (starts with AQ.) in Settings to enable the coach — pose analysis and scoring still work without it.',
+    th: 'ยังเชื่อมต่อโค้ชไม่ได้ในตอนนี้ — การวิเคราะห์ท่าและคะแนนยังใช้งานได้ปกติ',
+    en: 'The coach cannot connect right now — pose analysis and scoring still work.',
   },
   'error.cameraDenied.title': { th: 'เข้าถึงกล้องไม่ได้', en: 'Camera unavailable' },
   'error.cameraDenied.body': {
@@ -110,11 +170,96 @@ const DICT = {
 
   // --- bottom nav ---
   'nav.home': { th: 'หน้าหลัก', en: 'Home' },
-  'nav.compare': { th: 'เปรียบเทียบ', en: 'Compare' },
   'nav.history': { th: 'ประวัติ', en: 'History' },
   'nav.summary': { th: 'สรุป', en: 'Summary' },
   'nav.devplan': { th: 'พัฒนา', en: 'Plan' },
   'nav.settings': { th: 'ตั้งค่า', en: 'Settings' },
+  'nav.admin': { th: 'ผู้ดูแล', en: 'Admin' },
+
+  // --- admin screen (UAM v1.5 — role 'admin' only) ---
+  // --- admin daily overview (Home widget, admin accounts only) ---
+  'adminDaily.title': { th: 'สถิติรวมรายวัน', en: 'Daily overview' },
+  'adminDaily.people': { th: 'คน', en: 'players' },
+  'adminDaily.sessions': { th: 'เซสชัน', en: 'sessions' },
+  'adminDaily.empty': {
+    th: 'ยังไม่มีผู้เล่นในช่วง 3 วันที่ผ่านมา',
+    en: 'No players in the last 3 days',
+  },
+  'adminDaily.note': {
+    th: 'นับผู้เล่นไม่ซ้ำจากทุกเครื่อง ตามชั่วโมงที่เริ่มเซสชัน (ข้อมูลเก็บ 3 วัน)',
+    en: 'Distinct players from all devices, by session start hour (3-day data)',
+  },
+
+  'admin.title': { th: 'จัดการผู้เล่น', en: 'Manage players' },
+  'admin.signedInAs': { th: 'เข้าสู่ระบบเป็น', en: 'Signed in as' },
+  'admin.logout': { th: 'ออกจากระบบ', en: 'Log out' },
+  'admin.addTitle': { th: 'เพิ่มผู้เล่น', en: 'Add player' },
+  'admin.password': { th: 'รหัสผ่าน (อย่างน้อย 4 ตัวอักษร)', en: 'Password (min 4 characters)' },
+  'admin.displayName': { th: 'ชื่อที่แสดง (ไม่บังคับ)', en: 'Display name (optional)' },
+  'admin.add': { th: 'เพิ่มผู้เล่น', en: 'Add player' },
+  'admin.listTitle': { th: 'ผู้เล่นทั้งหมด', en: 'All players' },
+  'admin.you': { th: 'คุณ', en: 'you' },
+  'admin.roleAdmin': { th: 'แอดมิน', en: 'admin' },
+  'admin.disabledBadge': { th: 'ปิดใช้งาน', en: 'disabled' },
+  'admin.created': { th: 'สร้างเมื่อ', en: 'Created' },
+  'admin.enable': { th: 'เปิดใช้งาน', en: 'Enable' },
+  'admin.disable': { th: 'ระงับ', en: 'Disable' },
+  'admin.resetPass': { th: 'รีเซ็ตรหัสผ่าน', en: 'Reset password' },
+  'admin.resetPrompt': {
+    th: 'รหัสผ่านใหม่สำหรับ {email} (อย่างน้อย 4 ตัวอักษร)',
+    en: 'New password for {email} (min 4 characters)',
+  },
+  'admin.delete': { th: 'ลบ', en: 'Delete' },
+  'admin.deleteConfirm': {
+    th: 'ลบผู้เล่น {email}? ประวัติ session จะหมดอายุเองใน 3 วัน',
+    en: 'Delete player {email}? Their session history expires on its own within 3 days.',
+  },
+  'admin.empty': { th: 'ยังไม่มีผู้เล่น', en: 'No players yet' },
+  'admin.loadFailed': { th: 'โหลดรายชื่อไม่สำเร็จ ลองใหม่อีกครั้ง', en: 'Failed to load players — try again' },
+  'admin.retry': { th: 'ลองใหม่', en: 'Retry' },
+  'admin.added': { th: 'เพิ่มผู้เล่นแล้ว', en: 'Player added' },
+  'admin.updated': { th: 'บันทึกแล้ว', en: 'Saved' },
+  'admin.deleted': { th: 'ลบผู้เล่นแล้ว', en: 'Player deleted' },
+  'admin.errInvalidEmail': { th: 'ชื่อห้องไม่ถูกต้อง (a–z 0–9 . _ - 2–40 ตัว)', en: 'Invalid room name (a–z 0–9 . _ - , 2–40 chars)' },
+  'admin.errPassShort': {
+    th: 'รหัสผ่านต้องมีอย่างน้อย 4 ตัวอักษร',
+    en: 'Password must be at least 4 characters',
+  },
+  'admin.errUserExists': { th: 'มีผู้ใช้อีเมลนี้อยู่แล้ว', en: 'A user with this email already exists' },
+  'admin.errFailed': { th: 'ดำเนินการไม่สำเร็จ ลองใหม่อีกครั้ง', en: 'Action failed — try again' },
+
+  // --- admin tabs (Players | Costs) ---
+  'admin.tabPlayers': { th: 'ผู้เล่น', en: 'Players' },
+  'admin.tabCosts': { th: 'ค่าใช้จ่าย', en: 'Costs' },
+
+  // --- admin cost section (GET /api/usage — real Gemini spend, ≈-labelled) ---
+  'admin.costTitle': { th: 'ค่าใช้จ่าย', en: 'Costs' },
+  'admin.costTotal': { th: 'รวมทั้งหมด (Gemini)', en: 'Total (Gemini)' },
+  'admin.costUser': { th: 'อีเมล', en: 'Email' },
+  'admin.costName': { th: 'ชื่อ', en: 'Name' },
+  'admin.costThb': { th: 'THB ≈', en: 'THB ≈' },
+  'admin.costTokensIn': { th: 'โทเคนเข้า', en: 'Tokens in' },
+  'admin.costTokensOut': { th: 'โทเคนออก', en: 'Tokens out' },
+  'admin.costSessions': { th: 'เซสชัน', en: 'Sessions' },
+  'admin.costEmpty': { th: 'ยังไม่มีข้อมูลค่าใช้จ่าย', en: 'No usage data yet' },
+  'admin.costLoadFailed': {
+    th: 'โหลดข้อมูลค่าใช้จ่ายไม่สำเร็จ ลองใหม่อีกครั้ง',
+    en: 'Failed to load costs — try again',
+  },
+  'admin.costInfraTitle': { th: 'ค่าโครงสร้างพื้นฐาน (ประมาณการ)', en: 'Infra (estimate)' },
+  'admin.costInfraRun': {
+    th: 'Cloud Run (scale-to-zero) ≈ ฿0–20/เดือน',
+    en: 'Cloud Run (scale-to-zero) ≈ ฿0–20/month',
+  },
+  'admin.costInfraAr': { th: 'Artifact Registry ≈ ฿5/เดือน', en: 'Artifact Registry ≈ ฿5/month' },
+  'admin.costInfraStore': {
+    th: 'GCS + Firestore อยู่ใน free tier ≈ ฿0',
+    en: 'GCS + Firestore within the free tier ≈ ฿0',
+  },
+  'admin.costInfraNote': {
+    th: 'ประมาณการคงที่ ไม่ใช่บิลจริง',
+    en: 'Static estimates — not an actual bill',
+  },
 
   // --- continuous open mic ---
   'live.micOn': { th: 'ไมค์เปิด — พูดกับโค้ชได้เลย', en: 'Mic on — just talk to the coach' },
@@ -125,7 +270,14 @@ const DICT = {
   'live.connecting': { th: 'กำลังเชื่อมต่อโค้ช…', en: 'Connecting to coach…' },
   'live.connected': { th: 'เชื่อมต่อแล้ว', en: 'Connected' },
   'live.disconnected': { th: 'ยังไม่เชื่อมต่อ', en: 'Disconnected' },
+  // Non-blocking reassurance when the coach cannot connect at all — everything
+  // local (pose, scoring, captures, clips, cloud sync, history) keeps working.
+  'live.coachOffline': {
+    th: 'โค้ชออฟไลน์ — เก็บคลิป/คะแนนตามปกติ',
+    en: 'Coach offline — clips & scores still recording.',
+  },
   'live.end': { th: 'จบการฝึก', en: 'End Session' },
+  'live.flipCamera': { th: 'สลับกล้อง', en: 'Flip camera' },
   'live.listening': { th: 'กำลังฟัง…', en: 'Listening…' },
   'live.shots': { th: 'จำนวนช็อต', en: 'Shots' },
   'live.fps': { th: 'เฟรมต่อวินาที', en: 'FPS' },
@@ -162,10 +314,16 @@ const DICT = {
     th: 'เชื่อมต่อโค้ชไม่สำเร็จ การวิเคราะห์ท่ายังทำงานต่อ',
     en: 'Could not reach the coach — pose analysis keeps working.',
   },
+  // Relay transport (Vertex): the server refused the Live session (permission /
+  // credentials). Permanent — no auto-retry. Pose analysis is unaffected.
+  'coach.relayDenied': {
+    th: 'เชื่อมต่อโค้ชไม่ได้ (เซิร์ฟเวอร์ปฏิเสธสิทธิ์) การวิเคราะห์ท่ายังทำงานต่อ',
+    en: 'Coach unavailable — server denied the voice session. Pose analysis keeps working.',
+  },
   'coach.error': { th: 'โค้ชขัดข้อง', en: 'Coach error' },
   'coach.persona': {
-    th: 'โค้ชต้นและเพชร: พูดสั้น กระชับ ให้กำลังใจ',
-    en: 'Coach Ton & Phet: short, punchy, encouraging',
+    th: 'โค้ช ADGE: พูดสั้น กระชับ ให้กำลังใจ',
+    en: 'Coach ADGE: short, punchy, encouraging',
   },
 
   // --- capture gallery / critique ---
@@ -193,6 +351,7 @@ const DICT = {
   'hud.phase.contact': { th: 'กระทบ', en: 'Hit' },
   'hud.phase.follow': { th: 'ส่ง', en: 'Follow' },
   'hud.speed': { th: 'สปีด', en: 'spd' },
+  'hud.fps': { th: 'เฟรม/วิ', en: 'fps' },
   'hud.shots': { th: 'ช็อต', en: 'Shots' },
   'hud.skip': { th: 'ทิ้ง', en: 'skip' },
   'hud.captured': { th: 'บันทึกภาพแล้ว', en: 'Captured' },
@@ -212,6 +371,10 @@ const DICT = {
   'hud.discard.cooldown': {
     th: 'พักระหว่างช็อต (คูลดาวน์)',
     en: 'resting between shots (cooldown)',
+  },
+  'hud.discard.coachSpeaking': {
+    th: 'รอโค้ชพูดจบก่อน…',
+    en: 'waiting for the coach to finish…',
   },
 
   // --- cost (demoted: corner ฿ button + testing panel) ---
@@ -253,6 +416,38 @@ const DICT = {
   'stats.goodForm': { th: 'ฟอร์มดี', en: 'Good Form' },
   'stats.bestSpeed': { th: 'สวิงเร็วสุด', en: 'Best Speed' },
 
+  // --- session stats widget (v1.8 — per-session + cumulative overview) ---
+  'stats.widget.title': { th: 'ภาพรวมการฝึก', en: 'Session Overview' },
+  'stats.minutes': { th: 'นาทีที่ตี', en: 'Minutes played' },
+  'stats.minUnit': { th: 'นาที', en: 'min' },
+  'stats.balls': { th: 'ตีโดนลูก', en: 'Balls hit' },
+  'stats.ballsUnit': { th: 'ครั้ง', en: 'shots' },
+  'stats.avgSpeed': { th: 'ความเร็วสวิงเฉลี่ย', en: 'Avg swing speed' },
+  'stats.kmh': { th: 'กม./ชม.', en: 'km/h' },
+  'stats.kcal': { th: 'เผาผลาญ (ประมาณ)', en: 'Burned (est.)' },
+  'stats.kcalUnit': { th: 'แคล', en: 'kcal' },
+  'stats.cumulative': { th: 'รวมทุกครั้ง', en: 'All-time' },
+  'stats.spinTitle': { th: 'สปิน', en: 'Spin' },
+  'stats.topspin': { th: 'topspin (ตวัดขึ้น)', en: 'Topspin' },
+  'stats.backspin': { th: 'backspin (สไลซ์)', en: 'Backspin' },
+  'stats.flat': { th: 'flat (เรียบ)', en: 'Flat' },
+  'stats.spinNote': {
+    th: 'ประมาณจากวิถีวงสวิง (ไม่มีเซนเซอร์ที่ลูก)',
+    en: 'Estimated from swing path (no ball sensor)',
+  },
+  'stats.cumNote': {
+    th: 'สถิติรวมมาจากประวัติ 3 วันล่าสุด · แคลอรีเป็นค่าประมาณ',
+    en: 'All-time is from the last 3 days · calories are an estimate',
+  },
+  'stats.share.save': { th: 'บันทึกสรุป', en: 'Save stats' },
+  'stats.share.share': { th: 'แชร์สรุป', en: 'Share stats' },
+  'stats.share.rendering': { th: 'กำลังสร้างภาพ…', en: 'Rendering…' },
+  'stats.share.ready': {
+    th: 'พร้อมแล้ว — แตะอีกครั้งเพื่อบันทึกหรือแชร์',
+    en: 'Ready — tap again to save or share',
+  },
+  'stats.share.failed': { th: 'สร้างภาพไม่สำเร็จ ลองใหม่อีกครั้ง', en: 'Export failed — try again' },
+
   // --- session history (3-day auto-expiry) ---
   'history.title': { th: 'ประวัติการฝึก', en: 'Training History' },
   'history.empty': {
@@ -264,6 +459,9 @@ const DICT = {
     en: 'History is kept for 3 days, then auto-deleted',
   },
   'history.shots': { th: 'ลูก', en: 'shots' },
+  'history.perPlayer': { th: 'จำนวนตีแยกรายคน (3 วันล่าสุด)', en: 'Shots per player (last 3 days)' },
+  'history.unnamed': { th: 'ไม่ระบุชื่อ', en: 'Unnamed' },
+  'history.you': { th: '(คุณ)', en: '(you)' },
   'history.loading': { th: 'กำลังโหลดประวัติ…', en: 'Loading history…' },
   'history.offlineNote': {
     th: 'โหมดออฟไลน์ — แสดงสถิติที่บันทึกในเครื่องเท่านั้น',
@@ -277,7 +475,6 @@ const DICT = {
   'history.trendFlat': { th: 'ฟอร์มคงที่ทั้งเซสชัน', en: 'Form held steady' },
   'history.perShotScores': { th: 'คะแนนรายลูก', en: 'Per-shot scores' },
   'history.noClip': { th: 'ไม่มีคลิปสำหรับลูกนี้', en: 'No clip for this shot' },
-  'history.compareThis': { th: 'เปรียบเทียบคลิปนี้', en: 'Compare this clip' },
   'history.delete': { th: 'ลบเซสชัน', en: 'Delete session' },
   'history.deleteConfirm': {
     th: 'ลบเซสชันนี้และคลิปทั้งหมด?',
@@ -287,6 +484,7 @@ const DICT = {
   'history.loadFailed': { th: 'โหลดข้อมูลไม่สำเร็จ', en: 'Failed to load' },
   'history.retry': { th: 'ลองใหม่', en: 'Retry' },
   'history.radarTitle': { th: 'มุมข้อต่อเทียบเป้าหมาย', en: 'Joints vs target' },
+  'history.coachCue': { th: 'โค้ชแนะนำ', en: 'Coach said' },
   // --- history: export one swing as a 9:16 share video. {name} = player. ---
   'history.byPlayer': { th: 'ประวัติของ {name}', en: "{name}'s history" },
   'history.export.save': { th: 'บันทึกวิดีโอ', en: 'Save video' },
@@ -332,6 +530,8 @@ const DICT = {
 
   // --- settings ---
   'settings.title': { th: 'ตั้งค่า', en: 'Settings' },
+  'settings.account': { th: 'บัญชีผู้ใช้', en: 'Account' },
+  'settings.logout': { th: 'ออกจากระบบ', en: 'Log out' },
   'settings.pricing': { th: 'ราคา (USD ต่อ 1M โทเคน)', en: 'Pricing (USD per 1M tokens)' },
   'settings.textIn': { th: 'ข้อความเข้า', en: 'Text In' },
   'settings.audioIn': { th: 'เสียงเข้า', en: 'Audio In' },
@@ -341,6 +541,23 @@ const DICT = {
   'settings.usdToThb': { th: 'อัตราแลกเปลี่ยน USD→THB', en: 'USD→THB Rate' },
   'settings.sendFrame': { th: 'ส่งภาพจังหวะสัมผัสลูก', en: 'Send contact frame' },
   'settings.coachVoice': { th: 'เปิดเสียงโค้ช', en: 'Coach voice' },
+  'settings.playerHeight': { th: 'ส่วนสูง (ซม.)', en: 'Height (cm)' },
+  'settings.playerWeight': { th: 'น้ำหนัก (กก.)', en: 'Weight (kg)' },
+  'settings.playerWeightHint': {
+    th: 'ใช้ประมาณแคลอรีที่เผาผลาญ (ค่าประมาณ ไม่ใช่ทางการแพทย์)',
+    en: 'Used to estimate calories burned (rough estimate, not medical).',
+  },
+  'settings.speedFactor': { th: 'ปรับค่าความเร็ว (คูณ)', en: 'Speed calibration ×' },
+  'settings.speedFactorHint': {
+    th: '1.0 = ค่าเริ่มต้น ปรับที่สนามโดยเทียบกับความเร็วอ้างอิงที่รู้จริง',
+    en: '1.0 = default. Tune on court by comparing to a known reference speed.',
+  },
+  'settings.captureSensitivity': { th: 'ความไวจับช็อต (คูณ)', en: 'Capture sensitivity ×' },
+  'settings.captureSensitivityHint': {
+    th: '1.0 = ปกติ · ลดลง (เช่น 0.7) = จับช็อตง่ายขึ้น (ถ้ามือถือยังจับไม่ค่อยได้) · เพิ่มขึ้น = จับยากขึ้น กันจับพลาด',
+    en: '1.0 = normal · lower (e.g. 0.7) = captures shots more easily (if a phone still misses) · higher = stricter.',
+  },
+  'speed.label': { th: 'สปีด', en: 'speed' },
   'settings.dominantHand': { th: 'มือถนัด', en: 'Dominant hand' },
   'settings.handLeft': { th: 'ซ้าย', en: 'Left' },
   'settings.handRight': { th: 'ขวา', en: 'Right' },
@@ -348,13 +565,8 @@ const DICT = {
   'settings.cameraUser': { th: 'กล้องหน้า', en: 'Front' },
   'settings.cameraEnv': { th: 'กล้องหลัง', en: 'Rear' },
   'settings.session': { th: 'การฝึกซ้อม', en: 'Session' },
-  'settings.token': { th: 'โทเคน Gemini (AQ.…)', en: 'Gemini token (AQ.…)' },
-  'settings.tokenHint': {
-    th: 'วางโทเคนชั่วคราวใหม่เพื่อเชื่อมต่อโค้ชโดยไม่ต้อง build ใหม่',
-    en: 'Paste a fresh ephemeral token to connect the coach without rebuilding.',
-  },
-  'settings.tokenSet': { th: 'ตั้งค่าโทเคนแล้ว', en: 'Token set' },
-  'settings.tokenNone': { th: 'ยังไม่มีโทเคน', en: 'No token' },
+  // (settings.token* keys removed 2026-07-20 — the manual token field is gone;
+  // the coach key is auto-provisioned server-side.)
 
   // --- dev plan screen ---
   'devplan.title': { th: 'แผนพัฒนา', en: 'Development Plan' },

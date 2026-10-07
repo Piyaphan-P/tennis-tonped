@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — Compare screen reference-video source parsing.
+// ADGE Tennis — Compare screen reference-video source parsing.
 //
 // Pure helpers: parse a pasted URL into a YouTube embed or direct video
 // source, build the privacy-enhanced embed URL, and remember the user's

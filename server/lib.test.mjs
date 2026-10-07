@@ -10,9 +10,24 @@ import {
   clipObjectPath,
   sessionRowToJson,
   shotRowToJson,
+  sessionDocToJson,
+  shotDocToJson,
+  userDocToJson,
   validateShotMeta,
+  sanitizeUsage,
+  aggregateUsageRows,
+  leaderboardScores,
+  leaderboardDocToJson,
+  foldLeaderboardStats,
   unavailableBody,
+  deriveDevPlan,
+  devPlanAreaForIssue,
+  sessionStatsFromSummary,
 } from './lib.mjs';
+
+// A fake Firestore Timestamp: duck-typed via toDate() exactly like the real one,
+// so we exercise lib.mjs's import-free timestamp handling without the SDK.
+const ts = (iso) => ({ toDate: () => new Date(iso) });
 
 describe('extFromMime', () => {
   it('returns mp4 for video/mp4 families', () => {
@@ -31,6 +46,25 @@ describe('clipObjectPath', () => {
   it('builds <sessionId>/<shotId>.<ext>', () => {
     expect(clipObjectPath('sess-1', 'shot-9', 'video/mp4')).toBe('sess-1/shot-9.mp4');
     expect(clipObjectPath('s', 'x', 'video/webm;codecs=vp8')).toBe('s/x.webm');
+  });
+});
+
+describe('leaderboardScores — recompute from stored shots (never trust client)', () => {
+  it('returns the mean and max of the stored shot scores', () => {
+    expect(leaderboardScores([80, 90, 100])).toEqual({ avgScore: 90, maxScore: 100 });
+  });
+  it('mean is unrounded (matches Postgres avg())', () => {
+    const { avgScore, maxScore } = leaderboardScores([80, 85]);
+    expect(avgScore).toBeCloseTo(82.5, 10);
+    expect(maxScore).toBe(85);
+  });
+  it('returns null for zero shots so the caller skips the upsert', () => {
+    expect(leaderboardScores([])).toBeNull();
+    expect(leaderboardScores(undefined)).toBeNull();
+    expect(leaderboardScores(null)).toBeNull();
+  });
+  it('coerces non-numeric scores to 0 and never trusts a passed-in avg', () => {
+    expect(leaderboardScores([50, 'x', undefined, 100])).toEqual({ avgScore: 37.5, maxScore: 100 });
   });
 });
 
@@ -53,7 +87,18 @@ describe('sessionRowToJson', () => {
       avgScore: 82.5,
       shotCount: 12,
       summary: { goodFormPct: 50 },
+      roomUser: null, // no owner_email column value → legacy row
+      lineUserId: null,
+      lineEmail: null,
     });
+  });
+  it('passes owner_email through as roomUser (v2.1)', () => {
+    const out = sessionRowToJson({
+      id: 'c',
+      started_at: '2026-07-05T10:00:00.000Z',
+      owner_email: 'room1',
+    });
+    expect(out.roomUser).toBe('room1');
   });
   it('tolerates null ended_at / summary and missing user_name', () => {
     const out = sessionRowToJson({
@@ -110,6 +155,142 @@ describe('shotRowToJson', () => {
   });
 });
 
+describe('sessionDocToJson (Firestore)', () => {
+  it('maps a Firestore doc to the SAME wire shape as sessionRowToJson', () => {
+    const pg = sessionRowToJson({
+      id: 'a',
+      user_name: 'Ton',
+      started_at: new Date('2026-07-05T10:00:00.000Z'),
+      ended_at: new Date('2026-07-05T11:00:00.000Z'),
+      avg_score: 82.5,
+      shot_count: 12,
+      summary: { goodFormPct: 50 },
+    });
+    const fs = sessionDocToJson('a', {
+      userName: 'Ton',
+      startedAt: ts('2026-07-05T10:00:00.000Z'),
+      endedAt: ts('2026-07-05T11:00:00.000Z'),
+      avgScore: 82.5,
+      shotCount: 12,
+      summary: { goodFormPct: 50 },
+      expireAt: ts('2026-07-08T10:00:00.000Z'), // ignored by the mapper
+    });
+    expect(fs).toEqual(pg);
+  });
+  it('tolerates null endedAt/summary and missing userName', () => {
+    const out = sessionDocToJson('b', {
+      startedAt: ts('2026-07-05T10:00:00.000Z'),
+      endedAt: null,
+      avgScore: 0,
+      shotCount: 0,
+      summary: null,
+    });
+    expect(out.endedAt).toBeNull();
+    expect(out.summary).toBeNull();
+    expect(out.userName).toBe('');
+    expect(out.startedAt).toBe('2026-07-05T10:00:00.000Z');
+    expect(out.roomUser).toBeNull(); // legacy doc without roomUser
+  });
+  it('passes roomUser through (v2.1)', () => {
+    const out = sessionDocToJson('c', {
+      startedAt: ts('2026-07-05T10:00:00.000Z'),
+      roomUser: 'room1',
+    });
+    expect(out.roomUser).toBe('room1');
+  });
+});
+
+describe('userDocToJson (Firestore, v2.1 rooms)', () => {
+  it('maps to the /api/users wire shape and NEVER leaks credential fields', () => {
+    const out = userDocToJson({
+      roomUser: 'room1',
+      passSalt: 'aa'.repeat(16),
+      passHash: 'bb'.repeat(64),
+      role: 'player',
+      displayName: 'Ton',
+      disabled: false,
+      createdAt: ts('2026-07-20T10:00:00.000Z'),
+    });
+    expect(out).toEqual({
+      roomUser: 'room1',
+      displayName: 'Ton',
+      role: 'player',
+      disabled: false,
+      createdAt: '2026-07-20T10:00:00.000Z',
+    });
+    expect('passHash' in out).toBe(false);
+    expect('passSalt' in out).toBe(false);
+  });
+  it('defaults missing fields and coerces unknown roles to player', () => {
+    const out = userDocToJson({ roomUser: 'x1', role: 'superuser' });
+    expect(out.role).toBe('player');
+    expect(out.displayName).toBe('');
+    expect(out.disabled).toBe(false);
+    expect(out.createdAt).toBeNull();
+  });
+});
+
+describe('shotDocToJson (Firestore)', () => {
+  it('matches shotRowToJson byte-for-byte (with/without clip+audio)', () => {
+    const pg = shotRowToJson({
+      id: 's1',
+      session_id: 'sess',
+      idx: 3,
+      type: 'forehand',
+      score: 77,
+      angles: { a: 1 },
+      statuses: { domElbow: 'good' },
+      issues: [{ key: 'x' }],
+      peak_wrist_speed: 1.4,
+      clip_path: 'sess/s1.mp4',
+      clip_mime: 'video/mp4',
+      audio_path: 'audio/sess/s1.wav',
+      created_at: '2026-07-05T10:00:00.000Z',
+    });
+    const fs = shotDocToJson('s1', {
+      id: 's1',
+      sessionId: 'sess',
+      idx: 3,
+      type: 'forehand',
+      score: 77,
+      angles: { a: 1 },
+      statuses: { domElbow: 'good' },
+      issues: [{ key: 'x' }],
+      peakWristSpeed: 1.4,
+      clipPath: 'sess/s1.mp4',
+      clipMime: 'video/mp4',
+      audioPath: 'audio/sess/s1.wav',
+      audioMime: 'audio/wav',
+      createdAt: ts('2026-07-05T10:00:00.000Z'),
+      expireAt: ts('2026-07-08T10:00:00.000Z'),
+    });
+    expect(fs).toEqual(pg);
+    expect(fs.hasClip).toBe(true);
+    expect(fs.hasAudio).toBe(true);
+
+    const noBlobs = shotDocToJson('s2', {
+      id: 's2',
+      sessionId: 'sess',
+      idx: 4,
+      type: 'backhand',
+      score: 50,
+      angles: null,
+      statuses: null,
+      issues: null,
+      peakWristSpeed: 0,
+      clipPath: null,
+      clipMime: null,
+      audioPath: null,
+      audioMime: null,
+      createdAt: ts('2026-07-05T10:00:00.000Z'),
+    });
+    expect(noBlobs.hasClip).toBe(false);
+    expect(noBlobs.hasAudio).toBe(false);
+    expect(noBlobs.clipMime).toBeNull();
+    expect(noBlobs.issues).toEqual([]);
+  });
+});
+
 describe('validateShotMeta', () => {
   const valid = {
     idx: 1,
@@ -147,5 +328,231 @@ describe('unavailableBody', () => {
     expect(b.error).toBe('cloud_unavailable');
     expect(b.message).toContain('Cloud history is not configured');
     expect(b.message).toContain('ยังไม่ได้ตั้งค่าระบบคลาวด์');
+  });
+});
+
+describe('sanitizeUsage', () => {
+  it('returns null when absent or not a plain object (old clients keep working)', () => {
+    expect(sanitizeUsage(undefined)).toBeNull();
+    expect(sanitizeUsage(null)).toBeNull();
+    expect(sanitizeUsage('7.5')).toBeNull();
+    expect(sanitizeUsage([1, 2])).toBeNull();
+  });
+  it('coerces numbers with Number()||0 and keeps detail only when plain object', () => {
+    expect(
+      sanitizeUsage({ thb: '7.25', tokensIn: 1200, tokensOut: '340', detail: { audio: 1 } }),
+    ).toEqual({ thb: 7.25, tokensIn: 1200, tokensOut: 340, detail: { audio: 1 } });
+    expect(sanitizeUsage({ thb: 'x', tokensIn: NaN, detail: [1] })).toEqual({
+      thb: 0,
+      tokensIn: 0,
+      tokensOut: 0,
+      detail: null,
+    });
+  });
+});
+
+describe('leaderboardDocToJson (external stats API, v2.1)', () => {
+  it('maps a durable board doc → ext row shape incl LINE identity', () => {
+    const out = leaderboardDocToJson('sess-1', {
+      userName: 'Ton',
+      lineUserId: 'U4af',
+      lineEmail: 'hello@gmail.com',
+      avgScore: 71.5,
+      maxScore: 100,
+      shotCount: 12,
+      playedAt: ts('2026-07-24T10:00:00.000Z'),
+    });
+    expect(out).toEqual({
+      sessionId: 'sess-1',
+      userName: 'Ton',
+      lineUserId: 'U4af',
+      lineEmail: 'hello@gmail.com',
+      avgScore: 71.5,
+      maxScore: 100,
+      shotCount: 12,
+      playedAt: '2026-07-24T10:00:00.000Z',
+    });
+  });
+  it('defaults missing LINE identity to null', () => {
+    const out = leaderboardDocToJson('s', { avgScore: 1, maxScore: 2, shotCount: 1 });
+    expect(out.lineUserId).toBeNull();
+    expect(out.lineEmail).toBeNull();
+    expect(out.userName).toBe('');
+    expect(out.playedAt).toBeNull();
+  });
+});
+
+describe('foldLeaderboardStats (external stats totals, v2.1)', () => {
+  it('returns the empty shape on no rows', () => {
+    expect(foldLeaderboardStats([])).toEqual({
+      sessions: 0,
+      shots: 0,
+      avgScore: 0,
+      maxScore: 0,
+      bestSession: null,
+    });
+    expect(foldLeaderboardStats(undefined).sessions).toBe(0);
+  });
+  it('sums shots, shot-weights avgScore, takes overall max + best session', () => {
+    const rows = [
+      { sessionId: 'a', avgScore: 80, maxScore: 90, shotCount: 10 },
+      { sessionId: 'b', avgScore: 60, maxScore: 100, shotCount: 30 },
+    ];
+    const out = foldLeaderboardStats(rows);
+    expect(out.sessions).toBe(2);
+    expect(out.shots).toBe(40);
+    // shot-weighted mean = (80*10 + 60*30) / 40 = 2600/40 = 65
+    expect(out.avgScore).toBe(65);
+    expect(out.maxScore).toBe(100);
+    expect(out.bestSession.sessionId).toBe('b'); // highest maxScore
+  });
+});
+
+describe('aggregateUsageRows', () => {
+  // Fake Firestore Timestamp playedAt — exercises the import-free duck-typing.
+  const row = (roomUser, userName, thb, tokensIn, tokensOut, playedAtIso) => ({
+    roomUser,
+    userName,
+    thb,
+    tokensIn,
+    tokensOut,
+    playedAt: playedAtIso ? ts(playedAtIso) : null,
+  });
+
+  it('returns empty shape on no rows', () => {
+    expect(aggregateUsageRows([])).toEqual({
+      users: [],
+      total: { thb: 0, tokensIn: 0, tokensOut: 0, sessions: 0 },
+    });
+    expect(aggregateUsageRows(undefined).users).toEqual([]);
+  });
+
+  it('groups by roomUser, sums, sorts by thb desc, rounds thb to 2 decimals', () => {
+    const out = aggregateUsageRows([
+      row('room1', 'A', 1.005, 100, 10, '2026-07-18T10:00:00Z'),
+      row('room1', 'A2', 2.001, 200, 20, '2026-07-19T10:00:00Z'),
+      row('room2', 'B', 9.999, 50, 5, '2026-07-17T10:00:00Z'),
+    ]);
+    expect(out.users.map((u) => u.roomUser)).toEqual(['room2', 'room1']);
+    const a = out.users[1];
+    expect(a).toEqual({
+      roomUser: 'room1',
+      userName: 'A2', // most recent record names the group
+      thb: 3.01,
+      tokensIn: 300,
+      tokensOut: 30,
+      sessions: 2,
+    });
+    expect(out.users[0].thb).toBe(10);
+    expect(out.total).toEqual({ thb: 13.01, tokensIn: 350, tokensOut: 35, sessions: 3 });
+  });
+
+  it('buckets null roomUser under "(legacy)" and tolerates missing playedAt', () => {
+    const out = aggregateUsageRows([
+      row(null, 'Old Phone', 0.5, 10, 1, null),
+      row(null, 'Older Phone', 0.25, 5, 1, null),
+    ]);
+    expect(out.users).toHaveLength(1);
+    expect(out.users[0].roomUser).toBe('(legacy)');
+    expect(out.users[0].sessions).toBe(2);
+    expect(out.users[0].thb).toBe(0.75);
+  });
+
+  it('most-recent userName wins regardless of row order', () => {
+    const out = aggregateUsageRows([
+      row('room1', 'Newest', 1, 1, 1, '2026-07-20T00:00:00Z'),
+      row('room1', 'Oldest', 1, 1, 1, '2026-07-01T00:00:00Z'),
+    ]);
+    expect(out.users[0].userName).toBe('Newest');
+  });
+});
+
+describe('deriveDevPlan — server mirror of the frontend area ranker', () => {
+  const shot = (...issues) => ({
+    issues: issues.map(([key, severity]) => ({ key, severity })),
+  });
+
+  it('maps issue keys to areas', () => {
+    expect(devPlanAreaForIssue('elbow-too-bent')).toBe('contact-extension');
+    expect(devPlanAreaForIssue('no-knee-bend')).toBe('knee-load');
+    expect(devPlanAreaForIssue('leaning')).toBe('balance');
+    expect(devPlanAreaForIssue('shoulder-angle')).toBe('racket-prep');
+    expect(devPlanAreaForIssue('swing-faster')).toBe('swing-speed');
+    expect(devPlanAreaForIssue('unknown')).toBeNull();
+  });
+
+  it('ranks by severity weight, counts distinct shots, skips good/empty', () => {
+    const shots = [
+      shot(['elbow-too-bent', 'fault'], ['arm-locked', 'warn']), // contact +3, 1 shot
+      shot(['leaning', 'warn']), // balance +1
+      shot(['leaning', 'good']), // ignored
+      shot([], []),
+    ];
+    const plan = deriveDevPlan(shots);
+    expect(plan[0]).toEqual({ id: 'contact-extension', weight: 3, shots: 1 });
+    expect(plan.find((a) => a.id === 'balance')).toEqual({
+      id: 'balance',
+      weight: 1,
+      shots: 1,
+    });
+  });
+
+  it('returns [] for null/empty/clean input and respects the limit', () => {
+    expect(deriveDevPlan(null)).toEqual([]);
+    expect(deriveDevPlan([])).toEqual([]);
+    expect(deriveDevPlan([shot(['elbow-too-bent', 'good'])])).toEqual([]);
+    const many = [
+      shot(['swing-faster', 'fault']),
+      shot(['leaning', 'fault']),
+      shot(['no-knee-bend', 'fault']),
+      shot(['shoulder-angle', 'fault']),
+    ];
+    expect(deriveDevPlan(many).length).toBe(3);
+    expect(deriveDevPlan(many, 2).length).toBe(2);
+  });
+});
+
+describe('sessionStatsFromSummary (v2.5)', () => {
+  it('echoes all fields when present', () => {
+    const stats = sessionStatsFromSummary({
+      durationMs: 1_200_000,
+      avgSpeedKmh: 88,
+      kcal: 150,
+      spin: { topspin: 5, backspin: 2, flat: 1 },
+    });
+    expect(stats).toEqual({
+      durationMs: 1_200_000,
+      avgSpeedKmh: 88,
+      kcal: 150,
+      spin: { topspin: 5, backspin: 2, flat: 1 },
+    });
+  });
+
+  it('null / absent summary → safe defaults', () => {
+    const def = { durationMs: 0, avgSpeedKmh: null, kcal: 0, spin: null };
+    expect(sessionStatsFromSummary(null)).toEqual(def);
+    expect(sessionStatsFromSummary(undefined)).toEqual(def);
+    expect(sessionStatsFromSummary('nope')).toEqual(def);
+    expect(sessionStatsFromSummary({})).toEqual(def);
+  });
+
+  it('partial summary → mix (pre-v2.5 has duration but no speed/spin)', () => {
+    const stats = sessionStatsFromSummary({ durationMs: 600_000, kcal: 42 });
+    expect(stats).toEqual({ durationMs: 600_000, avgSpeedKmh: null, kcal: 42, spin: null });
+  });
+
+  it('non-finite / bad values coerce to defaults', () => {
+    const stats = sessionStatsFromSummary({
+      durationMs: 'x',
+      avgSpeedKmh: 'fast',
+      kcal: NaN,
+      spin: { topspin: '3', backspin: null, flat: 4 },
+    });
+    expect(stats).toEqual({
+      durationMs: 0,
+      avgSpeedKmh: null,
+      kcal: 0,
+      spin: { topspin: 3, backspin: 0, flat: 4 },
+    });
   });
 });

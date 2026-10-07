@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club (Ton & Phet Tennis Club) — pricing utilities
+// ADGE Tennis — pricing utilities
 // (pure, standalone)
 //
 // SOURCE OF TRUTH for the billing math (computeBreakdown / deltaTHB) is
@@ -8,7 +8,7 @@
 // from Google's pricing page.
 //
 // NOTE: DEFAULT_RATES below are editable ESTIMATES entered at build time
-// (USD per 1M tokens for gemini-2.5-flash-native-audio-preview Live API).
+// (USD per 1M tokens, Gemini 3.x Live — gemini-3.8-live and 3.1-flash-live share one price card; verified 2026-10-07).
 // Check them against https://ai.google.dev/gemini-api/docs/pricing before
 // trusting them for real budgeting — Google can change prices without
 // notice. Users can also override them live in SettingsSheet.
@@ -31,14 +31,14 @@ function envUsdToThb(): number {
 }
 
 /**
- * Default USD-per-1M-token rates for gemini-2.5-flash-native-audio (Live API).
+ * Default USD-per-1M-token rates for Gemini 3.x Live (3.8-live = 3.1-flash-live pricing, 2026-10-07).
  * Identical values to DEFAULT_RATES in src/store.ts — keep the two in sync.
  */
 export const DEFAULT_RATES: PricingRates = {
-  textInPer1M: 0.5,
+  textInPer1M: 0.75,
   audioInPer1M: 3.0,
-  videoInPer1M: 3.0,
-  textOutPer1M: 2.0,
+  videoInPer1M: 1.0,
+  textOutPer1M: 4.5,
   audioOutPer1M: 12.0,
   usdToThb: envUsdToThb(),
 };

@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — storyRenderer tests
+// ADGE Tennis — storyRenderer tests
 //
 // Test env is node (no jsdom), matching swingRecorder.test.ts. So:
 //   • pure layout/text helpers are unit-tested directly, and
@@ -178,9 +178,9 @@ describe('extForMime / storyFilename', () => {
   });
 
   it('builds a sanitized filename with the mime-derived extension', () => {
-    expect(storyFilename('tonphet-shot-3', 'image/png')).toBe('tonphet-shot-3.png');
+    expect(storyFilename('adge-shot-3', 'image/png')).toBe('adge-shot-3.png');
     expect(storyFilename('bad name/../x', 'video/mp4')).toBe('bad-name-..-x.mp4');
-    expect(storyFilename('', 'video/webm')).toBe('tonphet-story.webm');
+    expect(storyFilename('', 'video/webm')).toBe('adge-story.webm');
   });
 });
 
@@ -197,7 +197,7 @@ describe('pickStoryVideoMimeType', () => {
 describe('composeStoryText', () => {
   it('uses Thai labels + Thai title when lang=th', () => {
     const t = composeStoryText(DATA);
-    expect(t.brand).toBe('ต้นและเพชร Tennis Club');
+    expect(t.brand).toBe('ADGE Tennis');
     expect(t.title).toBe(DATA.titleTh);
     expect(t.scoreLabel).toBe('คะแนน');
     expect(t.fixLabel).toBe('จุดที่ต้องแก้');

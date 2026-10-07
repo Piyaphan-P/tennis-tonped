@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — StoryShareButton
+// ADGE Tennis — StoryShareButton
 //
 // Thin wrapper around the storyRenderer contract. One tap:
 //   1. render a 9:16 story — VIDEO from the shot's clip when available

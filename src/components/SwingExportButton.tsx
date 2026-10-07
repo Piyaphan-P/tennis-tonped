@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — SwingExportButton (v1.0 history share-a-swing)
+// ADGE Tennis — SwingExportButton (v1.0 history share-a-swing)
 //
 // Per-shot Save/Share on a history clip card. Renders a 9:16 export video (the
 // swing clip + coach voice + score/radar/fix chrome) via swingExportRenderer,

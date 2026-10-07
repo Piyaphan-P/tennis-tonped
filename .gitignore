@@ -17,3 +17,7 @@ ton-team-*.json
 *.png
 demo.html
 coach_demo.html
+voice-samples/*.wav
+voice-samples/probe.jpg
+voice-samples/catalog/*.wav
+voice-samples/probe640.jpg

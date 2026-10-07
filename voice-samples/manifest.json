@@ -1,0 +1,139 @@
+{
+  "model": "gemini-3.8-live",
+  "verbosity": "short",
+  "shot": {
+    "index": 3,
+    "type": "forehand",
+    "score": 72
+  },
+  "samples": [
+    {
+      "tone": "gentleF",
+      "voice": "Aoede",
+      "mode": "encourage",
+      "file": "voice-samples/gentleF-Aoede__encourage.wav",
+      "seconds": 6.6,
+      "text": "ช็อตที่ 3 โฟร์แฮนด์นะคะ สวิงเริ่มนิ่งแล้วค่ะ แต่ตอนตีลองย่อเข่าลงอีกนิดแล้วเหยียดแขนให้สุดนะคะ"
+    },
+    {
+      "tone": "gentleF",
+      "voice": "Aoede",
+      "mode": "hardcore",
+      "file": "voice-samples/gentleF-Aoede__hardcore.wav",
+      "seconds": 7.8,
+      "text": "ช็อตที่ 3 โฟร์แฮนด์นะคะ เริ่มนิ่งแล้วค่ะ แต่ตอนกระทบลูกลองเหยียดแขนออกไปให้เกือบตรงนะคะ\""
+    },
+    {
+      "tone": "gentleF",
+      "voice": "Aoede",
+      "mode": "polite",
+      "file": "voice-samples/gentleF-Aoede__polite.wav",
+      "seconds": 6.2,
+      "text": "ช็อตที่ 3 โฟร์แฮนด์นะคะ เริ่มนิ่งแล้วค่ะคุณลูกค้า แต่ตอนตีอย่าลืมงอเข่าช่วยส่งแรงขึ้นมาด้วยนะคะ\""
+    },
+    {
+      "tone": "gentleF",
+      "voice": "Aoede",
+      "mode": "buddy",
+      "file": "voice-samples/gentleF-Aoede__buddy.wav",
+      "seconds": 7,
+      "text": "ช็อตที่ 3 โฟร์แฮนด์นะคะ — ตอนกระทบลูก จังหวะสวิงเริ่มนิ่งแล้ว แต่ตอนกระทบลูกแขนยังงออยู่ ลองเหยียดแขนออกไปให้เกือบตรงอีกนิดนะคะ"
+    },
+    {
+      "tone": "firmF",
+      "voice": "Kore",
+      "mode": "encourage",
+      "file": "voice-samples/firmF-Kore__encourage.wav",
+      "seconds": 7.6,
+      "text": "ช็อตที่ 3 โฟร์แฮนด์นะคะ เริ่มนิ่งแล้วค่ะแต่ตอนกระทบลูกพยายามเหยียดแขนออกไปให้ตรงขึ้นอีกนิดนะคะ"
+    },
+    {
+      "tone": "firmF",
+      "voice": "Kore",
+      "mode": "hardcore",
+      "file": "voice-samples/firmF-Kore__hardcore.wav",
+      "seconds": 6.7,
+      "text": "ช็อตที่ 3 โฟร์แฮนด์นะคะ — ตอนกระทบลูก ขอให้เหยียดแขน ออกไปให้สุดกว่านี้นะคะ จะได้พลังมากขึ้น"
+    },
+    {
+      "tone": "firmF",
+      "voice": "Kore",
+      "mode": "polite",
+      "file": "voice-samples/firmF-Kore__polite.wav",
+      "seconds": 6.7,
+      "text": "ช็อตที่ 3 โฟร์แฮนด์นะคะ เริ่มนิ่งแล้วค่ะ แต่ตอนกระทบลูก อย่าลืมย่อเข่าให้ต่ำลงอีกนิดนะคะ"
+    },
+    {
+      "tone": "firmF",
+      "voice": "Kore",
+      "mode": "buddy",
+      "file": "voice-samples/firmF-Kore__buddy.wav",
+      "seconds": 6.8,
+      "text": "ช็อตที่ 3 โฟร์แฮนด์นะคะ ดีขึ้นค่ะ แต่ตอนกระทบลูกลองเหยียดแขนออกไปให้เกือบตรงนะคะ"
+    },
+    {
+      "tone": "firmM",
+      "voice": "Charon",
+      "mode": "encourage",
+      "file": "voice-samples/firmM-Charon__encourage.wav",
+      "seconds": 7,
+      "text": "ช็อตที่ 3 โฟร์แฮนด์นะครับ เริ่มนิ่งแล้วครับ แต่ตอนกระทบลูกอย่าลืมเหยียดแขนออกไปให้เกือบตรงนะครับ"
+    },
+    {
+      "tone": "firmM",
+      "voice": "Charon",
+      "mode": "hardcore",
+      "file": "voice-samples/firmM-Charon__hardcore.wav",
+      "seconds": 5.6,
+      "text": "ช็อตที่ 3 โฟร์แฮนด์ครับ จังหวะกระทบลูก ยืดแขนออกไปให้สุดกว่านี้หน่อยนะครับ"
+    },
+    {
+      "tone": "firmM",
+      "voice": "Charon",
+      "mode": "polite",
+      "file": "voice-samples/firmM-Charon__polite.wav",
+      "seconds": 6,
+      "text": "ช็อตที่ 3 โฟร์แฮนด์ครับ จังหวะกระทบลูกยืดแขนออกไปให้สุดและโหลดเข่าลงอีกนิดนะครับ"
+    },
+    {
+      "tone": "firmM",
+      "voice": "Charon",
+      "mode": "buddy",
+      "file": "voice-samples/firmM-Charon__buddy.wav",
+      "seconds": 7.1,
+      "text": "ช็อตที่ 3 โฟร์แฮนด์ครับ จังหวะกระทบลูกแขนยังงออยู่ ลองเหยียดศอกออกไปให้สุดกว่านี้อีกนิดนะ"
+    },
+    {
+      "tone": "friendlyM",
+      "voice": "Puck",
+      "mode": "encourage",
+      "file": "voice-samples/friendlyM-Puck__encourage.wav",
+      "seconds": 6.3,
+      "text": "ช็อตที่ 3 โฟร์แฮนด์ครับ เริ่มนิ่งแล้วนะครับ แต่ตอนตีอย่าลืมงอเข่าช่วยส่งแรงขึ้นไปด้วยนะ"
+    },
+    {
+      "tone": "friendlyM",
+      "voice": "Puck",
+      "mode": "hardcore",
+      "file": "voice-samples/friendlyM-Puck__hardcore.wav",
+      "seconds": 5.8,
+      "text": "ช็อตที่ 3 โฟร์แฮนด์ครับ จังหวะหน้าไม้กระทบลูก เหยียดแขนให้ตรงขึ้นอีกนิดนะ"
+    },
+    {
+      "tone": "friendlyM",
+      "voice": "Puck",
+      "mode": "polite",
+      "file": "voice-samples/friendlyM-Puck__polite.wav",
+      "seconds": 8.1,
+      "text": "ช็อตที่ 3 โฟร์แฮนด์ครับ เริ่มนิ่งแล้วนะครับคุณลูกค้า แต่ตอนกระทบลูกอย่าลืมเหยียดแขนออกไปให้เกือบตรงด้วยครับ"
+    },
+    {
+      "tone": "friendlyM",
+      "voice": "Puck",
+      "mode": "buddy",
+      "file": "voice-samples/friendlyM-Puck__buddy.wav",
+      "seconds": 6,
+      "text": "ช็อตที่ 3 โฟร์แฮนด์ครับ เริ่มนิ่งแล้วนะ แต่ตอนตีอย่าลืมเหยียดแขนให้เกือบตรงด้วยนะ"
+    }
+  ]
+}

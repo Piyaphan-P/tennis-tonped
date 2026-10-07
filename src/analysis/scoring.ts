@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club (Ton & Phet Tennis Club) — local rule-based shot
+// ADGE Tennis — local rule-based shot
 // scoring (pure, unit-testable)
 //
 // Turns one contact-frame angle snapshot + peak wrist speed into a 0–100
@@ -15,6 +15,36 @@
 // ============================================================================
 
 import type { DominantHand, JointAngles, ShotIssue, ShotType } from '../types';
+
+// ---------------------------------------------------------------------------
+// Peak-wrist-speed thresholds — RETUNED v1.0.4 (2026-07-16)
+//
+// STALE-TUNING FIX. The old rule penalized peak < 2.0 (full fault) / < 2.5
+// (warn). Those numbers predate the v0.3 on-court tuning, which MEASURED real
+// EMA-smoothed phone-swing peaks at ~0.8–1.6 units/s and retuned the shot
+// detector's contact gate 2.0 -> 1.1 (SHOT_THRESHOLDS.contactMinPeakSpeed).
+// The scorer was never retuned, so EVERY real swing ate a 15-pt fault + a
+// "สวิงช้าไป" issue and the history speed axis read ~0.5 for everyone.
+//
+// The peak handed to scoreShot() is `prevSpeed` at the gated contact tick, and
+// the detector only records a contact (hence only completes a shot) when that
+// value is >= contactMinPeakSpeed (1.1). So a completed shot's peak is ALWAYS
+// >= 1.1. Therefore the "good" bar MUST equal the gate (1.1): any higher value
+// is a guaranteed permanent penalty floor — a fresh recurrence of this very
+// bug. SPEED_GOOD is the single source of truth; scoring.test.ts asserts it
+// stays == SHOT_THRESHOLDS.contactMinPeakSpeed so the two can't drift again,
+// and history/derive.ts imports it as the radar's speed target.
+// ---------------------------------------------------------------------------
+
+/** No speed penalty at/above this. Anchored to the detector's contact gate.
+ *  v2.2: 1.1 → 2.0 with the scale-invariant unit change (body-lengths/s); still
+ *  == SHOT_THRESHOLDS.contactMinPeakSpeed (drift-lock asserted by scoring.test),
+ *  so a completed shot's peak is ALWAYS ≥ this and no false speed penalty fires. */
+export const SPEED_GOOD = 2.0;
+/** Below this = full "swing-faster" fault (a genuinely limp swing / glitch). */
+export const SPEED_WARN = 1.45;
+/** Human-readable good-speed target string reused in RULES + issue payloads. */
+export const SPEED_TARGET_LABEL = '≥2.0 body-lengths/s';
 
 // ---------------------------------------------------------------------------
 // Rule table (display metadata — DevPlan/Settings render this)
@@ -69,7 +99,7 @@ export const RULES: ScoringRuleDef[] = [
     label: 'Peak wrist speed',
     labelTH: 'ความเร็วข้อมือสูงสุด',
     weight: 15,
-    target: '≥2.5 units/s',
+    target: SPEED_TARGET_LABEL,
     unit: 'units/s',
   },
 ];
@@ -97,6 +127,15 @@ export interface ScoreShotInput {
   contactAngles: JointAngles;
   peakWristSpeed: number;
   dominantHand: DominantHand;
+  /**
+   * The detector's EFFECTIVE contact gate for this shot (v2.2) —
+   * SHOT_THRESHOLDS.contactMinPeakSpeed × settings.captureSensitivity. The speed
+   * penalty anchors to THIS, not the base SPEED_GOOD, so that when the knob
+   * lowers the gate (captures weaker swings) a completed shot's peak is STILL
+   * ≥ the gate by construction and no false "swing-faster" penalty fires (the
+   * v1.4 bug stays fixed at every sensitivity). Defaults to SPEED_GOOD.
+   */
+  speedGate?: number;
 }
 
 export interface ScoreShotResult {
@@ -111,6 +150,11 @@ export interface ScoreShotResult {
  */
 export function scoreShot(input: ScoreShotInput): ScoreShotResult {
   const { contactAngles, peakWristSpeed, dominantHand } = input;
+  // Effective speed thresholds: scale with the detector's actual gate so the
+  // knob can't produce a peak below the "good" bar (see speedGate above). The
+  // warn:good RATIO is preserved from the base constants.
+  const speedGood = input.speedGate ?? SPEED_GOOD;
+  const speedWarn = speedGood * (SPEED_WARN / SPEED_GOOD);
 
   const elbowDeg =
     dominantHand === 'right' ? contactAngles.rightElbowDeg : contactAngles.leftElbowDeg;
@@ -218,23 +262,25 @@ export function scoreShot(input: ScoreShotInput): ScoreShotResult {
   }
 
   // --- 5. Peak wrist speed (weight 15) ------------------------------------
-  if (peakWristSpeed < 2.0) {
+  // Thresholds anchored to the detector's EFFECTIVE contact gate (speedGood),
+  // so a knob-lowered gate can't trigger a false penalty (see speedGate above).
+  if (peakWristSpeed < speedWarn) {
     totalPenalty += penaltyPoints(WEIGHT['swing-faster'], 1);
     issues.push({
       key: 'swing-faster',
       severity: 'fault',
       measured: peakWristSpeed,
-      target: '≥2.5 units/s',
+      target: SPEED_TARGET_LABEL,
       messageTH: 'สวิงช้าไปหน่อย เร่งความเร็วช่วงเข้าหาลูกให้มากขึ้น',
       messageEN: 'Swing was slow — accelerate more through the ball.',
     });
-  } else if (peakWristSpeed < 2.5) {
+  } else if (peakWristSpeed < speedGood) {
     totalPenalty += penaltyPoints(WEIGHT['swing-faster'], 0.5);
     issues.push({
       key: 'swing-faster',
       severity: 'warn',
       measured: peakWristSpeed,
-      target: '≥2.5 units/s',
+      target: SPEED_TARGET_LABEL,
       messageTH: 'สวิงเร็วขึ้นอีกนิดเพื่อแรงส่งที่ดีกว่า',
       messageEN: 'Swing a bit faster for more pace.',
     });

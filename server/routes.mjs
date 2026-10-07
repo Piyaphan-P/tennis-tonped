@@ -1,29 +1,96 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — cloud persistence routes (Postgres + GCS).
+// ADGE Tennis — cloud persistence routes (metadata backend + GCS).
 //
 // mountCloudRoutes(app) wires POST/PATCH/GET/DELETE for sessions, shots, clips
 // and history. Body parsers are scoped PER ROUTE (never global) so the raw
 // video body on the clip route is not mangled by express.json (risk #5).
 //
-// Every handler first checks dbReady() (and gcsReady() for clip routes); if the
-// cloud is not configured it returns the SAME bilingual 503 as /api/token
-// (unavailableBody). All handlers try/catch → 503/500 JSON — never crash.
+// Metadata access goes through `backend` (store.mjs → Postgres or Firestore per
+// DB_BACKEND); this file holds NO SQL/Firestore code — only validation, GCS
+// wiring, status codes and JSON shapes. Every handler first checks
+// backend.ready() (and gcsReady() for clip routes); if the cloud is not
+// configured it returns the SAME bilingual 503 as /api/token (unavailableBody).
+// All handlers try/catch → 503/500 JSON — never crash.
 // ============================================================================
 
 import express from 'express';
-import { randomUUID } from 'node:crypto';
-import { query, dbReady } from './db.mjs';
+import { backend } from './store.mjs';
 import { gcsReady, saveClip, streamClip } from './gcs.mjs';
 import {
   clipObjectPath,
   audioObjectPath,
-  sessionRowToJson,
-  shotRowToJson,
   validateShotMeta,
+  sanitizeUsage,
   unavailableBody,
 } from './lib.mjs';
+import { hashPasswordAsync, isValidRoomUser } from './authCore.mjs';
 
 const CLIP_MAX_BYTES = 8 * 1024 * 1024; // ~8MB cap (413 beyond)
+
+// --- UAM v1.5 authorization helpers ----------------------------------------
+// req.user = { roomUser, role } is attached by the auth gate before these
+// routes run. Ownership rule: admin sees everything; a room only its own
+// sessions. Legacy sessions without roomUser are admin-visible ONLY. A
+// denied session read returns the SAME 404 as a missing one — never leak that
+// the id exists.
+
+const FORBIDDEN_BODY = {
+  error: 'forbidden',
+  message: 'Admin only / สำหรับผู้ดูแลระบบเท่านั้น',
+};
+
+/** True when `user` may touch a session owned by `roomUser` (null = legacy). */
+function canAccess(user, roomUser) {
+  if (user?.role === 'admin') return true;
+  return roomUser != null && roomUser === user?.roomUser;
+}
+
+/** 403 unless the caller is an admin. */
+function requireAdmin(req, res) {
+  if (req.user?.role === 'admin') return true;
+  res.status(403).json(FORBIDDEN_BODY);
+  return false;
+}
+
+/** The shared don't-leak-existence 404 for denied/missing sessions. */
+function sessionNotFound(res) {
+  res.status(404).json({ error: 'session_not_found' });
+}
+
+/**
+ * Resolve + authorize a session by id. Returns true when the caller may
+ * proceed; otherwise responds 404 (missing OR foreign — identical on purpose).
+ */
+async function authorizeSession(req, res, sessionId) {
+  const owner = await backend.getSessionOwner(sessionId);
+  if (!owner || !canAccess(req.user, owner.roomUser)) {
+    sessionNotFound(res);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Single-lookup resolve + authorize for the clip/audio routes (finding #7):
+ * ONE backend.getShotAccess (→ one findShot) does the ownership check AND
+ * returns the sessionId + existing clip/audio refs the stream/save then reuse
+ * (no second lookup). 404 semantics are IDENTICAL to authorizeShot:
+ *   missing shot     → 404 shot_not_found
+ *   foreign/denied   → 404 session_not_found (don't leak existence)
+ * Returns the access object when allowed, else null after responding.
+ */
+async function authorizeShotAccess(req, res, shotId) {
+  const access = await backend.getShotAccess(shotId);
+  if (!access) {
+    res.status(404).json({ error: 'shot_not_found' });
+    return null;
+  }
+  if (!canAccess(req.user, access.roomUser)) {
+    sessionNotFound(res);
+    return null;
+  }
+  return access;
+}
 
 export function mountCloudRoutes(app) {
   const json = express.json({ limit: '256kb' });
@@ -38,7 +105,7 @@ export function mountCloudRoutes(app) {
 
   // Reject early with the shared bilingual 503 when the DB is not configured.
   const requireDb = (res) => {
-    if (dbReady()) return true;
+    if (backend.ready()) return true;
     res.status(503).json(unavailableBody('cloud'));
     return false;
   };
@@ -52,13 +119,28 @@ export function mountCloudRoutes(app) {
   app.post('/api/sessions', json, async (req, res) => {
     if (!requireDb(res)) return;
     try {
-      const id = randomUUID();
       const userName = typeof req.body?.userName === 'string' ? req.body.userName : '';
       const startedAt = req.body?.startedAt ? new Date(req.body.startedAt) : new Date();
-      await query(
-        `INSERT INTO sessions (id, user_name, started_at) VALUES ($1, $2, $3)`,
-        [id, userName, startedAt.toISOString()],
-      );
+      // Owning ROOM is stamped from the auth cookie — any client-sent value
+      // ignored. The individual player is identified per-session by their LINE
+      // identity: lineUserId (the key) + lineEmail (lowercased), sent once at
+      // create; the external history API queries sessions by them.
+      const roomUser = req.user?.roomUser ?? null;
+      const lineUserId =
+        typeof req.body?.lineUserId === 'string' && req.body.lineUserId.trim()
+          ? req.body.lineUserId.trim()
+          : null;
+      const lineEmail =
+        typeof req.body?.lineEmail === 'string' && req.body.lineEmail.trim()
+          ? req.body.lineEmail.trim().toLowerCase()
+          : null;
+      const { id } = await backend.createSession({
+        userName,
+        startedAt,
+        roomUser,
+        lineUserId,
+        lineEmail,
+      });
       res.json({ id });
     } catch (err) {
       console.error('[routes] create session:', err?.message || err);
@@ -70,43 +152,19 @@ export function mountCloudRoutes(app) {
   app.patch('/api/sessions/:id', json, async (req, res) => {
     if (!requireDb(res)) return;
     try {
-      const { endedAt, avgScore, shotCount, summary } = req.body ?? {};
-      await query(
-        `UPDATE sessions
-            SET ended_at = $2, avg_score = $3, shot_count = $4, summary = $5
-          WHERE id = $1`,
-        [
-          req.params.id,
-          endedAt ? new Date(endedAt).toISOString() : null,
-          Number(avgScore) || 0,
-          Number(shotCount) || 0,
-          summary != null ? JSON.stringify(summary) : null,
-        ],
-      );
-      // Leaderboard (v1.0): sessions/shots purge after 3 days, so the finished
-      // session's name + scores are ALSO recorded on the durable board (never
-      // purged; the ranking site reads only this table). Idempotent by PK;
-      // best-effort — a board failure must not fail the session PATCH.
-      if ((Number(shotCount) || 0) > 0) {
-        try {
-          await query(
-            `INSERT INTO leaderboard_records
-               (session_id, user_name, avg_score, max_score, shot_count, played_at)
-             SELECT s.id, s.user_name, $2,
-                    COALESCE((SELECT max(score) FROM shots WHERE session_id = s.id), 0),
-                    $3, s.started_at
-               FROM sessions s WHERE s.id = $1
-             ON CONFLICT (session_id) DO UPDATE SET
-               user_name = EXCLUDED.user_name,
-               avg_score = EXCLUDED.avg_score,
-               max_score = EXCLUDED.max_score,
-               shot_count = EXCLUDED.shot_count`,
-            [req.params.id, Number(avgScore) || 0, Number(shotCount) || 0],
-          );
-        } catch (err) {
-          console.error('[routes] leaderboard record (non-fatal):', err?.message || err);
-        }
-      }
+      if (!(await authorizeSession(req, res, req.params.id))) return;
+      const { endedAt, avgScore, shotCount, summary, usage } = req.body ?? {};
+      // The durable leaderboard upsert (best-effort, shotCount>0 gate) lives
+      // inside the backend so both Postgres and Firestore record it identically.
+      // `usage` (admin cost visibility) is OPTIONAL — sanitizeUsage returns
+      // null when absent/malformed, so old clients keep working unchanged.
+      await backend.patchSession(req.params.id, {
+        endedAt,
+        avgScore,
+        shotCount,
+        summary,
+        usage: sanitizeUsage(usage),
+      });
       res.status(204).end();
     } catch (err) {
       console.error('[routes] patch session:', err?.message || err);
@@ -127,23 +185,8 @@ export function mountCloudRoutes(app) {
       return res.status(400).json({ error: 'invalid_shot_meta', errors });
     }
     try {
-      const id = randomUUID();
-      await query(
-        `INSERT INTO shots
-           (id, session_id, idx, type, score, angles, statuses, issues, peak_wrist_speed)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [
-          id,
-          req.params.id,
-          body.idx,
-          body.type,
-          body.score,
-          JSON.stringify(body.angles),
-          JSON.stringify(body.statuses),
-          JSON.stringify(body.issues),
-          body.peakWristSpeed,
-        ],
-      );
+      if (!(await authorizeSession(req, res, req.params.id))) return;
+      const { id } = await backend.createShot(req.params.id, body);
       res.json({ id });
     } catch (err) {
       console.error('[routes] create shot:', err?.message || err);
@@ -164,18 +207,11 @@ export function mountCloudRoutes(app) {
         return res.status(413).json({ error: 'clip_too_large' });
       }
       const mime = req.get('content-type') || 'video/webm';
-      const found = await query(`SELECT session_id FROM shots WHERE id = $1`, [req.params.id]);
-      if (found.rowCount === 0) {
-        return res.status(404).json({ error: 'shot_not_found' });
-      }
-      const sessionId = found.rows[0].session_id;
-      const path = clipObjectPath(sessionId, req.params.id, mime);
+      const access = await authorizeShotAccess(req, res, req.params.id);
+      if (!access) return;
+      const path = clipObjectPath(access.sessionId, req.params.id, mime);
       await saveClip(path, buf, mime);
-      await query(`UPDATE shots SET clip_path = $2, clip_mime = $3 WHERE id = $1`, [
-        req.params.id,
-        path,
-        mime,
-      ]);
+      await backend.setShotClip(access.sessionId, req.params.id, path, mime);
       res.status(204).end();
     } catch (err) {
       console.error('[routes] upload clip:', err?.message || err);
@@ -198,18 +234,11 @@ export function mountCloudRoutes(app) {
         return res.status(413).json({ error: 'audio_too_large' });
       }
       const mime = req.get('content-type') || 'audio/wav';
-      const found = await query(`SELECT session_id FROM shots WHERE id = $1`, [req.params.id]);
-      if (found.rowCount === 0) {
-        return res.status(404).json({ error: 'shot_not_found' });
-      }
-      const sessionId = found.rows[0].session_id;
-      const path = audioObjectPath(sessionId, req.params.id);
+      const access = await authorizeShotAccess(req, res, req.params.id);
+      if (!access) return;
+      const path = audioObjectPath(access.sessionId, req.params.id);
       await saveClip(path, buf, mime);
-      await query(`UPDATE shots SET audio_path = $2, audio_mime = $3 WHERE id = $1`, [
-        req.params.id,
-        path,
-        mime,
-      ]);
+      await backend.setShotAudio(access.sessionId, req.params.id, path, mime);
       res.status(204).end();
     } catch (err) {
       console.error('[routes] upload audio:', err?.message || err);
@@ -222,13 +251,17 @@ export function mountCloudRoutes(app) {
     if (!requireDb(res)) return;
     try {
       const days = Math.min(3, Math.max(1, Number(req.query.days) || 3));
-      const { rows } = await query(
-        `SELECT * FROM sessions
-          WHERE started_at >= now() - ($1 || ' days')::interval
-          ORDER BY started_at DESC`,
-        [String(days)],
-      );
-      res.json(rows.map(sessionRowToJson));
+      // Room → own sessions only. Admin → everything, optional ?room= filter.
+      let rows;
+      if (req.user?.role === 'admin') {
+        const filter = String(req.query.room ?? req.query.email ?? '').trim().toLowerCase();
+        rows = filter
+          ? await backend.listHistory(days, { roomUser: filter })
+          : await backend.listHistory(days);
+      } else {
+        rows = await backend.listHistory(days, { roomUser: req.user?.roomUser });
+      }
+      res.json(rows);
     } catch (err) {
       console.error('[routes] history:', err?.message || err);
       res.status(503).json(unavailableBody('cloud'));
@@ -239,18 +272,12 @@ export function mountCloudRoutes(app) {
   app.get('/api/sessions/:id', async (req, res) => {
     if (!requireDb(res)) return;
     try {
-      const sRes = await query(`SELECT * FROM sessions WHERE id = $1`, [req.params.id]);
-      if (sRes.rowCount === 0) {
-        return res.status(404).json({ error: 'session_not_found' });
+      const detail = await backend.getSessionDetail(req.params.id);
+      // Missing and foreign look IDENTICAL (don't leak existence).
+      if (!detail || !canAccess(req.user, detail.roomUser)) {
+        return sessionNotFound(res);
       }
-      const shRes = await query(
-        `SELECT * FROM shots WHERE session_id = $1 ORDER BY idx ASC`,
-        [req.params.id],
-      );
-      res.json({
-        ...sessionRowToJson(sRes.rows[0]),
-        shots: shRes.rows.map(shotRowToJson),
-      });
+      res.json(detail);
     } catch (err) {
       console.error('[routes] session detail:', err?.message || err);
       res.status(503).json(unavailableBody('cloud'));
@@ -262,15 +289,13 @@ export function mountCloudRoutes(app) {
     if (!requireDb(res)) return;
     if (!requireGcs(res)) return;
     try {
-      const { rows, rowCount } = await query(
-        `SELECT clip_path, clip_mime FROM shots WHERE id = $1`,
-        [req.params.shotId],
-      );
-      if (rowCount === 0 || !rows[0].clip_path) {
+      const access = await authorizeShotAccess(req, res, req.params.shotId);
+      if (!access) return;
+      if (!access.clipPath) {
         return res.status(404).json({ error: 'clip_not_found' });
       }
       res.setHeader('Cache-Control', 'private, max-age=3600');
-      await streamClip(rows[0].clip_path, rows[0].clip_mime, req, res);
+      await streamClip(access.clipPath, access.clipMime, req, res);
     } catch (err) {
       console.error('[routes] clip stream:', err?.message || err);
       if (!res.headersSent) res.status(503).json(unavailableBody('clips'));
@@ -282,18 +307,32 @@ export function mountCloudRoutes(app) {
     if (!requireDb(res)) return;
     if (!requireGcs(res)) return;
     try {
-      const { rows, rowCount } = await query(
-        `SELECT audio_path, audio_mime FROM shots WHERE id = $1`,
-        [req.params.shotId],
-      );
-      if (rowCount === 0 || !rows[0].audio_path) {
+      const access = await authorizeShotAccess(req, res, req.params.shotId);
+      if (!access) return;
+      if (!access.audioPath) {
         return res.status(404).json({ error: 'audio_not_found' });
       }
       res.setHeader('Cache-Control', 'private, max-age=3600');
-      await streamClip(rows[0].audio_path, rows[0].audio_mime || 'audio/wav', req, res);
+      await streamClip(access.audioPath, access.audioMime || 'audio/wav', req, res);
     } catch (err) {
       console.error('[routes] audio stream:', err?.message || err);
       if (!res.headersSent) res.status(503).json(unavailableBody('clips'));
+    }
+  });
+
+  // --- PATCH /api/shots/:shotId/coach — store the coach's cue text (v2.3) --
+  app.patch('/api/shots/:shotId/coach', json, async (req, res) => {
+    if (!requireDb(res)) return;
+    try {
+      const access = await authorizeShotAccess(req, res, req.params.shotId);
+      if (!access) return;
+      const raw = typeof req.body?.text === 'string' ? req.body.text : '';
+      const text = raw.trim().slice(0, 2000); // bound it; empty is allowed (clear)
+      await backend.setShotCoachText(access.sessionId, req.params.shotId, text);
+      res.status(204).end();
+    } catch (err) {
+      console.error('[routes] set coach text:', err?.message || err);
+      res.status(503).json(unavailableBody('cloud'));
     }
   });
 
@@ -301,10 +340,127 @@ export function mountCloudRoutes(app) {
   app.delete('/api/sessions/:id', async (req, res) => {
     if (!requireDb(res)) return;
     try {
-      await query(`DELETE FROM sessions WHERE id = $1`, [req.params.id]);
+      if (!(await authorizeSession(req, res, req.params.id))) return;
+      await backend.deleteSession(req.params.id);
       res.status(204).end();
     } catch (err) {
       console.error('[routes] delete session:', err?.message || err);
+      res.status(503).json(unavailableBody('cloud'));
+    }
+  });
+
+  // ==========================================================================
+  // User management (UAM v1.5) — ADMIN ONLY (403 otherwise). Everything goes
+  // through backend.* (Firestore has the real implementation; the Postgres
+  // stubs throw → the catch below maps that to the bilingual 503). Password
+  // hashing happens HERE via authCore so plaintext never reaches the backend.
+  // ==========================================================================
+
+  const INVALID_INPUT = {
+    error: 'invalid_input',
+    message:
+      'Room name must be 2–40 chars (a–z 0–9 . _ -) and password at least 4 characters. / ' +
+      'ชื่อห้องต้อง 2–40 ตัว (a–z 0–9 . _ -) และรหัสผ่านอย่างน้อย 4 ตัวอักษร',
+  };
+
+  // --- GET /api/users — list (safe wire shape, no credential fields) -------
+  app.get('/api/users', async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    if (!requireDb(res)) return;
+    try {
+      res.json(await backend.listUsers());
+    } catch (err) {
+      console.error('[routes] list users:', err?.message || err);
+      res.status(503).json(unavailableBody('cloud'));
+    }
+  });
+
+  // --- POST /api/users — create a room (role is ALWAYS 'player') -----------
+  app.post('/api/users', json, async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    if (!requireDb(res)) return;
+    const roomUser = String(req.body?.roomUser ?? '').trim().toLowerCase();
+    const password = String(req.body?.password ?? '');
+    const displayName = typeof req.body?.displayName === 'string' ? req.body.displayName : '';
+    if (!isValidRoomUser(roomUser) || password.length < 4) {
+      return res.status(400).json(INVALID_INPUT);
+    }
+    try {
+      if (await backend.getUser(roomUser)) {
+        return res.status(409).json({ error: 'user_exists' });
+      }
+      const { passSalt, passHash } = await hashPasswordAsync(password);
+      await backend.createUser({ roomUser, passSalt, passHash, displayName, role: 'player' });
+      res.status(201).json({ ok: true, roomUser });
+    } catch (err) {
+      console.error('[routes] create user:', err?.message || err);
+      res.status(503).json(unavailableBody('cloud'));
+    }
+  });
+
+  // --- PATCH /api/users/:roomUser — reset password / rename / disable ------
+  // An admin may PATCH their own password/displayName but can NOT disable
+  // themselves (lockout guard).
+  app.patch('/api/users/:roomUser', json, async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    if (!requireDb(res)) return;
+    const roomUser = String(req.params.roomUser ?? '').trim().toLowerCase();
+    const { password, displayName, disabled } = req.body ?? {};
+    if (password != null && (typeof password !== 'string' || password.length < 4)) {
+      return res.status(400).json(INVALID_INPUT);
+    }
+    if (disabled === true && roomUser === req.user.roomUser) {
+      return res.status(400).json({
+        error: 'cannot_disable_self',
+        message: 'You cannot disable your own account. / ปิดการใช้งานบัญชีตัวเองไม่ได้',
+      });
+    }
+    try {
+      const patch = {};
+      if (password != null) Object.assign(patch, await hashPasswordAsync(password));
+      if (typeof displayName === 'string') patch.displayName = displayName;
+      if (typeof disabled === 'boolean') patch.disabled = disabled;
+      const found = await backend.updateUser(roomUser, patch);
+      if (!found) return res.status(404).json({ error: 'user_not_found' });
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[routes] patch user:', err?.message || err);
+      res.status(503).json(unavailableBody('cloud'));
+    }
+  });
+
+  // --- DELETE /api/users/:roomUser — remove the account ONLY (204) ---------
+  // Sessions expire via TTL and leaderboard rows are durable — untouched.
+  app.delete('/api/users/:roomUser', async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    if (!requireDb(res)) return;
+    const roomUser = String(req.params.roomUser ?? '').trim().toLowerCase();
+    if (roomUser === req.user.roomUser) {
+      return res.status(400).json({
+        error: 'cannot_delete_self',
+        message: 'You cannot delete your own account. / ลบบัญชีตัวเองไม่ได้',
+      });
+    }
+    try {
+      await backend.deleteUser(roomUser);
+      res.status(204).end();
+    } catch (err) {
+      console.error('[routes] delete user:', err?.message || err);
+      res.status(503).json(unavailableBody('cloud'));
+    }
+  });
+
+  // --- GET /api/usage — per-room Gemini cost aggregate, ADMIN ONLY ---------
+  // Aggregated over ALL durable usage_records (tiny scale — whole-collection
+  // read is deliberate). Shape: { users: [{ roomUser, userName, thb, tokensIn,
+  // tokensOut, sessions }], total: {...} } — built by lib.aggregateUsageRows.
+  app.get('/api/usage', async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    if (!requireDb(res)) return;
+    try {
+      res.json(await backend.aggregateUsage());
+    } catch (err) {
+      console.error('[routes] usage aggregate:', err?.message || err);
       res.status(503).json(unavailableBody('cloud'));
     }
   });

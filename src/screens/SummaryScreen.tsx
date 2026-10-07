@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
   useAppStore,
-  selectSessionCostTHB,
-  selectTHBPerShot,
   selectShotCount,
   selectAvgScore,
   selectSessionDurationMs,
@@ -12,9 +10,14 @@ import {
 } from '../store';
 import { useT } from '../i18n';
 import type { I18nKey } from '../i18n';
-import { formatTHB } from '../cost/pricing';
 import { renderCaptureToDataUrl } from '../analysis/captureRenderer';
 import CaptureLightbox from '../components/CaptureLightbox';
+import StatsShareButton from '../components/StatsShareButton';
+import { deriveSessionStats, deriveCumulativeStats } from '../history/sessionStats';
+import { filterHistoryByPlayer } from '../history/playerStats';
+import { spinPercentages } from '../analysis/spin';
+import { formatSpeedKmh } from '../analysis/swingSpeed';
+import type { StatsCardData } from '../share/statsCardRenderer';
 import type {
   DominantHand,
   Shot,
@@ -247,23 +250,23 @@ function IssueChip({ issue, lang }: { issue: ShotIssue; lang: Lang }) {
   );
 }
 
-/** Post-session summary: cost, stats, improvements, per-shot cards, breakdown, history. */
+/** Post-session summary: stats, improvements, per-shot cards, history.
+ *  (Player-facing THB cost blocks removed 2026-07-20 — costMonitor still runs;
+ *  its totals go to the admin usage upload at session end.) */
 export default function SummaryScreen() {
   const t = useT();
   const lang = useAppStore((s) => s.lang);
   const setScreen = useAppStore((s) => s.setScreen);
-  const total = useAppStore(selectSessionCostTHB);
-  const perShot = useAppStore(selectTHBPerShot);
   const shotCount = useAppStore(selectShotCount);
   const avg = useAppStore(selectAvgScore);
   const duration = useAppStore(selectSessionDurationMs);
-  const tokens = useAppStore((s) => s.cost.tokens);
-  const breakdown = useAppStore((s) => s.cost.breakdown);
   const shots = useAppStore((s) => s.shots);
   const improvements = useAppStore(selectSessionImprovements);
   const stats = useAppStore(selectUserStats);
   const history = useAppStore((s) => s.history);
   const dominantHand = useAppStore((s) => s.settings.dominantHand);
+  const playerWeightKg = useAppStore((s) => s.settings.playerWeightKg);
+  const playerName = useAppStore((s) => s.settings.userName);
   const [lightbox, setLightbox] = useState<{ capture: SwingCapture; shotIndex: number } | null>(
     null,
   );
@@ -272,6 +275,80 @@ export default function SummaryScreen() {
     shotCount === 0
       ? 0
       : (shots.filter((sh) => sh.score >= GOOD_FORM_SCORE).length / shotCount) * 100;
+
+  // --- v1.8 session-stats widget (per-session via the SAME derivation store
+  //     persists; cumulative from the 3-day localStorage history). History on
+  //     a shared device holds EVERY player — cumulative + the list below use
+  //     ONLY the current player's sessions (merge bug fixed 2026-07-21). ---
+  const myHistory = filterHistoryByPlayer(history, playerName);
+  const sessionStats = deriveSessionStats(shots, duration, playerWeightKg, dominantHand);
+  const cumStats = deriveCumulativeStats(myHistory);
+  const spinPct = spinPercentages(sessionStats.spin);
+  const cumSpinPct = spinPercentages(cumStats.spin);
+  const sessionMinutes = Math.round(duration / 60000);
+  const speedText = (kmh: number | undefined) =>
+    kmh === undefined ? '—' : formatSpeedKmh(kmh, lang);
+
+  const statsCardData: StatsCardData = {
+    lang,
+    playerName,
+    dateLabel: fmtDate(Date.now(), lang),
+    minutes: sessionMinutes,
+    shots: shotCount,
+    avgSpeedKmh: sessionStats.avgSpeedKmh,
+    kcal: sessionStats.kcal,
+    spin: spinPct,
+    cumMinutes: cumStats.totalMinutes,
+    cumShots: cumStats.totalShots,
+    cumAvgSpeedKmh: cumStats.avgSpeedKmh,
+    cumKcal: cumStats.totalKcal,
+  };
+
+  /** One widget tile: label · big session value · "รวมทุกครั้ง: X" secondary. */
+  const widgetTile = (label: string, value: string, cumValue: string, color?: string) => (
+    <div className="card col" style={{ gap: 4 }}>
+      <span className="dim" style={{ fontSize: '0.78rem' }}>
+        {label}
+      </span>
+      <span className="num" style={{ fontSize: '1.5rem', fontWeight: 800, color: color ?? 'var(--text)' }}>
+        {value}
+      </span>
+      <span className="faint num" style={{ fontSize: '0.7rem' }}>
+        {t('stats.cumulative')}: {cumValue}
+      </span>
+    </div>
+  );
+
+  /** One spin bar row: label · % · proportional track. */
+  const spinRow = (label: string, pct: number, color: string) => (
+    <div className="col" style={{ gap: 4 }}>
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <span className="dim" style={{ fontSize: '0.8rem' }}>
+          {label}
+        </span>
+        <span className="num" style={{ fontSize: '0.85rem', fontWeight: 700 }}>
+          {pct}%
+        </span>
+      </div>
+      <div
+        style={{
+          height: 8,
+          borderRadius: 4,
+          background: 'var(--line)',
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            width: `${Math.max(0, Math.min(100, pct))}%`,
+            height: '100%',
+            background: color,
+            borderRadius: 4,
+          }}
+        />
+      </div>
+    </div>
+  );
 
   const stat = (label: string, value: string) => (
     <div className="card col" style={{ gap: 2 }}>
@@ -284,27 +361,67 @@ export default function SummaryScreen() {
     </div>
   );
 
-  // THB-per-modality bars. width ∝ largest modality cost; token counts as secondary text.
-  const modalityRows: Array<{ label: string; thb: number; tok: number }> = [
-    { label: t('token.textIn'), thb: breakdown.textInTHB, tok: tokens.textIn },
-    { label: t('token.audioIn'), thb: breakdown.audioInTHB, tok: tokens.audioIn },
-    { label: t('token.videoIn'), thb: breakdown.videoInTHB, tok: tokens.videoIn },
-    { label: t('token.textOut'), thb: breakdown.textOutTHB, tok: tokens.textOut },
-    { label: t('token.audioOut'), thb: breakdown.audioOutTHB, tok: tokens.audioOut },
-    { label: t('token.thoughts'), thb: breakdown.thoughtsTHB, tok: tokens.thoughts },
-  ];
-  const maxTHB = Math.max(...modalityRows.map((r) => r.thb), 0);
-
   return (
     <div className="screen">
       <h1>{t('summary.title')}</h1>
 
-      <div className="card cost-meter col" style={{ gap: 4 }}>
-        <span className="dim">{t('summary.totalCost')}</span>
-        <span className="big">{formatTHB(total)}</span>
-        <span className="dim num" style={{ fontSize: '0.85rem' }}>
-          ~{formatTHB(perShot)} {t('summary.costPerShot')} ({t('common.approx')})
+      {/* --- v1.8 session-stats overview (per-session + all-time) + share --- */}
+      <div className="card col" style={{ gap: 12, borderColor: 'var(--line-strong)' }}>
+        <h3>{t('stats.widget.title')}</h3>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 'var(--sp-3)',
+          }}
+        >
+          {widgetTile(
+            t('stats.minutes'),
+            `${sessionMinutes} ${t('stats.minUnit')}`,
+            `${cumStats.totalMinutes} ${t('stats.minUnit')}`,
+            'var(--accent)',
+          )}
+          {widgetTile(
+            t('stats.balls'),
+            `${shotCount} ${t('stats.ballsUnit')}`,
+            String(cumStats.totalShots),
+          )}
+          {widgetTile(
+            t('stats.avgSpeed'),
+            speedText(sessionStats.avgSpeedKmh),
+            speedText(cumStats.avgSpeedKmh),
+            'var(--good)',
+          )}
+          {widgetTile(
+            t('stats.kcal'),
+            `≈ ${sessionStats.kcal} ${t('stats.kcalUnit')}`,
+            `≈ ${cumStats.totalKcal} ${t('stats.kcalUnit')}`,
+            'var(--warn)',
+          )}
+        </div>
+
+        {/* spin mix (estimated from swing path — no ball sensor) */}
+        <div className="col" style={{ gap: 8 }}>
+          <div className="row" style={{ justifyContent: 'space-between', gap: 8 }}>
+            <span style={{ fontWeight: 700 }}>{t('stats.spinTitle')}</span>
+            <span className="faint" style={{ fontSize: '0.68rem', textAlign: 'right' }}>
+              {t('stats.spinNote')}
+            </span>
+          </div>
+          {spinRow(t('stats.topspin'), spinPct.topspin, 'var(--good)')}
+          {spinRow(t('stats.backspin'), spinPct.backspin, 'var(--accent)')}
+          {spinRow(t('stats.flat'), spinPct.flat, 'var(--warn)')}
+          <span className="faint num" style={{ fontSize: '0.68rem' }}>
+            {t('stats.cumulative')}: {cumSpinPct.topspin}% / {cumSpinPct.backspin}% /{' '}
+            {cumSpinPct.flat}%
+          </span>
+        </div>
+
+        <span className="faint" style={{ fontSize: '0.68rem' }}>
+          {t('stats.cumNote')}
         </span>
+
+        {shotCount > 0 && <StatsShareButton data={statsCardData} />}
       </div>
 
       <div
@@ -371,14 +488,9 @@ export default function SummaryScreen() {
                     />
                   )}
                   <div className="col" style={{ gap: 4, flex: 1, minWidth: 0 }}>
-                    <div className="row" style={{ justifyContent: 'space-between', gap: 8 }}>
-                      <span className="dim" style={{ fontSize: '0.85rem' }}>
-                        {t(typeKey)}
-                      </span>
-                      <span className="num faint" style={{ fontSize: '0.75rem' }}>
-                        {sh.costTHB !== undefined ? `~${formatTHB(sh.costTHB)}` : '—'}
-                      </span>
-                    </div>
+                    <span className="dim" style={{ fontSize: '0.85rem' }}>
+                      {t(typeKey)}
+                    </span>
                     {sh.issues.length > 0 && (
                       <div className="row" style={{ gap: 5, flexWrap: 'wrap' }}>
                         {sh.issues.map((iss, i) => (
@@ -408,48 +520,6 @@ export default function SummaryScreen() {
       ) : (
         <p className="dim">{t('summary.noShots')}</p>
       )}
-
-      {/* --- cost by modality: THB bars + secondary token counts --- */}
-      <div className="card col" style={{ gap: 10 }}>
-        <h3>{t('summary.breakdown')}</h3>
-        <div className="col" style={{ gap: 10 }}>
-          {modalityRows.map((r) => (
-            <div key={r.label} className="col" style={{ gap: 3 }}>
-              <div className="row" style={{ justifyContent: 'space-between', gap: 8 }}>
-                <span className="dim" style={{ fontSize: '0.82rem' }}>
-                  {r.label}
-                </span>
-                <span className="num" style={{ fontSize: '0.85rem', fontWeight: 700 }}>
-                  {formatTHB(r.thb)}
-                </span>
-              </div>
-              <div
-                style={{
-                  height: 6,
-                  borderRadius: 'var(--radius-pill)',
-                  background: 'rgba(255,255,255,0.08)',
-                  overflow: 'hidden',
-                }}
-              >
-                <div
-                  style={{
-                    height: '100%',
-                    width: maxTHB > 0 ? `${(r.thb / maxTHB) * 100}%` : '0%',
-                    background: 'var(--accent)',
-                    borderRadius: 'var(--radius-pill)',
-                  }}
-                />
-              </div>
-              <span className="faint num" style={{ fontSize: '0.7rem' }}>
-                {r.tok.toLocaleString()} tok
-              </span>
-            </div>
-          ))}
-        </div>
-        <p className="faint" style={{ fontSize: '0.78rem' }}>
-          {t('summary.approxNote')}
-        </p>
-      </div>
 
       {/* --- cross-session stats (your progress) --- */}
       {stats.sessions > 0 && (
@@ -517,13 +587,13 @@ export default function SummaryScreen() {
             {t('history.expiryNote')}
           </span>
         </div>
-        {history.length === 0 ? (
+        {myHistory.length === 0 ? (
           <span className="dim" style={{ fontSize: '0.85rem' }}>
             {t('history.empty')}
           </span>
         ) : (
           <div className="col" style={{ gap: 6 }}>
-            {[...history]
+            {[...myHistory]
               .sort((a, b) => b.tsMs - a.tsMs)
               .map((h: StoredSession) => (
                 <div key={h.id} className="shot-row" style={{ gap: 10 }}>
@@ -533,7 +603,7 @@ export default function SummaryScreen() {
                     </span>
                     <span className="faint num" style={{ fontSize: '0.72rem' }}>
                       {h.shotCount} {t('history.shots')} · {h.goodFormPct.toFixed(0)}%{' '}
-                      {t('stats.goodForm')} · ~{formatTHB(h.totalCostTHB)}
+                      {t('stats.goodForm')}
                     </span>
                   </div>
                   <span

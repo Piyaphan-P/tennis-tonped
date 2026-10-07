@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — swing-capture renderer + shared skeleton drawer
+// ADGE Tennis — swing-capture renderer + shared skeleton drawer
 //
 // Two exports:
 //   • drawSkeleton() — the SINGLE source of truth for skeleton coloring. Used

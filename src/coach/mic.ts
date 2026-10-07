@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club (Ton & Phet Tennis Club) — always-on microphone capture
+// ADGE Tennis — always-on microphone capture
 //
 // Captures the student's voice CONTINUOUSLY and emits PCM 16000 Hz, 16-bit LE,
 // mono chunks as base64 strings, ready for session.sendRealtimeInput({ audio }).

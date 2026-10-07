@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — shotDetector v0.9 tests
+// ADGE Tennis — shotDetector v0.9 tests
 //
 // Covers the v0.9 detector-correctness work (companion to the capture
 // regression suite in shotDetector.capture.test.ts):
@@ -164,27 +164,30 @@ describe('classifyShotType — handedness-anchored & mirror-invariant (v0.9 bug 
 const DT = 1000 / 15;
 
 /** A full swing that traverses prep→backswing→forward-swing→contact→
- *  follow-through→idle and completes as a shot (peak ~1.3, no velX flip; the
- *  forwardBypass chain carries it through). 20 frames. */
+ *  follow-through→idle and completes as a shot (peak ~2.34, no velX flip; the
+ *  forwardBypass chain carries it through). 20 frames. v2.2: speeds are
+ *  body-lengths/s — all ×1.8 vs the pre-v2.2 raw-unit trace, tracking the gate
+ *  rescale so the FSM margins are unchanged. */
 const FULL_SWING: Array<[number, number]> = [
-  [0.35, 0.1], [0.35, 0.1], [0.35, 0.1], // prep
-  [0.55, 0.1],                            // -> backswing
-  [1.05, 0.1], [1.2, 0.1],                // bypass -> forward-swing
-  [1.3, 0.1],                             // rising peak (>contactMinPeakSpeed)
-  [0.6, 0.1],                             // drop -> contact
-  [0.4, 0.1],                             // -> follow-through
-  [0.2, 0], [0.2, 0], [0.2, 0], [0.2, 0], [0.2, 0],
-  [0.2, 0], [0.2, 0], [0.2, 0], [0.2, 0], [0.2, 0], // 10 idle -> finalize
+  [0.63, 0.1], [0.63, 0.1], [0.63, 0.1], // prep (>prepEnterSpeed 0.55)
+  [0.99, 0.1],                            // -> backswing (>backswingMinSpeed 0.9)
+  [1.89, 0.1], [2.16, 0.1],               // bypass -> forward-swing (>forwardBypassSpeed 1.8)
+  [2.34, 0.1],                            // rising peak (>contactMinPeakSpeed 2.0)
+  [1.08, 0.1],                            // drop -> contact
+  [0.72, 0.1],                            // -> follow-through
+  [0.36, 0], [0.36, 0], [0.36, 0], [0.36, 0], [0.36, 0],
+  [0.36, 0], [0.36, 0], [0.36, 0], [0.36, 0], [0.36, 0], // 10 idle -> finalize
 ];
 
 /** A partial swing that arms then STALLS in backswing (never locks contact,
- *  never reaches follow-through). Should be discarded, never dispatched. */
+ *  never reaches follow-through). Should be discarded, never dispatched.
+ *  v2.2: ×1.8 body-lengths/s. */
 const STALLED_SWING: Array<[number, number]> = [
-  [0.35, 0.1], [0.35, 0.1], [0.35, 0.1], // prep
-  [0.6, 0.1],                             // -> backswing
-  [0.7, 0.1], [0.6, 0.1],                 // dawdle in backswing (no bypass, no flip)
-  [0.2, 0], [0.2, 0], [0.2, 0], [0.2, 0], [0.2, 0],
-  [0.2, 0], [0.2, 0], [0.2, 0], [0.2, 0], [0.2, 0], // 10 idle -> finalize
+  [0.63, 0.1], [0.63, 0.1], [0.63, 0.1], // prep
+  [1.08, 0.1],                            // -> backswing
+  [1.26, 0.1], [1.08, 0.1],               // dawdle in backswing (no bypass, no flip)
+  [0.36, 0], [0.36, 0], [0.36, 0], [0.36, 0], [0.36, 0],
+  [0.36, 0], [0.36, 0], [0.36, 0], [0.36, 0], [0.36, 0], // 10 idle -> finalize
 ];
 
 /** Feed a trace starting at `startTs`; returns the ts just past the last frame. */
@@ -199,6 +202,32 @@ function feed(detector: ShotDetector, trace: Array<[number, number]>, startTs: n
 // ---------------------------------------------------------------------------
 // 2. POST-SHOT COOLDOWN
 // ---------------------------------------------------------------------------
+
+describe('captureSensitivity knob (v2.2 — tune the gate without redeploy)', () => {
+  beforeEach(() => {
+    appStore.getState().startSession();
+  });
+
+  it('sensitivity < 1 lowers every speed gate so a weaker swing still completes', () => {
+    // A swing scaled to HALF the FULL_SWING speeds — below the default gates.
+    const weak = FULL_SWING.map(([s, v]) => [s * 0.5, v] as [number, number]);
+
+    let nDefault = 0;
+    const d1 = new ShotDetector({ onShotCompleted: () => { nDefault += 1; } });
+    d1.reset();
+    feed(d1, weak, 0);
+    expect(nDefault).toBe(0); // too weak for the default gates
+
+    let nSensitive = 0;
+    const d2 = new ShotDetector({
+      onShotCompleted: () => { nSensitive += 1; },
+      captureSensitivity: 0.5, // halves every speed gate → the weak swing lands
+    });
+    d2.reset();
+    feed(d2, weak, 0);
+    expect(nSensitive).toBe(1);
+  });
+});
 
 describe('shotDetector post-shot cooldown (v0.9 — stop capturing รัว)', () => {
   beforeEach(() => {
@@ -245,6 +274,64 @@ describe('shotDetector post-shot cooldown (v0.9 — stop capturing รัว)', 
     expect(completed).toBe(2);
     expect(appStore.getState().detection.shotsCompleted).toBe(2);
     expect(appStore.getState().detection.lastEvent?.kind).toBe('shot-completed');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 2b. SPEAK-TO-COMPLETION CAPTURE GATE (holdArm, v1.2)
+// ---------------------------------------------------------------------------
+
+describe('shotDetector holdArm gate (v1.2 — no new capture while the coach is speaking)', () => {
+  beforeEach(() => {
+    appStore.getState().startSession();
+  });
+
+  it('a swing while holdArm=true never arms, surfaces ONE coach-speaking discard, and arms again once released', () => {
+    let hold = true;
+    let completed = 0;
+    let swingStarted = 0;
+    const detector = new ShotDetector({
+      onShotCompleted: () => { completed += 1; },
+      onSwingStarted: () => { swingStarted += 1; },
+      holdArm: () => hold,
+    });
+    detector.reset();
+
+    // Two full swings while the coach is "speaking": nothing arms/completes,
+    // exactly ONE HUD event per hold window (latched, not spammed).
+    const afterFirst = feed(detector, FULL_SWING, 0);
+    const afterSecond = feed(detector, FULL_SWING, afterFirst + SHOT_THRESHOLDS.cooldownMs + 4000);
+    expect(completed).toBe(0);
+    expect(swingStarted).toBe(0);
+    const det = appStore.getState().detection;
+    expect(det.swingsDiscarded).toBe(1);
+    expect(det.lastEvent?.reason).toBe('coach-speaking');
+
+    // Coach finished — the very next swing arms and completes normally.
+    hold = false;
+    feed(detector, FULL_SWING, afterSecond + SHOT_THRESHOLDS.cooldownMs + 4000);
+    expect(swingStarted).toBe(1);
+    expect(completed).toBe(1);
+    expect(appStore.getState().detection.lastEvent?.kind).toBe('shot-completed');
+  });
+
+  it('holdArm turning true MID-swing does not abort the swing in flight (checked only at the idle gate)', () => {
+    let hold = false;
+    let completed = 0;
+    const detector = new ShotDetector({
+      onShotCompleted: () => { completed += 1; },
+      holdArm: () => hold,
+    });
+    detector.reset();
+
+    // Arm the swing with the first few frames, then flip the hold on while the
+    // FSM is mid-phase — the swing must still complete.
+    const armFrames = FULL_SWING.slice(0, SHOT_THRESHOLDS.prepEnterFrames + 2);
+    const rest = FULL_SWING.slice(SHOT_THRESHOLDS.prepEnterFrames + 2);
+    const mid = feed(detector, armFrames, 0);
+    hold = true;
+    feed(detector, rest, mid);
+    expect(completed).toBe(1);
   });
 });
 

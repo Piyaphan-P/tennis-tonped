@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — joint angle computation (pure, local, free)
+// ADGE Tennis — joint angle computation (pure, local, free)
 //
 // Consumes a PoseFrame, produces JointAngles in degrees. Real 2D vector math,
 // no side effects, unit-testable. Safe to call ~30x/s. The shot detector reuses
@@ -8,9 +8,51 @@
 
 import { LM } from '../types';
 import type { DominantHand, JointAngles, Landmark, PoseFrame } from '../types';
+import { normalizedBodyLength } from '../analysis/swingSpeed';
 
 /** EMA smoothing factor for dominant-wrist speed/velocity. */
 export const EMA_ALPHA = 0.4;
+
+/**
+ * SLOW EMA for the body-scale denominator (v2.2). The player's on-screen size
+ * changes slowly, but the raw nose→ankle length carries MediaPipe jitter
+ * (~0.01–0.02) that, when used as a divisor, would inject 4–8% noise into every
+ * speed sample AND the forwardBypass sign logic. Heavy smoothing (0.1) is
+ * legitimate — size is quasi-constant within a session — and de-noises the
+ * denominator so scale-invariant speed stays stable.
+ */
+export const BODY_SCALE_EMA_ALPHA = 0.1;
+
+/**
+ * Fallback body length used ONLY before the first usable nose→ankle measurement
+ * (or if it never appears). ~0.55 ≈ a full-body figure's nose→ankle span in a
+ * typical framing, so early frames read a sane scale-invariant speed instead of
+ * exploding. Once a real measurement lands, the smoothed value takes over.
+ */
+const DEFAULT_BODY_LENGTH = 0.55;
+
+/**
+ * EMA smoothing factor for the LIVE shoulder-angle STATUS coloring only
+ * (HUD/skeleton good↔warn chip). The shoulder angle uses angleDeg3D and
+ * MediaPipe z is noisy frame-to-frame, so the raw 3D angle jitters across the
+ * 60–110° "good" boundary and the chip flickers. A short EMA de-flickers the
+ * DISPLAYED status without touching any per-shot scoring angle. Lower = smoother
+ * but laggier; 0.35 keeps the chip responsive within a swing while killing the
+ * frame-to-frame z-noise flicker.
+ *
+ * ⚠️ This applies ONLY to the transient angle copy fed into the live status
+ * evaluation — never to the raw angles stored/captured for scoring.
+ */
+export const SHOULDER_STATUS_EMA_ALPHA = 0.35;
+
+/**
+ * One-step exponential moving average. `prev === null` (or non-finite) seeds the
+ * filter with `next` (identity on the first sample). Pure — no state, unit-safe.
+ */
+export function ema(prev: number | null | undefined, next: number, alpha: number): number {
+  if (prev == null || !Number.isFinite(prev)) return next;
+  return alpha * next + (1 - alpha) * prev;
+}
 
 /** Minimum landmark visibility to trust a joint for angle math. */
 export const MIN_VISIBILITY = 0.3;
@@ -53,6 +95,42 @@ export function angleDeg(a: Landmark, b: Landmark, c: Landmark): number {
   const denom = magBa * magBc;
   if (denom < 1e-6) return 0;
   const cos = Math.max(-1, Math.min(1, (bax * bcx + bay * bcy) / denom));
+  const deg = (Math.acos(cos) * 180) / Math.PI;
+  return Number.isFinite(deg) ? Math.max(0, Math.min(180, deg)) : 0;
+}
+
+/**
+ * Interior angle at vertex `b` (degrees) computed in FULL 3D using the z
+ * coordinate MediaPipe already provides (z ≈ depth normalized by hip width,
+ * negative toward the camera). Same acos-of-dot-product formula as `angleDeg`,
+ * just with the third axis included.
+ *
+ * WHY THIS EXISTS (shoulder-angle fix, v1.0.4): the shoulder angle
+ * hip->shoulder->elbow is meant to measure arm ABDUCTION. On a front-facing
+ * shot the arm extends TOWARD the camera at contact, so the shoulder->elbow
+ * segment is almost parallel to the view axis and its (x,y) projection nearly
+ * vanishes — the 2D `angleDeg` then reads a projection artifact that swings
+ * from ~1° to ~148° for the SAME real ~85° abduction (verified numerically),
+ * pushing essentially every real contact out of the 60–110° "good" window.
+ * Adding z recovers the true, stable angle. When z≈0 for all three points
+ * (person side-on / flat depth) this reduces EXACTLY to `angleDeg`, so it
+ * degrades gracefully rather than trusting noisy depth where there is none.
+ *
+ * Only the shoulder uses this; elbow/knee/hip stay 2D (their segments lie
+ * roughly in the image plane for a front-facing shot and were tuned in 2D).
+ */
+export function angleDeg3D(a: Landmark, b: Landmark, c: Landmark): number {
+  const bax = a.x - b.x;
+  const bay = a.y - b.y;
+  const baz = a.z - b.z;
+  const bcx = c.x - b.x;
+  const bcy = c.y - b.y;
+  const bcz = c.z - b.z;
+  const magBa = Math.hypot(bax, bay, baz);
+  const magBc = Math.hypot(bcx, bcy, bcz);
+  const denom = magBa * magBc;
+  if (denom < 1e-6) return 0;
+  const cos = Math.max(-1, Math.min(1, (bax * bcx + bay * bcy + baz * bcz) / denom));
   const deg = (Math.acos(cos) * 180) / Math.PI;
   return Number.isFinite(deg) ? Math.max(0, Math.min(180, deg)) : 0;
 }
@@ -118,8 +196,10 @@ export function computeJointAngles(
 
   const leftElbowDeg = angleDeg(lm[LM.LEFT_SHOULDER], lm[LM.LEFT_ELBOW], lm[LM.LEFT_WRIST]);
   const rightElbowDeg = angleDeg(lm[LM.RIGHT_SHOULDER], lm[LM.RIGHT_ELBOW], lm[LM.RIGHT_WRIST]);
-  const leftShoulderDeg = angleDeg(lm[LM.LEFT_HIP], lm[LM.LEFT_SHOULDER], lm[LM.LEFT_ELBOW]);
-  const rightShoulderDeg = angleDeg(lm[LM.RIGHT_HIP], lm[LM.RIGHT_SHOULDER], lm[LM.RIGHT_ELBOW]);
+  // Shoulder (abduction) uses 3D — the 2D projection collapses when the arm
+  // extends toward the camera at contact. See angleDeg3D for the full rationale.
+  const leftShoulderDeg = angleDeg3D(lm[LM.LEFT_HIP], lm[LM.LEFT_SHOULDER], lm[LM.LEFT_ELBOW]);
+  const rightShoulderDeg = angleDeg3D(lm[LM.RIGHT_HIP], lm[LM.RIGHT_SHOULDER], lm[LM.RIGHT_ELBOW]);
   const leftKneeDeg = angleDeg(lm[LM.LEFT_HIP], lm[LM.LEFT_KNEE], lm[LM.LEFT_ANKLE]);
   const rightKneeDeg = angleDeg(lm[LM.RIGHT_HIP], lm[LM.RIGHT_KNEE], lm[LM.RIGHT_ANKLE]);
   const leftHipDeg = angleDeg(lm[LM.LEFT_SHOULDER], lm[LM.LEFT_HIP], lm[LM.LEFT_KNEE]);
@@ -133,6 +213,27 @@ export function computeJointAngles(
   const wristIdx = dominantHand === 'left' ? LM.LEFT_WRIST : LM.RIGHT_WRIST;
   const wrist = lm[wristIdx];
 
+  // --- scale-invariant body reference (v2.2) --------------------------------
+  // Divide wrist displacement by the player's on-screen body length so speed is
+  // in BODY-LENGTHS/s, independent of how big they appear (phone-far vs
+  // MacBook-close). Heavily smooth the denominator (BODY_SCALE_EMA_ALPHA) and
+  // HOLD the last-good value through frames where nose/ankles drop out — never
+  // divide by a missing/near-zero scale, and never silently fall back to the
+  // raw (scale-broken) metric. km/h uses the SAME nose→ankle segment so the two
+  // stay dimensionally consistent (see swingSpeed.estimateSpeedKmh).
+  const prevScale = prev?.angles.bodyScale;
+  const rawScale = normalizedBodyLength(frame.landmarks);
+  let bodyScale: number | undefined;
+  if (rawScale !== undefined) {
+    bodyScale =
+      prevScale !== undefined
+        ? BODY_SCALE_EMA_ALPHA * rawScale + (1 - BODY_SCALE_EMA_ALPHA) * prevScale
+        : rawScale;
+  } else {
+    bodyScale = prevScale; // hold last-good (undefined only until first measure)
+  }
+  const scaleDivisor = bodyScale ?? DEFAULT_BODY_LENGTH;
+
   let wristSpeed = 0;
   let wristVelX = 0;
 
@@ -145,8 +246,8 @@ export function computeJointAngles(
     if (dt > 1e-4 && prevWrist && wrist) {
       const dx = wrist.x - prevWrist.x;
       const dy = wrist.y - prevWrist.y;
-      const instSpeed = Math.hypot(dx, dy) / dt;
-      const instVelX = dx / dt;
+      const instSpeed = Math.hypot(dx, dy) / scaleDivisor / dt;
+      const instVelX = dx / scaleDivisor / dt;
       wristSpeed = EMA_ALPHA * instSpeed + (1 - EMA_ALPHA) * prevSpeed;
       wristVelX = EMA_ALPHA * instVelX + (1 - EMA_ALPHA) * prevVelX;
     } else {
@@ -157,6 +258,7 @@ export function computeJointAngles(
   }
 
   return {
+    bodyScale,
     timestampMs: frame.timestampMs,
     leftElbowDeg,
     rightElbowDeg,

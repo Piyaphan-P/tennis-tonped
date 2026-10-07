@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — PURE server helpers (cloud persistence).
+// ADGE Tennis — PURE server helpers (cloud persistence).
 //
 // ZERO imports of pg / @google-cloud/storage / express so vitest at the repo
 // root (where server deps are NOT installed) can unit-test this file cleanly.
@@ -26,11 +26,19 @@ export function audioObjectPath(sessionId, shotId) {
   return `audio/${sessionId}/${shotId}.wav`;
 }
 
-/** ISO string from a pg timestamptz value (Date | string | null) → string|null. */
+/**
+ * ISO string from a timestamp-ish value → string|null. Accepts pg timestamptz
+ * (Date | ISO string) AND a Firestore Timestamp (duck-typed via `.toDate()` so
+ * this file stays import-free — a raw Firestore Timestamp fed to `new Date()`
+ * would otherwise yield Invalid Date).
+ */
 function isoOrNull(v) {
   if (v == null) return null;
   try {
-    const d = v instanceof Date ? v : new Date(v);
+    let d;
+    if (v instanceof Date) d = v;
+    else if (typeof v?.toDate === 'function') d = v.toDate();
+    else d = new Date(v);
     return Number.isNaN(d.getTime()) ? null : d.toISOString();
   } catch {
     return null;
@@ -47,6 +55,13 @@ export function sessionRowToJson(row) {
     avgScore: Number(row.avg_score) || 0,
     shotCount: Number(row.shot_count) || 0,
     summary: row.summary ?? null,
+    // v2.1: owning ROOM (null on legacy rows → admin-visible only). pg path is a
+    // stub; the column stays owner_email but the wire key is roomUser now.
+    roomUser: row.owner_email ?? null,
+    // v2.1 player LINE identity — pg path never stores these (Firestore-only),
+    // kept null so the wire shape stays identical to sessionDocToJson.
+    lineUserId: row.line_user_id ?? null,
+    lineEmail: row.line_email ?? null,
   };
 }
 
@@ -65,7 +80,151 @@ export function shotRowToJson(row) {
     hasClip: row.clip_path != null,
     clipMime: row.clip_mime ?? null,
     hasAudio: row.audio_path != null,
+    coachText: row.coach_text ?? null, // pg parity (Firestore-only in practice)
     createdAt: isoOrNull(row.created_at),
+  };
+}
+
+/**
+ * Firestore `sessions/{id}` doc → the SAME CloudSessionSummary wire shape as
+ * sessionRowToJson. `data` holds the contract camelCase fields (userName,
+ * startedAt, endedAt, avgScore, shotCount, summary); Timestamps are handled by
+ * isoOrNull's duck-typed toDate branch. Byte-compatible with the Postgres path.
+ */
+export function sessionDocToJson(id, data) {
+  const d = data ?? {};
+  return {
+    id,
+    userName: d.userName ?? '',
+    startedAt: isoOrNull(d.startedAt),
+    endedAt: isoOrNull(d.endedAt),
+    avgScore: Number(d.avgScore) || 0,
+    shotCount: Number(d.shotCount) || 0,
+    summary: d.summary ?? null,
+    // v2.1: owning ROOM (null/absent on legacy docs → admin-visible only).
+    roomUser: d.roomUser ?? null,
+    // v2.1: the individual player's LINE identity (null on pre-v2.1 rows). The
+    // external history API queries by these; roomUser is the shared room account.
+    lineUserId: d.lineUserId ?? null,
+    lineEmail: d.lineEmail ?? null,
+  };
+}
+
+/**
+ * Firestore `leaderboard_records/{sessionId}` doc → the external-API row shape
+ * (v2.1). Durable board record; carries the player LINE identity so the ext
+ * /stats route can query it past the 3-day session TTL.
+ */
+export function leaderboardDocToJson(sessionId, data) {
+  const d = data ?? {};
+  return {
+    sessionId,
+    userName: d.userName ?? '',
+    lineUserId: d.lineUserId ?? null,
+    lineEmail: d.lineEmail ?? null,
+    avgScore: Number(d.avgScore) || 0,
+    maxScore: Number(d.maxScore) || 0,
+    shotCount: Number(d.shotCount) || 0,
+    playedAt: isoOrNull(d.playedAt),
+  };
+}
+
+/**
+ * Fold durable leaderboard rows into the ext /stats `totals` block (pure).
+ * sessions = row count, shots = Σ shotCount, avgScore = shot-weighted mean
+ * (matches how the app weights per-player stats), maxScore = overall max,
+ * bestSession = the row with the highest maxScore (ties → first seen).
+ */
+export function foldLeaderboardStats(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (list.length === 0) {
+    return { sessions: 0, shots: 0, avgScore: 0, maxScore: 0, bestSession: null };
+  }
+  let shots = 0;
+  let weighted = 0;
+  let maxScore = 0;
+  let best = null;
+  for (const r of list) {
+    const sc = Number(r.shotCount) || 0;
+    shots += sc;
+    weighted += (Number(r.avgScore) || 0) * sc;
+    const mx = Number(r.maxScore) || 0;
+    if (mx > maxScore) maxScore = mx;
+    if (!best || mx > (Number(best.maxScore) || 0)) best = r;
+  }
+  return {
+    sessions: list.length,
+    shots,
+    avgScore: shots > 0 ? Math.round((weighted / shots) * 100) / 100 : 0,
+    maxScore,
+    bestSession: best,
+  };
+}
+
+/**
+ * Firestore `users/{roomUser}` doc → the /api/users wire shape. NEVER includes
+ * passSalt/passHash — this mapper is the only thing user-management responses
+ * go through, so credentials can't leak by construction.
+ */
+export function userDocToJson(data) {
+  const d = data ?? {};
+  return {
+    roomUser: d.roomUser ?? '',
+    displayName: d.displayName ?? '',
+    role: d.role === 'admin' ? 'admin' : 'player',
+    disabled: Boolean(d.disabled),
+    createdAt: isoOrNull(d.createdAt),
+  };
+}
+
+/**
+ * Firestore `sessions/{id}/shots/{id}` doc → the SAME CloudShot wire shape as
+ * shotRowToJson. hasClip/hasAudio derive from clipPath/audioPath being set.
+ */
+export function shotDocToJson(id, data) {
+  const d = data ?? {};
+  return {
+    id,
+    sessionId: d.sessionId,
+    idx: Number(d.idx) || 0,
+    type: d.type,
+    score: Number(d.score) || 0,
+    angles: d.angles ?? null,
+    statuses: d.statuses ?? null,
+    issues: d.issues ?? [],
+    peakWristSpeed: Number(d.peakWristSpeed) || 0,
+    hasClip: d.clipPath != null,
+    clipMime: d.clipMime ?? null,
+    hasAudio: d.audioPath != null,
+    coachText: d.coachText ?? null, // v2.3: coach's spoken cue text
+    createdAt: isoOrNull(d.createdAt),
+  };
+}
+
+/**
+ * Extract the v2.5 per-session stats from a persisted `summary` blob into a
+ * guaranteed shape for the external API (so a consumer needn't dig into
+ * `summary`). PURE, import-free. Safe defaults for pre-v2.5 / absent summaries:
+ *   durationMs: Number(summary.durationMs) || 0
+ *   avgSpeedKmh: finite number, else null   (absent when no shot had a speed)
+ *   kcal: Number(summary.kcal) || 0
+ *   spin: { topspin, backspin, flat } each Number()||0, or null when absent.
+ */
+export function sessionStatsFromSummary(summary) {
+  const s = isPlainObject(summary) ? summary : {};
+  const avg = Number(s.avgSpeedKmh);
+  const sp = isPlainObject(s.spin) ? s.spin : null;
+  return {
+    durationMs: Number(s.durationMs) || 0,
+    avgSpeedKmh: Number.isFinite(avg) ? avg : null,
+    kcal: Number(s.kcal) || 0,
+    spin: sp
+      ? {
+          topspin: Number(sp.topspin) || 0,
+          backspin: Number(sp.backspin) || 0,
+          flat: Number(sp.flat) || 0,
+        }
+      : null,
   };
 }
 
@@ -106,6 +265,166 @@ export function validateShotMeta(body) {
     errors.push('peakWristSpeed must be a number');
   }
   return { ok: errors.length === 0, errors };
+}
+
+/**
+ * Sanitize the OPTIONAL `usage` block on the end-of-session PATCH body
+ * (admin cost visibility). Returns null when absent or malformed — old
+ * clients that never send it keep working, and a bad shape is ignored
+ * rather than failing the PATCH. Numbers are coerced (Number()||0), and
+ * `detail` (free-form modality breakdown) is kept only when it is a plain
+ * object — stored as-is otherwise null.
+ */
+export function sanitizeUsage(usage) {
+  if (!isPlainObject(usage)) return null;
+  return {
+    thb: Number(usage.thb) || 0,
+    tokensIn: Number(usage.tokensIn) || 0,
+    tokensOut: Number(usage.tokensOut) || 0,
+    detail: isPlainObject(usage.detail) ? usage.detail : null,
+  };
+}
+
+/**
+ * Recompute the DURABLE leaderboard scores from the session's STORED shot
+ * scores — never from the client-supplied avgScore (which is spoofable and
+ * only display-only/owner-scoped on the session doc). Returns
+ * { avgScore, maxScore } where avgScore is the unrounded mean (matches
+ * Postgres avg()) and maxScore the max. Returns null when there are no shots
+ * (caller skips the upsert). Non-numeric scores are coerced to 0.
+ */
+export function leaderboardScores(scores) {
+  const list = (Array.isArray(scores) ? scores : []).map((s) => Number(s) || 0);
+  if (list.length === 0) return null;
+  let sum = 0;
+  let maxScore = 0;
+  for (const s of list) {
+    sum += s;
+    if (s > maxScore) maxScore = s;
+  }
+  return { avgScore: sum / list.length, maxScore };
+}
+
+/** Round to 2 decimals for THB display in the /api/usage response. */
+function round2(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+/**
+ * Fold `usage_records` rows into the GET /api/usage response (admin cost
+ * visibility). PURE — the Firestore backend feeds it plain doc data; rows
+ * are `{ roomUser, userName, thb, tokensIn, tokensOut, playedAt }` where
+ * playedAt may be a Date, ISO string or Firestore Timestamp (duck-typed —
+ * this file stays import-free). Group key = roomUser (null → "(legacy)");
+ * each group's userName is the MOST RECENT record's (by playedAt). Users
+ * are sorted by thb desc; thb is rounded to 2 decimals in the response.
+ *
+ * Response: { users: [{ roomUser, userName, thb, tokensIn, tokensOut,
+ * sessions }], total: { thb, tokensIn, tokensOut, sessions } }
+ */
+export function aggregateUsageRows(rows) {
+  const byRoom = new Map();
+  for (const row of rows ?? []) {
+    const roomUser = row?.roomUser ?? '(legacy)';
+    let g = byRoom.get(roomUser);
+    if (!g) {
+      g = { roomUser, userName: '', thb: 0, tokensIn: 0, tokensOut: 0, sessions: 0, latestMs: -Infinity };
+      byRoom.set(roomUser, g);
+    }
+    g.thb += Number(row?.thb) || 0;
+    g.tokensIn += Number(row?.tokensIn) || 0;
+    g.tokensOut += Number(row?.tokensOut) || 0;
+    g.sessions += 1;
+    // Most-recent record names the group. Rows without a parseable playedAt
+    // compare at -Infinity (>= keeps the LAST such row — stable enough for
+    // legacy data with no timestamps at all).
+    const iso = isoOrNull(row?.playedAt);
+    const ms = iso == null ? -Infinity : Date.parse(iso);
+    if (ms >= g.latestMs) {
+      g.latestMs = ms;
+      g.userName = row?.userName ?? '';
+    }
+  }
+  const users = [...byRoom.values()]
+    .sort((a, b) => b.thb - a.thb)
+    .map(({ roomUser, userName, thb, tokensIn, tokensOut, sessions }) => ({
+      roomUser,
+      userName,
+      thb: round2(thb),
+      tokensIn,
+      tokensOut,
+      sessions,
+    }));
+  const total = users.reduce(
+    (t, u) => ({
+      thb: t.thb + u.thb,
+      tokensIn: t.tokensIn + u.tokensIn,
+      tokensOut: t.tokensOut + u.tokensOut,
+      sessions: t.sessions + u.sessions,
+    }),
+    { thb: 0, tokensIn: 0, tokensOut: 0, sessions: 0 },
+  );
+  total.thb = round2(total.thb);
+  return { users, total };
+}
+
+// ---------------------------------------------------------------------------
+// Development-plan derivation (server mirror of src/history/devPlanDerive.ts).
+// Ranks a session's shot issues into 5 coaching areas, severity-weighted, worst
+// first. The coaching COPY (อาการ/วิธีซ้อม/cue) lives ONLY in the frontend i18n
+// (`devplan.area.<id>.*`) — the ext API returns the structured {id, weight,
+// shots} + the persisted `summary.improvements` (already bilingual), so the
+// text never forks/drifts from i18n. A consumer maps area ids → copy client-side.
+// ---------------------------------------------------------------------------
+
+const DEVPLAN_SEVERITY_WEIGHT = { fault: 2, warn: 1, good: 0 };
+
+/** ShotIssue.key → coaching area id (mirrors scoring.ts vocabulary). */
+export function devPlanAreaForIssue(key) {
+  switch (key) {
+    case 'elbow-too-bent':
+    case 'arm-locked':
+      return 'contact-extension';
+    case 'no-knee-bend':
+      return 'knee-load';
+    case 'leaning':
+    case 'off-balance':
+      return 'balance';
+    case 'shoulder-angle':
+      return 'racket-prep';
+    case 'swing-faster':
+      return 'swing-speed';
+    default:
+      return null;
+  }
+}
+
+/**
+ * Rank recurring faults across a session's shots into coaching areas. `shots` is
+ * an array of shot-json objects (each with an `issues` array). Returns up to
+ * `limit` (default 3) `{ id, weight, shots }` worst first. Pure.
+ */
+export function deriveDevPlan(shots, limit = 3) {
+  const acc = new Map();
+  for (const shot of shots ?? []) {
+    const seen = new Set();
+    for (const issue of shot?.issues ?? []) {
+      if (!issue || issue.severity === 'good') continue;
+      const id = devPlanAreaForIssue(issue.key);
+      if (!id) continue;
+      const e = acc.get(id) ?? { weight: 0, shots: 0 };
+      e.weight += DEVPLAN_SEVERITY_WEIGHT[issue.severity] ?? 0;
+      if (!seen.has(id)) {
+        e.shots += 1;
+        seen.add(id);
+      }
+      acc.set(id, e);
+    }
+  }
+  return [...acc.entries()]
+    .map(([id, v]) => ({ id, weight: v.weight, shots: v.shots }))
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, Math.max(0, limit));
 }
 
 /**

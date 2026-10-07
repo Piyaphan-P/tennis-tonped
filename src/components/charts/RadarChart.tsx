@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — hand-rolled SVG radar (joint angles vs target).
+// ADGE Tennis — hand-rolled SVG radar (joint angles vs target).
 // No chart lib. Colors come from theme.css tokens so it matches the app in
 // light/dark. value/target are pre-normalized 0..1 by history/derive.radarData.
 // ============================================================================

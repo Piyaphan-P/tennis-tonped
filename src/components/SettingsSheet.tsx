@@ -1,19 +1,31 @@
 import { useAppStore } from '../store';
 import { useT } from '../i18n';
+import * as api from '../data/api';
 import type { PricingRates } from '../types';
 
-/** Bottom-sheet settings: pricing rates, session prefs, and coach token. */
+/** Bottom-sheet settings: pricing rates and session prefs. (The manual coach
+ *  token field was removed 2026-07-20 — the key is auto-provisioned server-side.
+ *  store.authToken plumbing stays intact for liveClient/dev flows.) */
 export default function SettingsSheet() {
   const open = useAppStore((s) => s.settingsOpen);
   const setOpen = useAppStore((s) => s.setSettingsOpen);
   const settings = useAppStore((s) => s.settings);
   const updateRates = useAppStore((s) => s.updateRates);
   const updateSettings = useAppStore((s) => s.updateSettings);
-  const authToken = useAppStore((s) => s.authToken);
-  const setAuthToken = useAppStore((s) => s.setAuthToken);
+  const auth = useAppStore((s) => s.auth);
+  const setAuth = useAppStore((s) => s.setAuth);
+  const setScreen = useAppStore((s) => s.setScreen);
   const t = useT();
 
   if (!open) return null;
+
+  /** Log out (players' only exit; admins also have one on AdminScreen). */
+  async function handleLogout() {
+    await api.logout();
+    setOpen(false);
+    setScreen('home');
+    setAuth(null); // LoginGate reappears
+  }
 
   const rateField = (key: keyof PricingRates, labelKey: Parameters<typeof t>[0]) => (
     <label className="col" style={{ gap: 4 }}>
@@ -30,8 +42,6 @@ export default function SettingsSheet() {
     </label>
   );
 
-  const tokenValid = authToken.startsWith('AQ.');
-
   return (
     <div className="sheet-backdrop" onClick={() => setOpen(false)}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
@@ -42,32 +52,8 @@ export default function SettingsSheet() {
           </button>
         </div>
 
-        {/* --- coach token --- */}
+        {/* --- session prefs (coach token field removed — auto-provisioned) --- */}
         <h3 style={{ marginBottom: 8 }}>{t('settings.session')}</h3>
-        <label className="col" style={{ gap: 4, marginBottom: 12 }}>
-          <div className="row" style={{ justifyContent: 'space-between' }}>
-            <span className="dim" style={{ fontSize: '0.85rem' }}>
-              {t('settings.token')}
-            </span>
-            <span
-              className="faint"
-              style={{ fontSize: '0.75rem', color: tokenValid ? 'var(--good)' : 'var(--warn)' }}
-            >
-              {tokenValid ? t('settings.tokenSet') : t('settings.tokenNone')}
-            </span>
-          </div>
-          <input
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="AQ.…"
-            value={authToken}
-            onChange={(e) => setAuthToken(e.target.value)}
-          />
-          <span className="faint" style={{ fontSize: '0.75rem' }}>
-            {t('settings.tokenHint')}
-          </span>
-        </label>
 
         {/* --- dominant hand --- */}
         <label className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
@@ -86,6 +72,122 @@ export default function SettingsSheet() {
               {t('settings.handRight')}
             </button>
           </div>
+        </label>
+
+        {/* --- player height (calibrates swing speed → km/h) --- */}
+        <label className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
+          <span>{t('settings.playerHeight')}</span>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={100}
+            max={230}
+            step={1}
+            style={{ width: 92, textAlign: 'right' }}
+            value={settings.playerHeightCm}
+            onChange={(e) => {
+              // Loose while typing (don't fight intermediate values like "1"→"17");
+              // the hard 100–230 clamp lands on blur (and estimateSpeedKmh + the
+              // store default both re-clamp as a safety net).
+              const n = Math.round(Number(e.target.value));
+              if (Number.isFinite(n) && n > 0) updateSettings({ playerHeightCm: n });
+            }}
+            onBlur={() =>
+              updateSettings({
+                playerHeightCm: Math.min(230, Math.max(100, settings.playerHeightCm)),
+              })
+            }
+          />
+        </label>
+
+        {/* --- player weight (calorie estimate on the session-stats widget) --- */}
+        <label className="col" style={{ gap: 4, marginBottom: 10 }}>
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <span>{t('settings.playerWeight')}</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={30}
+              max={200}
+              step={1}
+              style={{ width: 92, textAlign: 'right' }}
+              value={settings.playerWeightKg}
+              onChange={(e) => {
+                // Loose while typing; the hard 30–200 clamp lands on blur (and
+                // clampWeightKg in the store + estimateCalories re-clamp too).
+                const n = Math.round(Number(e.target.value));
+                if (Number.isFinite(n) && n > 0) updateSettings({ playerWeightKg: n });
+              }}
+              onBlur={() =>
+                updateSettings({
+                  playerWeightKg: Math.min(200, Math.max(30, settings.playerWeightKg)),
+                })
+              }
+            />
+          </div>
+          <span className="dim" style={{ fontSize: '0.8rem' }}>
+            {t('settings.playerWeightHint')}
+          </span>
+        </label>
+
+        {/* --- swing-speed calibration (× multiplier on km/h, PO-tunable) --- */}
+        <label className="col" style={{ gap: 4, marginBottom: 10 }}>
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <span>{t('settings.speedFactor')}</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0.5}
+              max={3}
+              step={0.05}
+              style={{ width: 92, textAlign: 'right' }}
+              value={settings.speedCorrectionFactor}
+              onChange={(e) => {
+                // Loose while typing; clampSpeedFactor (in the store setter) lands
+                // the hard 0.5–3.0 clamp so a stray value can't poison the display.
+                const n = Number(e.target.value);
+                if (Number.isFinite(n) && n > 0) updateSettings({ speedCorrectionFactor: n });
+              }}
+              onBlur={() =>
+                updateSettings({
+                  speedCorrectionFactor: Math.min(3, Math.max(0.5, settings.speedCorrectionFactor)),
+                })
+              }
+            />
+          </div>
+          <span className="dim" style={{ fontSize: '0.8rem' }}>
+            {t('settings.speedFactorHint')}
+          </span>
+        </label>
+
+        {/* --- capture sensitivity (v2.2: × multiplier on the detector gates) --- */}
+        <label className="col" style={{ gap: 4, marginBottom: 10 }}>
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <span>{t('settings.captureSensitivity')}</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0.3}
+              max={2}
+              step={0.05}
+              style={{ width: 92, textAlign: 'right' }}
+              value={settings.captureSensitivity}
+              onChange={(e) => {
+                // Loose while typing; clampCaptureSensitivity (store setter) lands
+                // the hard 0.3–2.0 clamp so a stray value can't break detection.
+                const n = Number(e.target.value);
+                if (Number.isFinite(n) && n > 0) updateSettings({ captureSensitivity: n });
+              }}
+              onBlur={() =>
+                updateSettings({
+                  captureSensitivity: Math.min(2, Math.max(0.3, settings.captureSensitivity)),
+                })
+              }
+            />
+          </div>
+          <span className="dim" style={{ fontSize: '0.8rem' }}>
+            {t('settings.captureSensitivityHint')}
+          </span>
         </label>
 
         {/* --- camera --- */}
@@ -126,16 +228,48 @@ export default function SettingsSheet() {
           </label>
         </div>
 
-        {/* --- pricing --- */}
-        <h3 style={{ marginBottom: 8 }}>{t('settings.pricing')}</h3>
-        <div className="col">
-          {rateField('textInPer1M', 'settings.textIn')}
-          {rateField('audioInPer1M', 'settings.audioIn')}
-          {rateField('videoInPer1M', 'settings.videoIn')}
-          {rateField('textOutPer1M', 'settings.textOut')}
-          {rateField('audioOutPer1M', 'settings.audioOut')}
-          {rateField('usdToThb', 'settings.usdToThb')}
-        </div>
+        {/* --- pricing (ADMIN ONLY) — a cost/dev-tuning block whose "USD per 1M
+             tokens" header reads to players as a token field they must fill in.
+             Player-facing cost was already hidden in v1.5.1 (CostFab/Summary THB);
+             this section was the last leak. Rates still feed costMonitor from the
+             store defaults regardless of whether this editor is shown. --- */}
+        {auth?.role === 'admin' && (
+          <>
+            <h3 style={{ marginBottom: 8 }}>{t('settings.pricing')}</h3>
+            <div className="col">
+              {rateField('textInPer1M', 'settings.textIn')}
+              {rateField('audioInPer1M', 'settings.audioIn')}
+              {rateField('videoInPer1M', 'settings.videoIn')}
+              {rateField('textOutPer1M', 'settings.textOut')}
+              {rateField('audioOutPer1M', 'settings.audioOut')}
+              {rateField('usdToThb', 'settings.usdToThb')}
+            </div>
+          </>
+        )}
+
+        {/* --- account (UAM v1.5) — only when signed in via the gate --- */}
+        {auth && (
+          <>
+            <h3 style={{ margin: '16px 0 8px' }}>{t('settings.account')}</h3>
+            <div className="row" style={{ justifyContent: 'space-between', gap: 8 }}>
+              <span
+                className="dim"
+                style={{
+                  fontSize: '0.85rem',
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {auth.roomUser}
+              </span>
+              <button className="btn btn-ghost tap" onClick={handleLogout}>
+                {t('settings.logout')}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

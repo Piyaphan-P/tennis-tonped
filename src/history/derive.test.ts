@@ -5,6 +5,7 @@ import {
   overallSummary,
   formatSessionDate,
 } from './derive';
+import { SPEED_GOOD } from '../analysis/scoring';
 import type { CloudShot, JointAngles, ShotIssue } from '../types';
 
 // A neutral angle snapshot; individual tests override the fields under test.
@@ -80,6 +81,20 @@ describe('radarData normalization', () => {
   it('clamps speed above target to 1', () => {
     const d = radarData(angles(), 10, 'right');
     expect(d.find((x) => x.key === 'speed')!.value).toBe(1);
+  });
+
+  it('REGRESSION: a normal completed-swing peak reads full on the speed axis', () => {
+    // The speed axis target = the detector contact gate (SPEED_GOOD). v2.2: in
+    // the scale-invariant unit a completed swing peaks ≥ the gate (2.0) by
+    // construction, so it reads on-target — never the pre-v1.0.4 ~0.5-for-everyone.
+    const d = radarData(angles(), 2.4, 'right');
+    expect(d.find((x) => x.key === 'speed')!.value).toBe(1);
+  });
+
+  it('the retuned speed axis stays coherent with the scorer (SPEED_GOOD)', () => {
+    // A peak exactly at the scorer's "good" threshold maps to a full 1.0 ring.
+    const d = radarData(angles(), SPEED_GOOD, 'right');
+    expect(d.find((x) => x.key === 'speed')!.value).toBeCloseTo(1, 10);
   });
 });
 

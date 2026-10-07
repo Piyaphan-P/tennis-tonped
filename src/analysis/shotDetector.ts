@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — shot detector (phase state machine + shot builder)
+// ADGE Tennis — shot detector (phase state machine + shot builder)
 //
 // No React. Fed one (frame, angles) per pose tick via onFrame(). Runs a
 // dominant-wrist-speed state machine locally (free, instant):
@@ -42,6 +42,7 @@ import type {
 } from '../types';
 import { appStore, evaluateAngleStatuses } from '../store';
 import { scoreShot } from './scoring';
+import { estimateSpeedKmh, clampCaptureSensitivity } from './swingSpeed';
 
 // ---------------------------------------------------------------------------
 // Swing keyframe capture
@@ -155,20 +156,28 @@ function buildLocalCritique(
 // duration, 10-frame return-to-idle streak, and 800ms cooldown together keep
 // casual movement from ever completing a shot.
 export const SHOT_THRESHOLDS = {
+  // ⚠️ v2.2 UNIT CHANGE: wristSpeed is now SCALE-INVARIANT (body-lengths/s, see
+  // angles.ts) instead of raw normalized-frame-units/s. Every speed threshold
+  // below was multiplied by ~1.8 (= 1 / a typical nose→ankle frame fraction
+  // ≈0.55) so the detector triggers at the SAME real swing speed it used to for
+  // a normally-framed player — but now CONSISTENTLY at any camera distance
+  // (fixes the phone-misses-shots report, where a small-in-frame player used to
+  // read below the raw gate). The exact contact gate is empirical: tune live via
+  // settings.captureSensitivity (multiplier applied at construction) — no redeploy.
   /** Speed above which idle starts counting toward entering 'preparation'. */
-  prepEnterSpeed: 0.3,
+  prepEnterSpeed: 0.55,
   /** Consecutive frames above prepEnterSpeed required to leave idle. */
   prepEnterFrames: 3,
   /** Above this speed while in 'preparation', move to 'backswing'. */
-  backswingMinSpeed: 0.5,
+  backswingMinSpeed: 0.9,
   /** Above this speed once velX flips sign, move to 'forward-swing'. */
-  forwardSwingMinSpeed: 0.7,
+  forwardSwingMinSpeed: 1.27,
   /** A local speed peak must reach at least this to count as 'contact'. */
-  contactMinPeakSpeed: 1.1,
+  contactMinPeakSpeed: 2.0,
   /** Consecutive rising frames required before a drop is treated as a peak. */
   contactMinRisingFrames: 1,
   /** Below this speed, frames count toward the return-to-idle streak. */
-  idleReturnSpeed: 0.3,
+  idleReturnSpeed: 0.55,
   /** Consecutive low-speed frames required to fall back to 'idle'. */
   idleReturnFrames: 10,
   /** Discard swings shorter than this (ms) — almost certainly noise. */
@@ -207,10 +216,23 @@ export const SHOT_THRESHOLDS = {
    * anyway. Handles vertical/camera-axis swings where velX (horizontal
    * velocity) never flips even though a real swing is happening.
    */
-  forwardBypassSpeed: 1.0,
+  forwardBypassSpeed: 1.8,
   /** Consecutive above-forwardBypassSpeed frames (no sign flip) required to bypass. */
   forwardBypassFrames: 2,
 };
+
+/** Speed-type threshold keys scaled by settings.captureSensitivity at detector
+ *  construction (v2.2). Non-speed keys (frames/durations/visibility/spans) are
+ *  left untouched. (clampCaptureSensitivity lives in swingSpeed.ts — a pure,
+ *  store-free module — to avoid a store↔shotDetector import cycle.) */
+const SENSITIVITY_SCALED_KEYS = [
+  'prepEnterSpeed',
+  'backswingMinSpeed',
+  'forwardSwingMinSpeed',
+  'contactMinPeakSpeed',
+  'idleReturnSpeed',
+  'forwardBypassSpeed',
+] as const;
 
 // ---------------------------------------------------------------------------
 // Shot classification
@@ -321,6 +343,22 @@ export interface ShotDetectorOptions {
    * (LiveScreen handles that via SwingRecorder.dispose()). Absence is a no-op.
    */
   onSwingFinalized?: (completedShotId: string | null) => void;
+  /**
+   * SPEAK-TO-COMPLETION CAPTURE GATE (v1.2, user request): while this returns
+   * true, idle→preparation is blocked — no new swing arms, records, or
+   * captures until the coach finishes the previous critique. Checked only at
+   * the idle gate, so a swing already in flight always completes normally.
+   * A blocked real swing surfaces once on the HUD as 'coach-speaking'.
+   * Absence (or coach offline) = never hold — existing callers unaffected.
+   */
+  holdArm?: () => boolean;
+  /**
+   * Capture-sensitivity multiplier (v2.2, settings.captureSensitivity). Scales
+   * ONLY the speed-type thresholds at construction (see SENSITIVITY_SCALED_KEYS)
+   * so on-court sensitivity can be tuned without a redeploy. Default/absent =
+   * 1.0 = the SHOT_THRESHOLDS defaults unchanged. Clamped to [0.3, 2.0].
+   */
+  captureSensitivity?: number;
 }
 
 /**
@@ -360,6 +398,12 @@ export class ShotDetector {
   private cooldownPrepStreak = 0;
   private cooldownEventFired = false;
 
+  // holdArm (coach speaking) gate: same streak+latch pattern as cooldown so a
+  // real swing suppressed by the gate is surfaced on the HUD exactly once per
+  // hold window.
+  private holdPrepStreak = 0;
+  private holdEventFired = false;
+
   // FULL-CYCLE guard: a swing only completes (→ coach dispatch) if the FSM
   // actually traversed through follow-through. Set true on entering
   // 'follow-through'; a swing that stalls mid-phase leaves it false and is
@@ -379,7 +423,15 @@ export class ShotDetector {
 
   constructor(opts: ShotDetectorOptions) {
     this.opts = opts;
-    this.th = { ...SHOT_THRESHOLDS, ...opts.thresholds };
+    const merged = { ...SHOT_THRESHOLDS, ...opts.thresholds };
+    // v2.2: scale ONLY the speed-type gates by the capture-sensitivity knob (the
+    // exported SHOT_THRESHOLDS + scoring's SPEED_GOOD base stay put, so the
+    // drift-lock test still holds — the knob only shifts this instance's gates).
+    const sens = clampCaptureSensitivity(opts.captureSensitivity);
+    if (sens !== 1.0) {
+      for (const k of SENSITIVITY_SCALED_KEYS) merged[k] = merged[k] * sens;
+    }
+    this.th = merged;
   }
 
   /** Reset the state machine (e.g. on session start). Also resets phase in the store. */
@@ -396,6 +448,8 @@ export class ShotDetector {
     this.cooldownUntilMs = 0;
     this.cooldownPrepStreak = 0;
     this.cooldownEventFired = false;
+    this.holdPrepStreak = 0;
+    this.holdEventFired = false;
     this.followThroughReached = false;
     this.clearAccumulated();
     appStore.getState().setPhase('idle');
@@ -484,6 +538,35 @@ export class ShotDetector {
       // Window just elapsed — clear the suppression latch for next time.
       this.cooldownPrepStreak = 0;
       this.cooldownEventFired = false;
+
+      // Coach still speaking the previous critique: hold arming (user request
+      // v1.2 — the machine feeds faster than the coach can talk, so new shots
+      // wait their turn instead of piling up an unreadable backlog). Surfaced
+      // once per hold window so the player sees WHY nothing armed.
+      if (this.opts.holdArm?.()) {
+        if (speed > this.th.prepEnterSpeed) {
+          this.holdPrepStreak += 1;
+          if (this.holdPrepStreak >= this.th.prepEnterFrames && !this.holdEventFired) {
+            this.holdEventFired = true;
+            appStore.getState().pushDetectionEvent({
+              atMs: ts,
+              kind: 'swing-discarded',
+              reason: 'coach-speaking',
+              peakWristSpeed: speed,
+              durationMs: 0,
+              captureCount: 0,
+              shotIndex: 0,
+            });
+          }
+        } else {
+          this.holdPrepStreak = 0;
+        }
+        this.prepStreak = 0;
+        return;
+      }
+      // Hold released — clear the latch for the next hold window.
+      this.holdPrepStreak = 0;
+      this.holdEventFired = false;
 
       if (speed > this.th.prepEnterSpeed) {
         if (this.prepStreak === 0) this.prepStreakStartMs = ts;
@@ -673,6 +756,10 @@ export class ShotDetector {
         contactAngles: this.contactAngles as JointAngles,
         peakWristSpeed: this.peakWristSpeed,
         dominantHand: settings.dominantHand,
+        // v2.2: anchor the speed penalty to THIS detector's effective contact
+        // gate (already ×captureSensitivity) so the knob never fabricates a
+        // false "swing-faster" penalty (code-review finding #1).
+        speedGate: this.th.contactMinPeakSpeed,
       });
 
       // FALLBACK: the normal path snapshots the 'contact' keyframe the instant
@@ -731,6 +818,20 @@ export class ShotDetector {
         };
       });
 
+      // Approximate km/h swing speed, calibrated from the held contact-frame
+      // landmarks (= the peak-speed frame) + player height. undefined when the
+      // body was out of frame / low visibility. Attach-only; no FSM impact.
+      const speedKmh = estimateSpeedKmh(
+        this.contactLandmarks,
+        this.peakWristSpeed,
+        settings.playerHeightCm,
+        settings.speedCorrectionFactor,
+        // v2.2: use the HELD/smoothed body scale (from the peak-frame angles) for
+        // the visibility guard so a momentary crop AT contact doesn't drop km/h
+        // when the speed was computed fine one frame earlier (finding #5).
+        this.contactAngles?.bodyScale,
+      );
+
       const shot: Shot = {
         id,
         index: shots.length + 1,
@@ -740,6 +841,7 @@ export class ShotDetector {
         endMs,
         contactAngles: this.contactAngles as JointAngles,
         peakWristSpeed: this.peakWristSpeed,
+        speedKmh,
         score,
         issues,
         captures,

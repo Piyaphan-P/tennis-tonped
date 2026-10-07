@@ -1,5 +1,5 @@
 // ============================================================================
-// ต้นและเพชร Tennis Club — MicControl
+// ADGE Tennis — MicControl
 //
 // Replaces the old press-and-hold "Ask Coach" button. The mic is ALWAYS-ON by
 // default (Gemini server-side VAD handles turn-taking), so this is just a
